@@ -47,14 +47,14 @@ export async function POST(req: NextRequest) {
 
   // 고정 순서로 정렬
   submissions.sort((a, b) => {
-    const aName = (a.teams as { name: string } | null)?.name ?? ''
-    const bName = (b.teams as { name: string } | null)?.name ?? ''
+    const aName = (a.teams as { name: string }[] | null)?.[0]?.name ?? ''
+    const bName = (b.teams as { name: string }[] | null)?.[0]?.name ?? ''
     return (COMPANY_ORDER.indexOf(aName) ?? 99) - (COMPANY_ORDER.indexOf(bName) ?? 99)
   })
 
   // ── 3. 표지 생성 ─────────────────────────────────────────
   const coverRows: CoverRow[] = submissions.map(s => ({
-    teamName:        (s.teams as { name: string } | null)?.name ?? '—',
+    teamName:        (s.teams as { name: string }[] | null)?.[0]?.name ?? '—',
     workProcess:     s.work_process    ?? '',
     personnelCount:  s.personnel_count,
     personnelDetail: (s.personnel_detail as CoverRow['personnelDetail']) ?? null,

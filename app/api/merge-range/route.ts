@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
     const bytes    = await finalDoc.save()
     const filename = `DABs_${startDate}_${endDate}.pdf`
 
-    return new NextResponse(bytes, {
+    return new NextResponse(Buffer.from(bytes), {
       headers: {
         'Content-Type':        'application/pdf',
         'Content-Disposition': `attachment; filename="${filename}"`,

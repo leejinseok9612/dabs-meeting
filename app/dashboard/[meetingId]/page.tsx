@@ -104,7 +104,7 @@ export default function DashboardPage() {
 
     if (!mtg) { router.push('/dashboard'); return }
     setMeeting(mtg)
-    setSubmissions(subs ?? [])
+    setSubmissions((subs ?? []) as unknown as SubmissionRow[])
     setLastUpdated(new Date())
     setPageLoading(false)
   }, [meetingId, supabase, router])
@@ -150,8 +150,8 @@ export default function DashboardPage() {
           setSubmissions(prev => {
             const exists = prev.find(s => s.id === fresh.id)
             return exists
-              ? prev.map(s => s.id === fresh.id ? fresh : s)
-              : [...prev, fresh]
+              ? prev.map(s => s.id === fresh.id ? fresh as unknown as SubmissionRow : s)
+              : [...prev, fresh as unknown as SubmissionRow]
           })
           setLastUpdated(new Date())
         }
