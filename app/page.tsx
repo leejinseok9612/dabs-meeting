@@ -5,7 +5,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, FormEvent } from 'react'
-import { createBrowserClient } from '@supabase/auth-helpers-nextjs'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 
 const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_HINT ?? '').split(',').map(e => e.trim())
@@ -15,7 +15,7 @@ type PageState = 'checking' | 'unauthenticated' | 'redirecting'
 
 // ── 메인 ────────────────────────────────────────────────────
 export default function RootPage() {
-  const supabase  = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+  const supabase  = createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
   const router    = useRouter()
   const [state, setState] = useState<PageState>('checking')
 
@@ -60,7 +60,7 @@ export default function RootPage() {
 
 // ── 로그인 패널 ──────────────────────────────────────────────
 function LoginPanel() {
-  const supabase = useMemo(() => createBrowserClient(
+  const supabase = useMemo(() => createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   ), [])
