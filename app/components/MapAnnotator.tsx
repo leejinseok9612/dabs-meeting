@@ -3,7 +3,7 @@
 // MapAnnotator — 지적도 위에 드래그&드롭으로 장비/작업구역 표기
 // 협력업체가 자신의 장비를 지도에 올리면 실시간으로 공유됨
 // ============================================================
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 // ── 마커 타입 정의 ──────────────────────────────────────────
@@ -52,8 +52,8 @@ export default function MapAnnotator({
   const [labelInput,   setLabelInput]   = useState('')
   const [showLabelFor, setShowLabelFor] = useState<{type:string; x:number; y:number} | null>(null)
   const [hoverId,      setHoverId]      = useState<string | null>(null)
-  const mapRef  = useRef<HTMLDivElement>(null)
-  const supabase = createClient()
+  const mapRef   = useRef<HTMLDivElement>(null)
+  const supabase = useMemo(() => createClient(), [])
 
   // ── 마커 로드 ────────────────────────────────────────────
   const loadMarkers = useCallback(async () => {

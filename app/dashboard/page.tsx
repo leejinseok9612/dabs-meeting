@@ -3,9 +3,10 @@
 // ============================================================
 'use client'
 
-import { useState, useEffect, useMemo, FormEvent } from 'react'
+import { useState, useEffect, useMemo, FormEvent, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import PinGate from '@/app/components/PinGate'
 
 // ── 타입 ────────────────────────────────────────────────────
 interface Meeting {
@@ -38,6 +39,9 @@ function thisMonthStart() {
 export default function AdminMeetingsPage() {
   const supabase = useMemo(() => createClient(), [])
   const router   = useRouter()
+
+  // PIN 인증
+  const [pinVerified, setPinVerified] = useState(false)
 
   const [meetings,     setMeetings]     = useState<Meeting[]>([])
   const [teams,        setTeams]        = useState<Team[]>([])
@@ -143,7 +147,8 @@ export default function AdminMeetingsPage() {
     setPageLoading(false)
   }
 
-  useEffect(() => { loadData() }, [supabase])
+  // PIN 인증 후에만 데이터 로드
+  useEffect(() => { if (pinVerified) loadData() }, [supabase, pinVerified])
 
   // ── 회의 생성 ────────────────────────────────────────────
   async function handleCreate(e: FormEvent) {
@@ -269,6 +274,9 @@ export default function AdminMeetingsPage() {
     await supabase.auth.signOut()
     router.replace('/')
   }
+
+  // PIN 인증 화면
+  if (!pinVerified) return <PinGate onSuccess={() => setPinVerified(true)} />
 
   if (pageLoading) return <PageLoader />
 

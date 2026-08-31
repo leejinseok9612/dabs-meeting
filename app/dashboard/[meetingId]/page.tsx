@@ -8,6 +8,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { createClient }                             from '@/lib/supabase/client'
 import { useParams, useRouter }                     from 'next/navigation'
 import type { RealtimeChannel }                     from '@supabase/supabase-js'
+import PinGate                                      from '@/app/components/PinGate'
 
 // ── 고정 업체 순서 ─────────────────────────────────────────
 const COMPANY_ORDER = ['천호엔지니어링', '참마루건설', '지디건설'] as const
@@ -65,6 +66,9 @@ export default function DashboardPage() {
   const supabase  = useMemo(() => createClient(), [])
   const channelRef = useRef<RealtimeChannel | null>(null)
 
+  // PIN 인증
+  const [pinVerified, setPinVerified] = useState(false)
+
   const [meeting,     setMeeting]     = useState<Meeting | null>(null)
   const [submissions, setSubmissions] = useState<SubmissionRow[]>([])
   const [pageLoading, setPageLoading] = useState(true)
@@ -115,7 +119,7 @@ export default function DashboardPage() {
     setPageLoading(false)
   }, [meetingId, supabase, router])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => { if (pinVerified) loadData() }, [loadData, pinVerified])
 
   // ── Supabase Realtime 구독 ────────────────────────────
   useEffect(() => {
@@ -238,8 +242,9 @@ export default function DashboardPage() {
     }
   }
 
-  // ── 로딩 ──────────────────────────────────────────────
-  if (pageLoading) return <PageLoader />
+  // ── PIN 인증 / 로딩 ────────────────────────────────────
+  if (!pinVerified) return <PinGate onSuccess={() => setPinVerified(true)} />
+  if (pageLoading)  return <PageLoader />
 
   const sorted = sortByCompanyOrder(submissions)
 

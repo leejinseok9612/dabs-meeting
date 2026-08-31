@@ -1,11 +1,13 @@
 // ============================================================
-// app/submit/[teamId]/page.tsx — DABs 협력업체 통합 제출 페이지 v2
-// 탭: 자료제출 | 고위험작업 | 일반작업 | 자재하역/운반
+// app/submit/[teamId]/page.tsx — DABs 협력업체 통합 제출 페이지 v3
+// 레이아웃: 좌측 지적도(협업 지도) / 우측 탭 입력
+// 실시간: 작업항목·자재슬롯 Supabase Realtime 구독
 // ============================================================
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 import MapAnnotator from '@/app/components/MapAnnotator'
 
 // ── 타입 ────────────────────────────────────────────────────
@@ -26,7 +28,7 @@ interface MaterialSlot {
   material_reservations: MaterialReservation[]
 }
 
-type Tab       = 'map' | 'submit' | 'high_risk' | 'general' | 'material'
+type Tab       = 'submit' | 'high_risk' | 'general' | 'material'
 type UploadStep = 'idle' | 'uploading' | 'saving' | 'done' | 'error'
 
 // ── 상수 ────────────────────────────────────────────────────
@@ -40,53 +42,53 @@ const EQUIPMENT_LIST = [
   '롤러', '지게차', '살수차', '집게차', '스크레이퍼', '기타',
 ]
 const DIRECT_INPUT_VALUE = '__직접입력__'
-
 const VEHICLE_LIST = ['덤프트럭', '트레일러', '카고트럭', '지게차', '크레인차', '탱크로리', '기타']
 
 // ── 메인 컴포넌트 ─────────────────────────────────────────
 export default function SubmissionPage() {
-  const params = useParams()
-  const teamId = params.teamId as string
+  const params   = useParams()
+  const teamId   = params.teamId as string
+  const supabase = useMemo(() => createClient(), [])
 
   // 공통
-  const [team,        setTeam]        = useState<Team | null>(null)
-  const [allTeams,    setAllTeams]    = useState<Team[]>([])
-  const [meeting,     setMeeting]     = useState<Meeting | null>(null)
-  const [loading,     setLoading]     = useState(true)
-  const [noMeeting,   setNoMeeting]   = useState(false)
-  const [activeTab,   setActiveTab]   = useState<Tab>('map')
+  const [team,      setTeam]      = useState<Team | null>(null)
+  const [allTeams,  setAllTeams]  = useState<Team[]>([])
+  const [meeting,   setMeeting]   = useState<Meeting | null>(null)
+  const [loading,   setLoading]   = useState(true)
+  const [noMeeting, setNoMeeting] = useState(false)
+  const [activeTab, setActiveTab] = useState<Tab>('high_risk')
 
   // 공지사항
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [showPopup,     setShowPopup]     = useState(false)
   const [popupIdx,      setPopupIdx]      = useState(0)
 
-  // 작업 항목
-  const [workItems,     setWorkItems]     = useState<WorkItem[]>([])
-  const [workLoading,   setWorkLoading]   = useState(false)
+  // 작업 항목 (실시간)
+  const [workItems,   setWorkItems]   = useState<WorkItem[]>([])
+  const [workLoading, setWorkLoading] = useState(false)
 
-  // 자재 슬롯
-  const [slots,         setSlots]         = useState<MaterialSlot[]>([])
-  const [slotsLoading,  setSlotsLoading]  = useState(false)
+  // 자재 슬롯 (실시간)
+  const [slots,        setSlots]        = useState<MaterialSlot[]>([])
+  const [slotsLoading, setSlotsLoading] = useState(false)
 
   // ── 자료제출 폼 상태 ─────────────────────────────────────
   const [personnel, setPersonnel] = useState({
     elderly: '', superElderly: '', foreign: '', female: '', diseased: '', total: '',
   })
-  const [workProcess,  setWorkProcess]  = useState('')
-  const [equipRows,    setEquipRows]    = useState<{type: string; count: string; isCustom: boolean}[]>([
+  const [workProcess, setWorkProcess] = useState('')
+  const [equipRows,   setEquipRows]   = useState<{type: string; count: string; isCustom: boolean}[]>([
     { type: '', count: '', isCustom: false },
   ])
-  const [file,         setFile]         = useState<File | null>(null)
-  const [dragOver,     setDragOver]     = useState(false)
-  const [errors,       setErrors]       = useState<Record<string, string>>({})
-  const [step,         setStep]         = useState<UploadStep>('idle')
-  const [progress,     setProgress]     = useState(0)
-  const [errorMsg,     setErrorMsg]     = useState('')
-  const [downloadUrl,  setDownloadUrl]  = useState('')
-  const [prevLoading,  setPrevLoading]  = useState(false)
-  const [prevDate,     setPrevDate]     = useState<string | null>(null)
-  const [prevLoaded,   setPrevLoaded]   = useState(false)
+  const [file,        setFile]        = useState<File | null>(null)
+  const [dragOver,    setDragOver]    = useState(false)
+  const [errors,      setErrors]      = useState<Record<string, string>>({})
+  const [step,        setStep]        = useState<UploadStep>('idle')
+  const [progress,    setProgress]    = useState(0)
+  const [errorMsg,    setErrorMsg]    = useState('')
+  const [downloadUrl, setDownloadUrl] = useState('')
+  const [prevLoading, setPrevLoading] = useState(false)
+  const [prevDate,    setPrevDate]    = useState<string | null>(null)
+  const [prevLoaded,  setPrevLoaded]  = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ── 초기 데이터 로드 ──────────────────────────────────────
@@ -97,11 +99,10 @@ export default function SubmissionPage() {
       const data = await res.json()
       if (!data.team) { setLoading(false); return }
       setTeam(data.team)
-      if (!data.meeting) { setNoMeeting(true) }
-      else { setMeeting(data.meeting) }
+      if (!data.meeting) setNoMeeting(true)
+      else setMeeting(data.meeting)
       setLoading(false)
     }
-    // 전체 팀 목록 로드 (지도 범례용)
     async function loadTeams() {
       try {
         const res  = await fetch('/api/teams')
@@ -113,7 +114,7 @@ export default function SubmissionPage() {
     loadTeams()
   }, [teamId])
 
-  // 공지사항 로드
+  // 공지사항 로드 (로그인 후 팝업)
   useEffect(() => {
     fetch('/api/announcements?activeOnly=true')
       .then(r => r.json())
@@ -126,25 +127,54 @@ export default function SubmissionPage() {
       .catch(() => {})
   }, [])
 
-  // 작업 항목 로드
-  useEffect(() => {
-    if (!meeting) return
-    setWorkLoading(true)
-    fetch(`/api/work-items?meetingId=${meeting.id}`)
+  // ── 작업항목 로드 + 실시간 구독 ──────────────────────────
+  const reloadWorkItems = useCallback((meetingId: string) => {
+    fetch(`/api/work-items?meetingId=${meetingId}`)
       .then(r => r.json())
       .then((data: WorkItem[]) => { setWorkItems(data); setWorkLoading(false) })
       .catch(() => setWorkLoading(false))
-  }, [meeting])
+  }, [])
 
-  // 자재 슬롯 로드 (탭 전환 시)
   useEffect(() => {
-    if (!meeting || activeTab !== 'material') return
-    setSlotsLoading(true)
-    fetch(`/api/material-slots?meetingId=${meeting.id}`)
+    if (!meeting) return
+    setWorkLoading(true)
+    reloadWorkItems(meeting.id)
+
+    // Realtime 구독 — 작업항목 변경 시 자동 갱신
+    const channel = supabase
+      .channel(`work_items:${meeting.id}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'work_items',
+        filter: `meeting_id=eq.${meeting.id}`,
+      }, () => reloadWorkItems(meeting.id))
+      .subscribe()
+
+    return () => { channel.unsubscribe() }
+  }, [meeting, supabase, reloadWorkItems])
+
+  // ── 자재 슬롯 로드 + 실시간 구독 ─────────────────────────
+  const reloadSlots = useCallback((meetingId: string) => {
+    fetch(`/api/material-slots?meetingId=${meetingId}`)
       .then(r => r.json())
       .then((data: MaterialSlot[]) => { setSlots(data); setSlotsLoading(false) })
       .catch(() => setSlotsLoading(false))
-  }, [meeting, activeTab])
+  }, [])
+
+  useEffect(() => {
+    if (!meeting) return
+    setSlotsLoading(true)
+    reloadSlots(meeting.id)
+
+    // Realtime 구독 — 자재예약 변경 시 자동 갱신
+    const channel = supabase
+      .channel(`material_slots:${meeting.id}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'material_reservations',
+      }, () => reloadSlots(meeting.id))
+      .subscribe()
+
+    return () => { channel.unsubscribe() }
+  }, [meeting, supabase, reloadSlots])
 
   // ── 자료제출 핸들러 ───────────────────────────────────────
   async function handleLoadPrevious() {
@@ -232,8 +262,7 @@ export default function SubmissionPage() {
       const { filePath } = JSON.parse(uploadDone)
       const equipStr = equipRows
         .filter(r => r.type && Number(r.count) > 0)
-        .map(r => `${r.type} ${r.count}대`)
-        .join(', ')
+        .map(r => `${r.type} ${r.count}대`).join(', ')
       const infoRes = await fetch('/api/submit-info', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -262,13 +291,13 @@ export default function SubmissionPage() {
   // ── 작업항목 핸들러 ───────────────────────────────────────
   async function addWorkItem(workType: 'high_risk' | 'general', data: Partial<WorkItem>) {
     if (!meeting) return
-    const res = await fetch('/api/work-items', {
+    await fetch('/api/work-items', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ meeting_id: meeting.id, work_type: workType, team_id: teamId, ...data }),
     })
-    const item = await res.json()
-    setWorkItems(prev => [...prev, item])
+    // Realtime이 자동으로 갱신하지만 즉시성을 위해 reload
+    reloadWorkItems(meeting.id)
   }
 
   async function deleteWorkItem(id: string) {
@@ -276,9 +305,8 @@ export default function SubmissionPage() {
     setWorkItems(prev => prev.filter(i => i.id !== id))
   }
 
-  // 자재 예약 핸들러
+  // ── 자재 예약 핸들러 ─────────────────────────────────────
   async function reserveSlot(slotId: string, desc: string, qty: string, vehicle: string) {
-    if (!teamId) return
     const res = await fetch('/api/material-slots', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -287,35 +315,31 @@ export default function SubmissionPage() {
     if (!res.ok) {
       const err = await res.json()
       alert(err.error || '예약 실패')
-      return
     }
-    // 슬롯 새로고침
-    if (meeting) {
-      const updated = await fetch(`/api/material-slots?meetingId=${meeting.id}`).then(r => r.json())
-      setSlots(updated)
-    }
+    // Realtime이 자동 갱신
   }
 
   async function cancelReservation(reservationId: string) {
     await fetch(`/api/material-slots?reservationId=${reservationId}`, { method: 'DELETE' })
-    if (meeting) {
-      const updated = await fetch(`/api/material-slots?meetingId=${meeting.id}`).then(r => r.json())
-      setSlots(updated)
-    }
+    // Realtime이 자동 갱신
   }
+
+  const isClosed = meeting?.status === 'closed'
 
   // ── 로딩 / 오류 상태 ─────────────────────────────────────
   if (loading) return <FullPageSpinner />
   if (!team)   return <ErrorPage message="업체 정보를 찾을 수 없습니다." />
 
-  const isClosed = meeting?.status === 'closed'
+  // 지도가 있는지 여부
+  const hasMap = !!meeting?.map_file_url
 
   return (
     <div className="min-h-screen bg-slate-100">
-      {/* 공지사항 팝업 */}
+
+      {/* ── 공지사항 팝업 ──────────────────────────────────── */}
       {showPopup && announcements[popupIdx] && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-[fadeInUp_0.2s_ease]">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
             <div className="flex items-center gap-2 mb-4">
               <span className="text-2xl">📢</span>
               <h2 className="text-lg font-bold text-slate-800">공지사항</h2>
@@ -327,17 +351,13 @@ export default function SubmissionPage() {
             </p>
             <div className="flex gap-2">
               {popupIdx < announcements.length - 1 ? (
-                <button
-                  onClick={() => setPopupIdx(i => i + 1)}
-                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors"
-                >
+                <button onClick={() => setPopupIdx(i => i + 1)}
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors">
                   다음 공지 →
                 </button>
               ) : (
-                <button
-                  onClick={() => setShowPopup(false)}
-                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors"
-                >
+                <button onClick={() => setShowPopup(false)}
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors">
                   확인
                 </button>
               )}
@@ -346,146 +366,150 @@ export default function SubmissionPage() {
         </div>
       )}
 
-      {/* 헤더 */}
+      {/* ── 헤더 ───────────────────────────────────────────── */}
       <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-20">
-        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center">
+        <div className="max-w-screen-2xl mx-auto px-4 py-4 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center shrink-0">
             <span className="text-lg">📋</span>
           </div>
-          <div>
-            <h1 className="font-bold text-slate-800 leading-tight">{team.name}</h1>
+          <div className="min-w-0">
+            <h1 className="font-bold text-slate-800 leading-tight truncate">{team.name}</h1>
             {meeting
-              ? <p className="text-xs text-slate-400">{meeting.title} · {meeting.date}</p>
+              ? <p className="text-xs text-slate-400 truncate">{meeting.title} · {meeting.date}</p>
               : <p className="text-xs text-slate-400">DABs 자료 취합 시스템</p>
             }
           </div>
           {isClosed && (
-            <span className="ml-auto px-2.5 py-1 bg-slate-100 text-slate-500 text-xs font-semibold rounded-full">
+            <span className="ml-auto shrink-0 px-2.5 py-1 bg-slate-100 text-slate-500 text-xs font-semibold rounded-full">
               마감됨
             </span>
           )}
-        </div>
-
-        {/* 탭 네비게이션 */}
-        <div className="max-w-2xl mx-auto px-4 flex gap-0 border-t border-slate-100 overflow-x-auto">
-          {([
-            { key: 'map',       label: '🗺️ 협업 지도' },
-            { key: 'submit',    label: '📄 자료제출' },
-            { key: 'high_risk', label: '⚠️ 고위험작업' },
-            { key: 'general',   label: '🔧 일반작업' },
-            { key: 'material',  label: '🚛 자재하역/운반' },
-          ] as { key: Tab; label: string }[]).map(t => (
-            <button
-              key={t.key}
-              onClick={() => setActiveTab(t.key)}
-              className={[
-                'px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors',
-                activeTab === t.key
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-slate-500 hover:text-slate-700',
-              ].join(' ')}
-            >
-              {t.label}
-            </button>
-          ))}
+          {hasMap && !isClosed && (
+            <span className="ml-auto shrink-0 flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              실시간 공유 중
+            </span>
+          )}
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 py-6">
+      {/* ── 메인 레이아웃 ──────────────────────────────────── */}
+      <main className="max-w-screen-2xl mx-auto px-4 py-6">
         {!meeting && noMeeting ? (
           <div className="text-center py-20">
             <p className="text-4xl mb-4">📭</p>
             <p className="text-slate-500">오늘 예정된 회의가 없습니다.</p>
           </div>
         ) : (
-          <>
-            {/* ── 탭: 협업 지도 ──────────────────────────────── */}
-            {activeTab === 'map' && (
-              <div>
-                {meeting?.map_file_url ? (
-                  <MapAnnotator
-                    meetingId={meeting.id}
-                    mapUrl={meeting.map_file_url}
-                    myTeamId={teamId}
-                    allTeamIds={allTeams.map(t => t.id)}
-                    readOnly={false}
-                  />
-                ) : (
-                  <div className="text-center py-20">
-                    <p className="text-4xl mb-4">🗺️</p>
-                    <p className="text-slate-500">관리자가 지적도를 업로드하면 여기에 표시됩니다.</p>
-                  </div>
-                )}
+          <div className={hasMap
+            ? 'grid grid-cols-1 xl:grid-cols-[3fr_2fr] gap-6 items-start'
+            : 'max-w-2xl mx-auto'
+          }>
+
+            {/* ── 왼쪽: 협업 지도 ───────────────────────────── */}
+            {hasMap && (
+              <div className="xl:sticky xl:top-[73px]">
+                <MapAnnotator
+                  meetingId={meeting!.id}
+                  mapUrl={meeting!.map_file_url!}
+                  myTeamId={teamId}
+                  allTeamIds={allTeams.map(t => t.id)}
+                  readOnly={false}
+                />
               </div>
             )}
 
-            {/* ── 탭: 자료제출 ───────────────────────────────── */}
-            {activeTab === 'submit' && (
-              <SubmitTab
-                meeting={meeting}
-                isClosed={isClosed}
-                personnel={personnel} setPersonnel={setPersonnel}
-                workProcess={workProcess} setWorkProcess={setWorkProcess}
-                equipRows={equipRows} setEquipRows={setEquipRows}
-                file={file} setFile={setFile}
-                dragOver={dragOver} setDragOver={setDragOver}
-                errors={errors}
-                step={step} progress={progress}
-                errorMsg={errorMsg} downloadUrl={downloadUrl}
-                prevLoading={prevLoading} prevDate={prevDate} prevLoaded={prevLoaded}
-                fileInputRef={fileInputRef}
-                onLoadPrevious={handleLoadPrevious}
-                onDrop={handleDrop}
-                onFileChange={f => validateAndSetFile(f)}
-                onSubmit={handleSubmit}
-              />
-            )}
+            {/* ── 오른쪽: 탭 + 폼 ───────────────────────────── */}
+            <div>
+              {/* 탭 네비게이션 */}
+              <div className="bg-white rounded-t-xl border border-slate-200 border-b-0
+                              flex overflow-x-auto">
+                {([
+                  { key: 'high_risk', label: '⚠️ 고위험작업' },
+                  { key: 'general',   label: '🔧 일반작업' },
+                  { key: 'material',  label: '🚛 자재하역' },
+                  { key: 'submit',    label: '📄 자료제출' },
+                ] as { key: Tab; label: string }[]).map(t => (
+                  <button
+                    key={t.key}
+                    onClick={() => setActiveTab(t.key)}
+                    className={[
+                      'px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors flex-1',
+                      activeTab === t.key
+                        ? 'border-blue-600 text-blue-600 bg-blue-50/60'
+                        : 'border-transparent text-slate-500 hover:text-slate-700',
+                    ].join(' ')}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
 
-            {/* ── 탭: 고위험작업 ──────────────────────────────── */}
-            {activeTab === 'high_risk' && (
-              <WorkItemTab
-                workType="high_risk"
-                label="고위험작업"
-                color="red"
-                isClosed={isClosed}
-                items={workItems.filter(i => i.work_type === 'high_risk')}
-                isLoading={workLoading}
-                myTeamId={teamId}
-                myTeamName={team.name}
-                onAdd={data => addWorkItem('high_risk', data)}
-                onDelete={deleteWorkItem}
-              />
-            )}
+              {/* 탭 콘텐츠 */}
+              <div className="bg-white rounded-b-xl border border-slate-200 border-t-0 p-5 min-h-[400px]">
 
-            {/* ── 탭: 일반작업 ──────────────────────────────── */}
-            {activeTab === 'general' && (
-              <WorkItemTab
-                workType="general"
-                label="일반작업"
-                color="blue"
-                isClosed={isClosed}
-                items={workItems.filter(i => i.work_type === 'general')}
-                isLoading={workLoading}
-                myTeamId={teamId}
-                myTeamName={team.name}
-                onAdd={data => addWorkItem('general', data)}
-                onDelete={deleteWorkItem}
-              />
-            )}
+                {/* ── 고위험작업 ─────────────────────────────── */}
+                {activeTab === 'high_risk' && (
+                  <WorkItemTab
+                    workType="high_risk" label="고위험작업" color="red"
+                    isClosed={isClosed}
+                    items={workItems.filter(i => i.work_type === 'high_risk')}
+                    isLoading={workLoading}
+                    myTeamId={teamId} myTeamName={team.name}
+                    onAdd={data => addWorkItem('high_risk', data)}
+                    onDelete={deleteWorkItem}
+                  />
+                )}
 
-            {/* ── 탭: 자재하역/운반 ──────────────────────────── */}
-            {activeTab === 'material' && (
-              <MaterialTab
-                isClosed={isClosed}
-                slots={slots}
-                isLoading={slotsLoading}
-                myTeamId={teamId}
-                myTeamName={team.name}
-                onReserve={reserveSlot}
-                onCancel={cancelReservation}
-              />
-            )}
-          </>
+                {/* ── 일반작업 ───────────────────────────────── */}
+                {activeTab === 'general' && (
+                  <WorkItemTab
+                    workType="general" label="일반작업" color="blue"
+                    isClosed={isClosed}
+                    items={workItems.filter(i => i.work_type === 'general')}
+                    isLoading={workLoading}
+                    myTeamId={teamId} myTeamName={team.name}
+                    onAdd={data => addWorkItem('general', data)}
+                    onDelete={deleteWorkItem}
+                  />
+                )}
+
+                {/* ── 자재하역/운반 ──────────────────────────── */}
+                {activeTab === 'material' && (
+                  <MaterialTab
+                    isClosed={isClosed}
+                    slots={slots}
+                    isLoading={slotsLoading}
+                    myTeamId={teamId} myTeamName={team.name}
+                    onReserve={reserveSlot}
+                    onCancel={cancelReservation}
+                  />
+                )}
+
+                {/* ── 자료제출 ───────────────────────────────── */}
+                {activeTab === 'submit' && (
+                  <SubmitTab
+                    meeting={meeting} isClosed={isClosed}
+                    personnel={personnel} setPersonnel={setPersonnel}
+                    workProcess={workProcess} setWorkProcess={setWorkProcess}
+                    equipRows={equipRows} setEquipRows={setEquipRows}
+                    file={file} setFile={setFile}
+                    dragOver={dragOver} setDragOver={setDragOver}
+                    errors={errors}
+                    step={step} progress={progress}
+                    errorMsg={errorMsg} downloadUrl={downloadUrl}
+                    prevLoading={prevLoading} prevDate={prevDate} prevLoaded={prevLoaded}
+                    fileInputRef={fileInputRef}
+                    onLoadPrevious={handleLoadPrevious}
+                    onDrop={handleDrop}
+                    onFileChange={f => validateAndSetFile(f)}
+                    onSubmit={handleSubmit}
+                  />
+                )}
+              </div>
+            </div>
+
+          </div>
         )}
       </main>
     </div>
@@ -527,7 +551,7 @@ function SubmitTab({
   )
 
   if (step === 'done') return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
+    <div className="text-center py-12">
       <div className="text-5xl mb-4">✅</div>
       <h2 className="text-xl font-bold text-slate-800 mb-2">제출 완료!</h2>
       <p className="text-slate-500 text-sm mb-6">자료가 성공적으로 업로드되었습니다.</p>
@@ -575,7 +599,7 @@ function SubmitTab({
                 value={personnel[key as keyof typeof personnel]}
                 onChange={e => setPersonnel(prev => ({ ...prev, [key]: e.target.value }))}
                 disabled={isClosed}
-                className={inputCls + (key === 'total' ? ' col-span-2' : '')}
+                className={inputCls}
               />
             </div>
           ))}
@@ -602,9 +626,7 @@ function SubmitTab({
                 <input type="text" placeholder="장비명 직접 입력"
                   value={row.type}
                   onChange={e => {
-                    const next = [...equipRows]
-                    next[idx] = { ...next[idx], type: e.target.value }
-                    setEquipRows(next)
+                    const next = [...equipRows]; next[idx] = { ...next[idx], type: e.target.value }; setEquipRows(next)
                   }}
                   disabled={isClosed}
                   className={inputCls + ' flex-1'}
@@ -757,7 +779,7 @@ function WorkItemTab({
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-semibold text-slate-700">{label} 현황</h2>
-          <p className="text-xs text-slate-400 mt-0.5">모든 협력업체가 함께 작업 내용을 등록합니다</p>
+          <p className="text-xs text-slate-400 mt-0.5">모든 협력업체가 함께 등록 · 실시간 공유</p>
         </div>
         {!isClosed && (
           <button onClick={() => setShowForm(true)}
@@ -767,9 +789,8 @@ function WorkItemTab({
         )}
       </div>
 
-      {/* 추가 폼 */}
       {showForm && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+        <div className="bg-slate-50 rounded-xl border border-slate-200 p-5">
           <h3 className="font-medium text-slate-700 mb-4">새 {label} 등록</h3>
           <form onSubmit={handleAdd} className="space-y-3">
             <div className="space-y-1">
@@ -809,16 +830,16 @@ function WorkItemTab({
         </div>
       )}
 
-      {/* 작업 목록 */}
       {items.length === 0 ? (
-        <div className="text-center py-16 text-slate-400">
+        <div className="text-center py-12 text-slate-400">
           <p className="text-3xl mb-3">{color === 'red' ? '⚠️' : '🔧'}</p>
           <p className="text-sm">등록된 {label}이 없습니다.</p>
+          <p className="text-xs mt-1 text-slate-300">다른 업체가 등록하면 여기에 실시간으로 표시됩니다.</p>
         </div>
       ) : (
         <div className="space-y-3">
           {items.map(item => (
-            <div key={item.id} className={`bg-white rounded-xl border p-4 ${colorCls.border}`}>
+            <div key={item.id} className={`rounded-xl border p-4 ${colorCls.border} bg-white`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -859,11 +880,11 @@ function MaterialTab({
   onReserve: (slotId: string, desc: string, qty: string, vehicle: string) => Promise<void>
   onCancel: (reservationId: string) => Promise<void>
 }) {
-  const [openSlotId,  setOpenSlotId]  = useState<string | null>(null)
-  const [desc,        setDesc]        = useState('')
-  const [qty,         setQty]         = useState('')
-  const [vehicle,     setVehicle]     = useState('')
-  const [submitting,  setSubmitting]  = useState(false)
+  const [openSlotId, setOpenSlotId] = useState<string | null>(null)
+  const [desc,       setDesc]       = useState('')
+  const [qty,        setQty]        = useState('')
+  const [vehicle,    setVehicle]    = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   if (isLoading) return <LoadingSpinner />
 
@@ -879,42 +900,34 @@ function MaterialTab({
     <div className="space-y-4">
       <div>
         <h2 className="font-semibold text-slate-700">자재 하역/운반 시간 예약</h2>
-        <p className="text-xs text-slate-400 mt-0.5">시간대당 최대 5개 업체 신청 가능 · 초과 시 자동 마감</p>
+        <p className="text-xs text-slate-400 mt-0.5">시간대당 최대 5개 업체 신청 가능 · 실시간 공유</p>
       </div>
 
       <div className="space-y-2">
         {slots.map(slot => {
           const reservations = slot.material_reservations ?? []
-          const count        = reservations.length
-          const isFull       = count >= slot.max_teams
-          const myRes        = reservations.find(r => r.team_id === myTeamId)
-          const isOpen       = openSlotId === slot.id
+          const count  = reservations.length
+          const isFull = count >= slot.max_teams
+          const myRes  = reservations.find(r => r.team_id === myTeamId)
+          const isOpen = openSlotId === slot.id
 
           return (
-            <div key={slot.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-              {/* 슬롯 헤더 */}
+            <div key={slot.id} className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
               <div className="flex items-center justify-between px-5 py-3.5">
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-semibold text-slate-800">🕐 {slot.slot_time}</span>
                   <div className="flex gap-1">
                     {Array.from({ length: slot.max_teams }).map((_, i) => (
-                      <div key={i} className={[
-                        'w-3 h-3 rounded-full',
-                        i < count ? 'bg-orange-400' : 'bg-slate-200',
-                      ].join(' ')} />
+                      <div key={i} className={['w-3 h-3 rounded-full', i < count ? 'bg-orange-400' : 'bg-slate-200'].join(' ')} />
                     ))}
                   </div>
                   <span className="text-xs text-slate-400">{count}/{slot.max_teams}</span>
                 </div>
                 {isFull ? (
-                  <span className="text-xs font-semibold px-2.5 py-1 bg-red-100 text-red-600 rounded-full">
-                    마감
-                  </span>
+                  <span className="text-xs font-semibold px-2.5 py-1 bg-red-100 text-red-600 rounded-full">마감</span>
                 ) : myRes ? (
                   <button onClick={() => onCancel(myRes.id)}
-                    className="text-xs text-red-400 hover:text-red-600 underline underline-offset-2">
-                    예약취소
-                  </button>
+                    className="text-xs text-red-400 hover:text-red-600 underline underline-offset-2">예약취소</button>
                 ) : !isClosed ? (
                   <button onClick={() => setOpenSlotId(isOpen ? null : slot.id)}
                     className="text-xs font-semibold px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors">
@@ -923,9 +936,8 @@ function MaterialTab({
                 ) : null}
               </div>
 
-              {/* 예약 폼 */}
               {isOpen && !myRes && !isFull && (
-                <div className="border-t border-slate-100 px-5 py-4 bg-slate-50 space-y-3">
+                <div className="border-t border-slate-200 px-5 py-4 bg-white space-y-3">
                   <div className="space-y-1">
                     <label className="block text-xs font-medium text-slate-600">자재 내용 *</label>
                     <input type="text" placeholder="예) 철근 20톤" value={desc}
@@ -952,13 +964,12 @@ function MaterialTab({
                 </div>
               )}
 
-              {/* 예약 목록 */}
               {reservations.length > 0 && (
-                <div className="border-t border-slate-100 divide-y divide-slate-50">
+                <div className="border-t border-slate-200 divide-y divide-slate-100">
                   {reservations.map(r => (
                     <div key={r.id} className={[
                       'flex items-center gap-3 px-5 py-2.5 text-xs',
-                      r.team_id === myTeamId ? 'bg-emerald-50' : '',
+                      r.team_id === myTeamId ? 'bg-emerald-50' : 'bg-white',
                     ].join(' ')}>
                       <span className="font-semibold text-slate-700">{r.teams?.name ?? '업체'}</span>
                       {r.material_description && <span className="text-slate-500">{r.material_description}</span>}
@@ -982,8 +993,8 @@ function MaterialTab({
 // ── 공통 컴포넌트 ─────────────────────────────────────────────
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="px-5 py-3.5 border-b border-slate-100">
+    <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+      <div className="px-5 py-3 border-b border-slate-200">
         <h2 className="text-sm font-semibold text-slate-700">{title}</h2>
       </div>
       <div className="p-5">{children}</div>
