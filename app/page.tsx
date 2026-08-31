@@ -15,7 +15,10 @@ type PageState = 'checking' | 'unauthenticated' | 'redirecting'
 
 // ── 메인 ────────────────────────────────────────────────────
 export default function RootPage() {
-  const supabase  = createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+  const supabase  = useMemo(() => createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  ), [])
   const router    = useRouter()
   const [state, setState] = useState<PageState>('checking')
 
