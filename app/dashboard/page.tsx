@@ -66,6 +66,7 @@ export default function AdminMeetingsPage() {
   // ── 데이터 로드 ──────────────────────────────────────────
   async function loadData() {
     const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { router.replace('/'); return }
     setAdminEmail(user?.email ?? '')
 
     // 팀 목록 로드
