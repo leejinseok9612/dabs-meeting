@@ -22,9 +22,19 @@ export default function RootPage() {
   // ── 세션 확인 → 역할에 따라 분기 ──────────────────────────
   useEffect(() => {
     async function checkSession() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { setState('unauthenticated'); return }
-      redirectByRole(session.user.email ?? '')
+      try {
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 5000)
+        )
+        const { data: { session } } = await Promise.race([
+          supabase.auth.getSession(),
+          timeout
+        ])
+        if (!session) { setState('unauthenticated'); return }
+        redirectByRole(session.user.email ?? '')
+      } catch {
+        setState('unauthenticated')
+      }
     }
 
     // Auth 상태 변화 구독 (로그인 완료 시 자동 리다이렉트)
