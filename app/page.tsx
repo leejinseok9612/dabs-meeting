@@ -8,18 +8,16 @@ import { useState, useEffect, useMemo, FormEvent } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
-const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_HINT ?? '').split(',').map(e => e.trim())
-
 type AuthMode = 'login' | 'signup'
-type PageState = 'checking' | 'unauthenticated' | 'redirecting'
+type PageState = 'checking' | 'unauthenticated' | 'loggedIn'
 
 // ── 메인 ────────────────────────────────────────────────────
 export default function RootPage() {
-  const supabase  = useMemo(() => createClient(), [])
-  const router    = useRouter()
-  const [state, setState] = useState<PageState>('checking')
+  const supabase = useMemo(() => createClient(), [])
+  const [state,     setState]     = useState<PageState>('checking')
+  const [userEmail, setUserEmail] = useState('')
 
-  // ── 세션 확인 → 역할에 따라 분기 ──────────────────────────
+  // ── 세션 확인 ──────────────────────────────────────────────
   useEffect(() => {
     async function checkSession() {
       try {
@@ -31,31 +29,100 @@ export default function RootPage() {
           timeout
         ])
         if (!session) { setState('unauthenticated'); return }
-        redirectByRole(session.user.email ?? '')
+        setUserEmail(session.user.email ?? '')
+        setState('loggedIn')
       } catch {
         setState('unauthenticated')
       }
     }
 
-    // Auth 상태 변화 구독 (로그인 완료 시 자동 리다이렉트)
+    // 로그인/로그아웃 상태 변화 구독
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
-        if (session) redirectByRole(session.user.email ?? '')
+        if (session) {
+          setUserEmail(session.user.email ?? '')
+          setState('loggedIn')
+        } else {
+          setState('unauthenticated')
+        }
       }
     )
 
     checkSession()
     return () => subscription.unsubscribe()
-  }, [supabase, router])
+  }, [supabase])
 
-  function redirectByRole(_email: string) {
-    setState('redirecting')
-    // 로그인 후 항상 /dashboard 로 이동 (미들웨어가 권한 처리)
-    router.replace('/dashboard')
+  if (state === 'checking') return <SplashScreen />
+  if (state === 'loggedIn') return <LoggedInPanel email={userEmail} supabase={supabase} />
+  return <LoginPanel />
+}
+
+// ── 로그인 완료 패널 (협력업체 / 관리자 공통) ─────────────────
+function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnType<typeof createClient> }) {
+  const [loggingOut, setLoggingOut] = useState(false)
+
+  async function handleSignOut() {
+    setLoggingOut(true)
+    await supabase.auth.signOut()
+    // onAuthStateChange가 state를 'unauthenticated'로 바꿔줌
   }
 
-  if (state === 'checking' || state === 'redirecting') return <SplashScreen />
-  return <LoginPanel />
+  return (
+    <AuthShell>
+      <div className="space-y-5">
+        {/* 로그인 상태 표시 */}
+        <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3.5">
+          <span className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 text-sm font-bold shrink-0">
+            ✓
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-emerald-800">로그인됨</p>
+            <p className="text-xs text-emerald-600 truncate">{email}</p>
+          </div>
+        </div>
+
+        {/* 협력업체 안내 */}
+        <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-center">
+          <p className="text-2xl mb-2">🏗️</p>
+          <p className="text-sm font-semibold text-slate-700 mb-1">협력업체 담당자</p>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            관리자에게 받은 링크로 접속하세요.<br />
+            <span className="font-mono text-slate-400">/submit/[팀코드]</span>
+          </p>
+        </div>
+
+        {/* 관리자 대시보드 버튼 */}
+        <a
+          href="/dashboard"
+          className="flex items-center justify-between w-full px-5 py-3.5
+                     bg-slate-800 hover:bg-slate-700 text-white rounded-xl
+                     transition-all hover:-translate-y-0.5 group"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-xl">🔒</span>
+            <div>
+              <p className="text-sm font-semibold leading-tight">관리자 대시보드</p>
+              <p className="text-xs text-slate-400">PIN 번호 입력 후 입장</p>
+            </div>
+          </div>
+          <svg className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors"
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </a>
+
+        {/* 로그아웃 */}
+        <button
+          onClick={handleSignOut}
+          disabled={loggingOut}
+          className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-500
+                     hover:text-red-500 hover:border-red-200 text-sm transition-colors disabled:opacity-50"
+        >
+          {loggingOut ? '로그아웃 중...' : '로그아웃'}
+        </button>
+      </div>
+    </AuthShell>
+  )
 }
 
 // ── 로그인 패널 ──────────────────────────────────────────────
@@ -237,34 +304,6 @@ function AuthShell({ children }: { children: React.ReactNode }) {
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-lg shadow-slate-200 p-8">
         {children}
       </div>
-
-      {/* 관리자 대시보드 버튼 */}
-      <div className="mt-5 w-full max-w-sm">
-        <a
-          href="/dashboard"
-          className="flex items-center justify-between w-full px-5 py-3.5
-                     bg-slate-800 hover:bg-slate-700 text-white rounded-2xl
-                     shadow-lg shadow-slate-300 transition-all hover:-translate-y-0.5
-                     group"
-        >
-          <div className="flex items-center gap-3">
-            <span className="text-xl">🔒</span>
-            <div>
-              <p className="text-sm font-semibold leading-tight">관리자 대시보드</p>
-              <p className="text-xs text-slate-400">로그인 후 PIN 입력</p>
-            </div>
-          </div>
-          <svg className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors"
-            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-          </svg>
-        </a>
-      </div>
-
-      {/* 업체 담당자 안내 */}
-      <p className="mt-4 text-xs text-slate-400">
-        업체 담당자는 관리자에게 받은 링크로 접속하세요
-      </p>
     </main>
   )
 }
