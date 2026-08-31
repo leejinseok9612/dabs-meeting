@@ -3,7 +3,7 @@
 // ============================================================
 'use client'
 
-import { useState, useEffect, useMemo, FormEvent, useCallback } from 'react'
+import { useState, useEffect, useMemo, FormEvent } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import PinGate from '@/app/components/PinGate'
@@ -47,7 +47,6 @@ export default function AdminMeetingsPage() {
   const [teams,        setTeams]        = useState<Team[]>([])
   const [pageLoading,  setPageLoading]  = useState(true)
   const [showForm,     setShowForm]     = useState(false)
-  const [adminEmail,   setAdminEmail]   = useState('')
   const [copiedId,     setCopiedId]     = useState<string | null>(null)
 
   // 폼 상태
@@ -112,9 +111,8 @@ export default function AdminMeetingsPage() {
 
   // ── 데이터 로드 ──────────────────────────────────────────
   async function loadData() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { router.replace('/'); return }
-    setAdminEmail(user?.email ?? '')
+    // PIN 인증이 완료된 상태이므로 이메일 로그인 없이도 데이터 로드
+    // (RLS 정책이 public 읽기를 허용함)
 
     // 팀 목록 로드
     const { data: tms } = await supabase
@@ -269,9 +267,9 @@ export default function AdminMeetingsPage() {
     setRangeDownloading(false)
   }
 
-  // ── 로그아웃 ─────────────────────────────────────────────
-  async function handleSignOut() {
-    await supabase.auth.signOut()
+  // ── 나가기 (PIN 세션 초기화) ──────────────────────────────
+  function handleSignOut() {
+    sessionStorage.removeItem('admin_verified')
     router.replace('/')
   }
 
@@ -295,7 +293,7 @@ export default function AdminMeetingsPage() {
             </div>
             <div>
               <h1 className="font-bold text-slate-800 leading-tight">DABs 관리자</h1>
-              <p className="text-xs text-slate-400">{adminEmail}</p>
+              <p className="text-xs text-slate-400">관리자 모드</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
