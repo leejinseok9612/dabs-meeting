@@ -6,10 +6,11 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
+import MapAnnotator from '@/app/components/MapAnnotator'
 
 // ── 타입 ────────────────────────────────────────────────────
 interface Team    { id: string; name: string; department?: string }
-interface Meeting { id: string; title: string; date: string; status: 'open' | 'closed' }
+interface Meeting { id: string; title: string; date: string; status: 'open' | 'closed'; map_file_url?: string }
 interface Announcement { id: string; title: string; content: string }
 interface WorkItem {
   id: string; work_type: 'high_risk' | 'general'; team_id: string
@@ -25,7 +26,7 @@ interface MaterialSlot {
   material_reservations: MaterialReservation[]
 }
 
-type Tab       = 'submit' | 'high_risk' | 'general' | 'material'
+type Tab       = 'map' | 'submit' | 'high_risk' | 'general' | 'material'
 type UploadStep = 'idle' | 'uploading' | 'saving' | 'done' | 'error'
 
 // ── 상수 ────────────────────────────────────────────────────
@@ -49,10 +50,11 @@ export default function SubmissionPage() {
 
   // 공통
   const [team,        setTeam]        = useState<Team | null>(null)
+  const [allTeams,    setAllTeams]    = useState<Team[]>([])
   const [meeting,     setMeeting]     = useState<Meeting | null>(null)
   const [loading,     setLoading]     = useState(true)
   const [noMeeting,   setNoMeeting]   = useState(false)
-  const [activeTab,   setActiveTab]   = useState<Tab>('submit')
+  const [activeTab,   setActiveTab]   = useState<Tab>('map')
 
   // 공지사항
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
@@ -99,7 +101,16 @@ export default function SubmissionPage() {
       else { setMeeting(data.meeting) }
       setLoading(false)
     }
+    // 전체 팀 목록 로드 (지도 범례용)
+    async function loadTeams() {
+      try {
+        const res  = await fetch('/api/teams')
+        const data = await res.json()
+        if (Array.isArray(data)) setAllTeams(data)
+      } catch {}
+    }
     load()
+    loadTeams()
   }, [teamId])
 
   // 공지사항 로드
@@ -358,6 +369,7 @@ export default function SubmissionPage() {
         {/* 탭 네비게이션 */}
         <div className="max-w-2xl mx-auto px-4 flex gap-0 border-t border-slate-100 overflow-x-auto">
           {([
+            { key: 'map',       label: '🗺️ 협업 지도' },
             { key: 'submit',    label: '📄 자료제출' },
             { key: 'high_risk', label: '⚠️ 고위험작업' },
             { key: 'general',   label: '🔧 일반작업' },
@@ -387,6 +399,26 @@ export default function SubmissionPage() {
           </div>
         ) : (
           <>
+            {/* ── 탭: 협업 지도 ──────────────────────────────── */}
+            {activeTab === 'map' && (
+              <div>
+                {meeting?.map_file_url ? (
+                  <MapAnnotator
+                    meetingId={meeting.id}
+                    mapUrl={meeting.map_file_url}
+                    myTeamId={teamId}
+                    allTeamIds={allTeams.map(t => t.id)}
+                    readOnly={false}
+                  />
+                ) : (
+                  <div className="text-center py-20">
+                    <p className="text-4xl mb-4">🗺️</p>
+                    <p className="text-slate-500">관리자가 지적도를 업로드하면 여기에 표시됩니다.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* ── 탭: 자료제출 ───────────────────────────────── */}
             {activeTab === 'submit' && (
               <SubmitTab
