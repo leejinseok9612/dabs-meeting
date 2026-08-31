@@ -79,6 +79,7 @@ export default function DashboardPage() {
   const [mapUrl,       setMapUrl]       = useState<string | null>(null)
   const [mapName,      setMapName]      = useState<string | null>(null)
   const [mapUploading, setMapUploading] = useState(false)
+  const [mapError,     setMapError]     = useState<string | null>(null)
   const mapInputRef = useRef<HTMLInputElement>(null)
 
   // ── 통계 계산 ──────────────────────────────────────────
@@ -172,13 +173,21 @@ export default function DashboardPage() {
     const f = e.target.files?.[0]
     if (!f || !meeting) return
     setMapUploading(true)
-    const fd = new FormData()
-    fd.append('file', f)
-    fd.append('meetingId', meeting.id)
-    const res = await fetch('/api/upload-map', { method: 'POST', body: fd })
-    if (res.ok) {
-      const { url, name } = await res.json()
-      setMapUrl(url); setMapName(name)
+    setMapError(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', f)
+      fd.append('meetingId', meeting.id)
+      const res = await fetch('/api/upload-map', { method: 'POST', body: fd })
+      if (res.ok) {
+        const { url, name } = await res.json()
+        setMapUrl(url); setMapName(name)
+      } else {
+        const err = await res.json().catch(() => ({}))
+        setMapError(err.error ?? '업로드에 실패했습니다.')
+      }
+    } catch {
+      setMapError('네트워크 오류가 발생했습니다.')
     }
     setMapUploading(false)
   }
@@ -336,7 +345,7 @@ export default function DashboardPage() {
                   업로드 중...
                 </span>
               )}
-              <input ref={mapInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.dwg"
+              <input ref={mapInputRef} type="file" accept=".jpg,.jpeg,.png"
                 className="hidden" onChange={handleMapUpload} />
               <button onClick={() => mapInputRef.current?.click()} disabled={mapUploading}
                 className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
@@ -344,22 +353,37 @@ export default function DashboardPage() {
               </button>
             </div>
           </div>
+          {mapError && (
+            <div className="mb-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600">
+              ⚠️ {mapError}
+            </div>
+          )}
           {mapUrl ? (
-            <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-3">
-              <span className="text-xl">📁</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-700 truncate">{mapName}</p>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-3">
+                <span className="text-xl">🖼️</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-700 truncate">{mapName}</p>
+                  <p className="text-xs text-slate-400">업체들이 이 지도에 장비를 표시합니다</p>
+                </div>
+                <a href={mapUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-sm text-blue-600 hover:text-blue-800 underline underline-offset-2">
+                  원본보기
+                </a>
               </div>
-              <a href={mapUrl} target="_blank" rel="noopener noreferrer"
-                className="text-sm text-blue-600 hover:text-blue-800 underline underline-offset-2">
-                열기
-              </a>
+              {/* 지도 미리보기 */}
+              <img
+                src={mapUrl}
+                alt="지적도 미리보기"
+                className="w-full rounded-xl border border-slate-200 max-h-72 object-contain bg-slate-50"
+              />
             </div>
           ) : (
             <div className="border-2 border-dashed border-slate-200 rounded-xl py-8 text-center text-slate-400">
               <p className="text-3xl mb-2">🗺️</p>
               <p className="text-sm">첨부된 파일이 없습니다</p>
-              <p className="text-xs mt-1">PDF, JPG, PNG, DWG 지원</p>
+              <p className="text-xs mt-1">JPG, PNG 이미지 파일을 업로드하세요</p>
+              <p className="text-xs mt-0.5 text-slate-300">※ 업체들이 이 이미지 위에 드래그&드랍으로 장비를 표시합니다</p>
             </div>
           )}
         </section>
