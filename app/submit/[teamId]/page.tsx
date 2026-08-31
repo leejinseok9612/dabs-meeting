@@ -1,7 +1,6 @@
 // ============================================================
-// app/submit/[teamId]/page.tsx
-// DABs 업체 담당자 자료 제출 페이지 — 고정 링크 버전
-// 예) /submit/abc123 (teamId 고정 → 오늘의 회의 자동 탐지)
+// app/submit/[teamId]/page.tsx — DABs 협력업체 통합 제출 페이지 v2
+// 탭: 자료제출 | 고위험작업 | 일반작업 | 자재하역/운반
 // ============================================================
 'use client'
 
@@ -9,174 +8,183 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 
 // ── 타입 ────────────────────────────────────────────────────
-interface Team {
-  id: string
-  name: string
-  department?: string
+interface Team    { id: string; name: string; department?: string }
+interface Meeting { id: string; title: string; date: string; status: 'open' | 'closed' }
+interface Announcement { id: string; title: string; content: string }
+interface WorkItem {
+  id: string; work_type: 'high_risk' | 'general'; team_id: string
+  work_name: string; location?: string; worker_count: number; description?: string
+  teams?: { id: string; name: string }
+}
+interface MaterialReservation {
+  id: string; team_id: string; material_description?: string
+  quantity?: string; vehicle_type?: string; teams?: { id: string; name: string }
+}
+interface MaterialSlot {
+  id: string; slot_time: string; max_teams: number
+  material_reservations: MaterialReservation[]
 }
 
-interface Meeting {
-  id: string
-  title: string
-  date: string
-  status: 'open' | 'closed'
-}
-
+type Tab       = 'submit' | 'high_risk' | 'general' | 'material'
 type UploadStep = 'idle' | 'uploading' | 'saving' | 'done' | 'error'
 
 // ── 상수 ────────────────────────────────────────────────────
 const MAX_FILE_MB    = 50
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024
 
-// 차량계 건설기계 목록 (산업안전보건기준에 관한 규칙 기준)
 const EQUIPMENT_LIST = [
   '굴착기', '소형굴착기', '로더', '불도저', '모터그레이더',
   '덤프트럭', '콘크리트믹서트럭', '콘크리트펌프카',
   '이동식크레인', '천공기', '항타기', '압쇄기',
   '롤러', '지게차', '살수차', '집게차', '스크레이퍼', '기타',
 ]
-
 const DIRECT_INPUT_VALUE = '__직접입력__'
 
-// ── 메인 컴포넌트 ────────────────────────────────────────────
+const VEHICLE_LIST = ['덤프트럭', '트레일러', '카고트럭', '지게차', '크레인차', '탱크로리', '기타']
+
+// ── 메인 컴포넌트 ─────────────────────────────────────────
 export default function SubmissionPage() {
-  const params   = useParams()
-  const teamId   = params.teamId as string
+  const params = useParams()
+  const teamId = params.teamId as string
 
-  // 서버 데이터
-  const [team,      setTeam]      = useState<Team | null>(null)
-  const [meeting,   setMeeting]   = useState<Meeting | null>(null)
-  const [loading,   setLoading]   = useState(true)
-  const [noMeeting, setNoMeeting] = useState(false)
+  // 공통
+  const [team,        setTeam]        = useState<Team | null>(null)
+  const [meeting,     setMeeting]     = useState<Meeting | null>(null)
+  const [loading,     setLoading]     = useState(true)
+  const [noMeeting,   setNoMeeting]   = useState(false)
+  const [activeTab,   setActiveTab]   = useState<Tab>('submit')
 
-  // 이전 내용 불러오기 상태
-  const [prevLoading,  setPrevLoading]  = useState(false)
-  const [prevDate,     setPrevDate]     = useState<string | null>(null)  // 불러온 날짜
-  const [prevLoaded,   setPrevLoaded]   = useState(false)
+  // 공지사항
+  const [announcements, setAnnouncements] = useState<Announcement[]>([])
+  const [showPopup,     setShowPopup]     = useState(false)
+  const [popupIdx,      setPopupIdx]      = useState(0)
 
-  // 폼 상태 — 인원 (카테고리별 + 총인원)
+  // 작업 항목
+  const [workItems,     setWorkItems]     = useState<WorkItem[]>([])
+  const [workLoading,   setWorkLoading]   = useState(false)
+
+  // 자재 슬롯
+  const [slots,         setSlots]         = useState<MaterialSlot[]>([])
+  const [slotsLoading,  setSlotsLoading]  = useState(false)
+
+  // ── 자료제출 폼 상태 ─────────────────────────────────────
   const [personnel, setPersonnel] = useState({
-    elderly:      '',   // 고령자
-    superElderly: '',   // 초고령자
-    foreign:      '',   // 외국인 근로자
-    female:       '',   // 여성 근로자
-    diseased:     '',   // 유질환자
-    total:        '',   // 총인원
+    elderly: '', superElderly: '', foreign: '', female: '', diseased: '', total: '',
   })
-  const [workProcess, setWorkProcess] = useState('')
-  // 장비: [{type: '굴착기', count: '10', isCustom: false}, ...]
-  const [equipRows, setEquipRows] = useState<{type: string; count: string; isCustom: boolean}[]>([
+  const [workProcess,  setWorkProcess]  = useState('')
+  const [equipRows,    setEquipRows]    = useState<{type: string; count: string; isCustom: boolean}[]>([
     { type: '', count: '', isCustom: false },
   ])
-  const [file,           setFile]           = useState<File | null>(null)
-  const [dragOver,       setDragOver]       = useState(false)
-  const [errors,         setErrors]         = useState<Record<string, string>>({})
-
-  // 업로드 상태
-  const [step,        setStep]        = useState<UploadStep>('idle')
-  const [progress,    setProgress]    = useState(0)
-  const [errorMsg,    setErrorMsg]    = useState('')
-  const [downloadUrl, setDownloadUrl] = useState('')
-
+  const [file,         setFile]         = useState<File | null>(null)
+  const [dragOver,     setDragOver]     = useState(false)
+  const [errors,       setErrors]       = useState<Record<string, string>>({})
+  const [step,         setStep]         = useState<UploadStep>('idle')
+  const [progress,     setProgress]     = useState(0)
+  const [errorMsg,     setErrorMsg]     = useState('')
+  const [downloadUrl,  setDownloadUrl]  = useState('')
+  const [prevLoading,  setPrevLoading]  = useState(false)
+  const [prevDate,     setPrevDate]     = useState<string | null>(null)
+  const [prevLoaded,   setPrevLoaded]   = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // ── 초기 데이터 로드 (서버 API 경유 → RLS 우회) ───────────
+  // ── 초기 데이터 로드 ──────────────────────────────────────
   useEffect(() => {
     async function load() {
       const res  = await fetch(`/api/submit-info?teamId=${teamId}`)
       if (res.status === 404) { setLoading(false); return }
-
       const data = await res.json()
       if (!data.team) { setLoading(false); return }
-
       setTeam(data.team)
-      if (!data.meeting) {
-        setNoMeeting(true)
-      } else {
-        setMeeting(data.meeting)
-      }
+      if (!data.meeting) { setNoMeeting(true) }
+      else { setMeeting(data.meeting) }
       setLoading(false)
     }
     load()
   }, [teamId])
 
-  // ── 이전 내용 불러오기 ────────────────────────────────────
+  // 공지사항 로드
+  useEffect(() => {
+    fetch('/api/announcements?activeOnly=true')
+      .then(r => r.json())
+      .then((data: Announcement[]) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setAnnouncements(data)
+          setShowPopup(true)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  // 작업 항목 로드
+  useEffect(() => {
+    if (!meeting) return
+    setWorkLoading(true)
+    fetch(`/api/work-items?meetingId=${meeting.id}`)
+      .then(r => r.json())
+      .then((data: WorkItem[]) => { setWorkItems(data); setWorkLoading(false) })
+      .catch(() => setWorkLoading(false))
+  }, [meeting])
+
+  // 자재 슬롯 로드 (탭 전환 시)
+  useEffect(() => {
+    if (!meeting || activeTab !== 'material') return
+    setSlotsLoading(true)
+    fetch(`/api/material-slots?meetingId=${meeting.id}`)
+      .then(r => r.json())
+      .then((data: MaterialSlot[]) => { setSlots(data); setSlotsLoading(false) })
+      .catch(() => setSlotsLoading(false))
+  }, [meeting, activeTab])
+
+  // ── 자료제출 핸들러 ───────────────────────────────────────
   async function handleLoadPrevious() {
     setPrevLoading(true)
     try {
       const res  = await fetch(`/api/previous-submission?teamId=${teamId}`)
       const data = await res.json()
-
-      if (!data.previous) {
-        alert('이전에 제출한 내용이 없습니다.')
-        return
-      }
-
+      if (!data.previous) { alert('이전에 제출한 내용이 없습니다.'); return }
       const prev = data.previous
-
-      // 인원 세부 정보 복원
       const d = prev.personnel_detail
       setPersonnel({
-        elderly:      String(d?.elderly      ?? ''),
-        superElderly: String(d?.superElderly ?? ''),
-        foreign:      String(d?.foreign      ?? ''),
-        female:       String(d?.female       ?? ''),
-        diseased:     String(d?.diseased     ?? ''),
-        total:        String(prev.personnel_count ?? ''),
+        elderly: String(d?.elderly ?? ''), superElderly: String(d?.superElderly ?? ''),
+        foreign: String(d?.foreign ?? ''), female: String(d?.female ?? ''),
+        diseased: String(d?.diseased ?? ''), total: String(prev.personnel_count ?? ''),
       })
-
-      // 작업공정 복원
       if (prev.work_process) setWorkProcess(prev.work_process)
-
-      // 장비 목록 복원 ("굴착기 10대, 집게차 2대" → [{type, count, isCustom}])
       if (prev.equipment) {
-        const parsed = prev.equipment
-          .split(',')
-          .map((part: string) => {
-            const m = part.trim().match(/^(.+?)\s+(\d+)대$/)
-            if (m) {
-              const type     = m[1].trim()
-              const isCustom = !EQUIPMENT_LIST.includes(type)
-              return { type, count: m[2], isCustom }
-            }
-            return { type: part.trim(), count: '', isCustom: true }
-          })
-          .filter((r: { type: string }) => r.type)
+        const parsed = prev.equipment.split(',').map((part: string) => {
+          const m = part.trim().match(/^(.+?)\s+(\d+)대$/)
+          if (m) {
+            const type = m[1].trim()
+            return { type, count: m[2], isCustom: !EQUIPMENT_LIST.includes(type) }
+          }
+          return { type: part.trim(), count: '', isCustom: true }
+        }).filter((r: {type: string}) => r.type)
         if (parsed.length > 0) setEquipRows(parsed)
       }
-
-      // 불러온 날짜 표시
       const meetings = prev.meetings as { date?: string } | null
       setPrevDate(meetings?.date ?? prev.submitted_at?.split('T')[0] ?? null)
       setPrevLoaded(true)
-    } catch {
-      alert('이전 내용을 불러오는 중 오류가 발생했습니다.')
-    }
+    } catch { alert('이전 내용을 불러오는 중 오류가 발생했습니다.') }
     setPrevLoading(false)
   }
 
-  // ── 파일 드래그&드롭 ──────────────────────────────────────
   const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setDragOver(false)
+    e.preventDefault(); setDragOver(false)
     const dropped = e.dataTransfer.files[0]
     if (dropped) validateAndSetFile(dropped)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, []) // eslint-disable-line
 
   function validateAndSetFile(f: File) {
     if (f.type !== 'application/pdf') {
-      setErrors(prev => ({ ...prev, file: 'PDF 파일만 업로드할 수 있습니다.' }))
-      return
+      setErrors(prev => ({ ...prev, file: 'PDF 파일만 업로드할 수 있습니다.' })); return
     }
     if (f.size > MAX_FILE_BYTES) {
-      setErrors(prev => ({ ...prev, file: `파일 크기는 ${MAX_FILE_MB}MB 이하여야 합니다.` }))
-      return
+      setErrors(prev => ({ ...prev, file: `파일 크기는 ${MAX_FILE_MB}MB 이하여야 합니다.` })); return
     }
     setErrors(prev => { const next = { ...prev }; delete next.file; return next })
     setFile(f)
   }
 
-  // ── 폼 유효성 검사 ────────────────────────────────────────
   function validate(): boolean {
     const errs: Record<string, string> = {}
     if (!personnel.total || Number(personnel.total) <= 0)
@@ -188,606 +196,797 @@ export default function SubmissionPage() {
       errs.equipment = '투입 장비를 1개 이상 입력해 주세요.'
     if (!file)
       errs.file = 'PDF 파일을 첨부해 주세요.'
-    setErrors(errs)
-    return Object.keys(errs).length === 0
+    setErrors(errs); return Object.keys(errs).length === 0
   }
 
-  // ── 제출 핸들러 ───────────────────────────────────────────
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!validate() || !meeting) return
-
-    setStep('uploading')
-    setProgress(20)
-    setErrorMsg('')
-
+    setStep('uploading'); setProgress(0); setErrorMsg('')
     try {
-      // FormData로 서버 API에 전송 (service role로 RLS 우회)
       const fd = new FormData()
-      fd.append('team_id',          teamId)
-      fd.append('meeting_id',       meeting.id)
-      fd.append('personnel_count',  personnel.total)
-      fd.append('personnel_detail', JSON.stringify({
-        elderly:      Number(personnel.elderly)      || 0,
-        superElderly: Number(personnel.superElderly) || 0,
-        foreign:      Number(personnel.foreign)      || 0,
-        female:       Number(personnel.female)        || 0,
-        diseased:     Number(personnel.diseased)     || 0,
-      }))
-      fd.append('work_process',     workProcess.trim())
-      // 장비: "굴착기 10대, 집게차 2대" 형식으로 직렬화
+      fd.append('file', file!)
+      fd.append('teamId', teamId)
+      fd.append('meetingId', meeting.id)
+      const xhr = new XMLHttpRequest()
+      const uploadDone = await new Promise<string>((resolve, reject) => {
+        xhr.upload.onprogress = e => {
+          if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 80))
+        }
+        xhr.onload  = () => xhr.status < 300 ? resolve(xhr.responseText) : reject(new Error(xhr.responseText))
+        xhr.onerror = () => reject(new Error('네트워크 오류'))
+        xhr.open('POST', '/api/submit'); xhr.send(fd)
+      })
+      setProgress(90); setStep('saving')
+      const { filePath } = JSON.parse(uploadDone)
       const equipStr = equipRows
         .filter(r => r.type && Number(r.count) > 0)
         .map(r => `${r.type} ${r.count}대`)
         .join(', ')
-      fd.append('equipment', equipStr)
-      fd.append('file',            file!)
-
-      setStep('saving')
-      setProgress(60)
-
-      const res  = await fetch('/api/submit', { method: 'POST', body: fd })
-      const data = await res.json()
-
-      if (!res.ok) throw new Error(data.error ?? '제출 실패')
-
-      setDownloadUrl(data.signedUrl ?? '')
-      setProgress(100)
-      setStep('done')
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.'
-      setErrorMsg(message)
+      const infoRes = await fetch('/api/submit-info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          teamId, meetingId: meeting.id, filePath,
+          personnelCount: Number(personnel.total),
+          personnelDetail: {
+            elderly: Number(personnel.elderly) || 0,
+            superElderly: Number(personnel.superElderly) || 0,
+            foreign: Number(personnel.foreign) || 0,
+            female: Number(personnel.female) || 0,
+            diseased: Number(personnel.diseased) || 0,
+          },
+          equipment: equipStr, workProcess,
+        }),
+      })
+      if (!infoRes.ok) throw new Error(await infoRes.text())
+      const { downloadUrl: url } = await infoRes.json()
+      setDownloadUrl(url); setProgress(100); setStep('done')
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '오류가 발생했습니다.')
       setStep('error')
     }
   }
 
-  // ── 로딩 / 오류 / 완료 상태 ─────────────────────────────
-  if (loading)           return <LoadingScreen />
-  if (!team)             return <ErrorScreen message="등록되지 않은 업체 링크입니다." />
-  if (noMeeting)         return <NoMeetingScreen teamName={team.name} />
-  if (!meeting)          return <ErrorScreen message="회의 정보를 불러올 수 없습니다." />
-  if (meeting.status === 'closed') return <ErrorScreen message="이미 마감된 회의입니다." />
-  if (step === 'done')   return <SuccessScreen meeting={meeting} team={team} downloadUrl={downloadUrl} />
+  // ── 작업항목 핸들러 ───────────────────────────────────────
+  async function addWorkItem(workType: 'high_risk' | 'general', data: Partial<WorkItem>) {
+    if (!meeting) return
+    const res = await fetch('/api/work-items', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ meeting_id: meeting.id, work_type: workType, team_id: teamId, ...data }),
+    })
+    const item = await res.json()
+    setWorkItems(prev => [...prev, item])
+  }
 
-  // ── 메인 UI ───────────────────────────────────────────────
+  async function deleteWorkItem(id: string) {
+    await fetch(`/api/work-items?id=${id}`, { method: 'DELETE' })
+    setWorkItems(prev => prev.filter(i => i.id !== id))
+  }
+
+  // 자재 예약 핸들러
+  async function reserveSlot(slotId: string, desc: string, qty: string, vehicle: string) {
+    if (!teamId) return
+    const res = await fetch('/api/material-slots', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slotId, teamId, materialDescription: desc, quantity: qty, vehicleType: vehicle }),
+    })
+    if (!res.ok) {
+      const err = await res.json()
+      alert(err.error || '예약 실패')
+      return
+    }
+    // 슬롯 새로고침
+    if (meeting) {
+      const updated = await fetch(`/api/material-slots?meetingId=${meeting.id}`).then(r => r.json())
+      setSlots(updated)
+    }
+  }
+
+  async function cancelReservation(reservationId: string) {
+    await fetch(`/api/material-slots?reservationId=${reservationId}`, { method: 'DELETE' })
+    if (meeting) {
+      const updated = await fetch(`/api/material-slots?meetingId=${meeting.id}`).then(r => r.json())
+      setSlots(updated)
+    }
+  }
+
+  // ── 로딩 / 오류 상태 ─────────────────────────────────────
+  if (loading) return <FullPageSpinner />
+  if (!team)   return <ErrorPage message="업체 정보를 찾을 수 없습니다." />
+
+  const isClosed = meeting?.status === 'closed'
+
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-start justify-center px-4 py-12">
-      <div className="w-full max-w-xl">
-
-        {/* 헤더 */}
-        <div className="mb-8 text-center">
-          <span className="inline-block bg-blue-100 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full mb-3">
-            DABs 회의 자료 제출
-          </span>
-          <h1 className="text-2xl font-bold text-slate-800">{meeting.title}</h1>
-          <p className="text-slate-500 mt-1 text-sm">
-            {new Date(meeting.date).toLocaleDateString('ko-KR', {
-              year: 'numeric', month: 'long', day: 'numeric',
-            })}
-          </p>
-        </div>
-
-        {/* 이전 내용 불러오기 배너 */}
-        <div className="bg-white rounded-xl border border-slate-200 px-5 py-3.5 flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-slate-700">이전 제출 내용 불러오기</p>
-            {prevLoaded && prevDate ? (
-              <p className="text-xs text-emerald-600 mt-0.5">
-                ✅ {new Date(prevDate).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })} 제출 내용이 적용됐습니다. PDF만 새로 첨부해 주세요.
-              </p>
-            ) : (
-              <p className="text-xs text-slate-400 mt-0.5">
-                직전 제출 내용을 불러와서 변경된 부분만 수정하세요.
-              </p>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={handleLoadPrevious}
-            disabled={prevLoading}
-            className={[
-              'shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold',
-              'transition-colors border',
-              prevLoaded
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700',
-              prevLoading ? 'opacity-50 cursor-not-allowed' : '',
-            ].join(' ')}
-          >
-            {prevLoading ? (
-              <>
-                <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                불러오는 중...
-              </>
-            ) : prevLoaded ? (
-              <>↩ 다시 불러오기</>
-            ) : (
-              <>📋 이전 내용 불러오기</>
-            )}
-          </button>
-        </div>
-
-        {/* 폼 카드 */}
-        <form
-          onSubmit={handleSubmit}
-          noValidate
-          className="bg-white rounded-2xl shadow-lg shadow-slate-200 p-8 space-y-6"
-        >
-
-          {/* ① 업체명 (고정, 읽기 전용) */}
-          <Field label="업체명">
-            <div className="w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-700 font-medium">
-              {team.name}
-              {team.department ? ` (${team.department})` : ''}
+    <div className="min-h-screen bg-slate-100">
+      {/* 공지사항 팝업 */}
+      {showPopup && announcements[popupIdx] && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-[fadeInUp_0.2s_ease]">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-2xl">📢</span>
+              <h2 className="text-lg font-bold text-slate-800">공지사항</h2>
+              <span className="ml-auto text-xs text-slate-400">{popupIdx + 1}/{announcements.length}</span>
             </div>
-          </Field>
-
-          {/* ② 투입 인원 */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-slate-700">
-              투입 인원 <span className="text-red-500">*</span>
-            </label>
-
-            {/* 카테고리별 입력 그리드 */}
-            <div className="rounded-xl border border-slate-200 overflow-hidden">
-
-              {/* 고령자 / 초고령자 */}
-              <div className="grid grid-cols-2 divide-x divide-slate-200">
-                <PersonnelCell
-                  label="고령자"
-                  value={personnel.elderly}
-                  onChange={v => setPersonnel(p => ({ ...p, elderly: v }))}
-                  color="amber"
-                />
-                <PersonnelCell
-                  label="초고령자"
-                  value={personnel.superElderly}
-                  onChange={v => setPersonnel(p => ({ ...p, superElderly: v }))}
-                  color="amber"
-                />
-              </div>
-
-              <div className="h-px bg-slate-200" />
-
-              {/* 외국인 / 여성 */}
-              <div className="grid grid-cols-2 divide-x divide-slate-200">
-                <PersonnelCell
-                  label="외국인 근로자"
-                  value={personnel.foreign}
-                  onChange={v => setPersonnel(p => ({ ...p, foreign: v }))}
-                  color="violet"
-                />
-                <PersonnelCell
-                  label="여성 근로자"
-                  value={personnel.female}
-                  onChange={v => setPersonnel(p => ({ ...p, female: v }))}
-                  color="violet"
-                />
-              </div>
-
-              <div className="h-px bg-slate-200" />
-
-              {/* 유질환자 */}
-              <div className="bg-red-50/50">
-                <PersonnelCell
-                  label="유질환자"
-                  hint="위 카테고리 포함 전체 기준"
-                  value={personnel.diseased}
-                  onChange={v => setPersonnel(p => ({ ...p, diseased: v }))}
-                  color="red"
-                  fullWidth
-                />
-              </div>
-
-              <div className="h-px bg-slate-300" />
-
-              {/* 총인원 (필수) */}
-              <div className="bg-blue-50/60 px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-bold text-blue-800 w-28 shrink-0">
-                    총 인원 <span className="text-red-500">*</span>
-                  </span>
-                  <div className="relative flex-1">
-                    <input
-                      type="number"
-                      min={1}
-                      value={personnel.total}
-                      onChange={e => setPersonnel(p => ({ ...p, total: e.target.value }))}
-                      placeholder="전체 투입 인원"
-                      className={[
-                        'w-full rounded-lg border px-3 py-2 text-sm font-semibold text-blue-900',
-                        'outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-8',
-                        errors.personnelTotal
-                          ? 'border-red-300 bg-red-50'
-                          : 'border-blue-200 bg-white',
-                      ].join(' ')}
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 text-xs pointer-events-none">명</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {errors.personnelTotal && (
-              <p className="text-xs text-red-500 flex items-center gap-1">
-                <span>●</span>{errors.personnelTotal}
-              </p>
-            )}
-          </div>
-
-          {/* ③ 작업공정 */}
-          <Field label="작업공정" required error={errors.workProcess} hint="예) 토공사, 구조물 공사">
-            <input
-              type="text"
-              value={workProcess}
-              onChange={e => setWorkProcess(e.target.value)}
-              placeholder="예) 토공사, 구조물 공사"
-              className={inputCls(!!errors.workProcess)}
-            />
-          </Field>
-
-          {/* ④ 투입 장비 — 차량계 건설기계 선택 */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="block text-sm font-medium text-slate-700">
-                투입 장비 <span className="text-red-500">*</span>
-              </label>
-              <button
-                type="button"
-                onClick={() => setEquipRows(r => [...r, { type: '', count: '', isCustom: false }])}
-                className="text-xs text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1"
-              >
-                <span className="text-base leading-none">+</span> 장비 추가
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              {equipRows.map((row, i) => (
-                <div key={i} className="flex gap-2 items-center">
-
-                  {/* 장비 타입: 드롭다운 또는 직접 입력 */}
-                  {row.isCustom ? (
-                    <div className="flex-1 flex gap-1.5 items-center">
-                      <input
-                        type="text"
-                        value={row.type}
-                        onChange={e => setEquipRows(prev => prev.map((r, idx) => idx === i ? { ...r, type: e.target.value } : r))}
-                        placeholder="장비명 직접 입력"
-                        autoFocus
-                        className={[
-                          'flex-1 rounded-lg border px-3 py-2.5 text-sm text-slate-800 bg-white',
-                          'outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
-                          'border-blue-300 hover:border-blue-400 placeholder:text-slate-300',
-                        ].join(' ')}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setEquipRows(prev => prev.map((r, idx) => idx === i ? { ...r, type: '', isCustom: false } : r))}
-                        className="text-xs text-slate-400 hover:text-blue-600 whitespace-nowrap shrink-0 underline"
-                      >
-                        목록 선택
-                      </button>
-                    </div>
-                  ) : (
-                    <select
-                      value={row.type}
-                      onChange={e => {
-                        const val = e.target.value
-                        if (val === DIRECT_INPUT_VALUE) {
-                          setEquipRows(prev => prev.map((r, idx) => idx === i ? { ...r, type: '', isCustom: true } : r))
-                        } else {
-                          setEquipRows(prev => prev.map((r, idx) => idx === i ? { ...r, type: val } : r))
-                        }
-                      }}
-                      className={[
-                        'flex-1 rounded-lg border px-3 py-2.5 text-sm text-slate-800 bg-white',
-                        'outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
-                        'border-slate-300 hover:border-slate-400',
-                      ].join(' ')}
-                    >
-                      <option value="">장비 선택</option>
-                      {EQUIPMENT_LIST.map(eq => (
-                        <option key={eq} value={eq}>{eq}</option>
-                      ))}
-                      <option disabled>──────────</option>
-                      <option value={DIRECT_INPUT_VALUE}>✏️ 직접 입력</option>
-                    </select>
-                  )}
-
-                  <div className="relative w-28 shrink-0">
-                    <input
-                      type="number"
-                      min={1}
-                      value={row.count}
-                      onChange={e => setEquipRows(prev => prev.map((r, idx) => idx === i ? { ...r, count: e.target.value } : r))}
-                      placeholder="0"
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-8"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none">대</span>
-                  </div>
-                  {equipRows.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setEquipRows(prev => prev.filter((_, idx) => idx !== i))}
-                      className="text-slate-300 hover:text-red-400 transition-colors shrink-0 text-lg leading-none"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {errors.equipment && (
-              <p className="text-xs text-red-500 flex items-center gap-1"><span>●</span>{errors.equipment}</p>
-            )}
-          </div>
-
-          {/* ⑤ PDF 파일 업로드 */}
-          <Field label="회의 자료 (PDF)" required error={errors.file}>
-            <div
-              onDrop={handleDrop}
-              onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-              onDragLeave={() => setDragOver(false)}
-              onClick={() => fileInputRef.current?.click()}
-              className={[
-                'relative cursor-pointer rounded-xl border-2 border-dashed px-6 py-8 text-center transition-all',
-                dragOver
-                  ? 'border-blue-500 bg-blue-50'
-                  : errors.file
-                  ? 'border-red-300 bg-red-50'
-                  : file
-                  ? 'border-emerald-400 bg-emerald-50'
-                  : 'border-slate-300 bg-slate-50 hover:border-blue-400 hover:bg-blue-50',
-              ].join(' ')}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="application/pdf"
-                className="sr-only"
-                onChange={e => e.target.files?.[0] && validateAndSetFile(e.target.files[0])}
-              />
-
-              {file ? (
-                <>
-                  <PdfIcon className="mx-auto mb-2 text-emerald-500" />
-                  <p className="font-medium text-emerald-700 text-sm truncate px-4">{file.name}</p>
-                  <p className="text-emerald-500 text-xs mt-1">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                  <button
-                    type="button"
-                    onClick={e => { e.stopPropagation(); setFile(null) }}
-                    className="mt-3 text-xs text-slate-400 hover:text-red-500 underline"
-                  >
-                    파일 제거
-                  </button>
-                </>
+            <h3 className="font-semibold text-slate-700 mb-2">{announcements[popupIdx].title}</h3>
+            <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap mb-6">
+              {announcements[popupIdx].content}
+            </p>
+            <div className="flex gap-2">
+              {popupIdx < announcements.length - 1 ? (
+                <button
+                  onClick={() => setPopupIdx(i => i + 1)}
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors"
+                >
+                  다음 공지 →
+                </button>
               ) : (
-                <>
-                  <UploadIcon className="mx-auto mb-2 text-slate-400" />
-                  <p className="text-slate-600 text-sm font-medium">
-                    클릭하거나 파일을 드래그하세요
-                  </p>
-                  <p className="text-slate-400 text-xs mt-1">PDF 파일 · 최대 {MAX_FILE_MB}MB</p>
-                </>
+                <button
+                  onClick={() => setShowPopup(false)}
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors"
+                >
+                  확인
+                </button>
               )}
             </div>
-          </Field>
+          </div>
+        </div>
+      )}
 
-          {/* 에러 배너 */}
-          {step === 'error' && (
-            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-red-700 text-sm flex gap-2 items-start">
-              <span className="mt-0.5">⚠️</span>
-              <span>{errorMsg}</span>
-            </div>
+      {/* 헤더 */}
+      <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-20">
+        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center">
+            <span className="text-lg">📋</span>
+          </div>
+          <div>
+            <h1 className="font-bold text-slate-800 leading-tight">{team.name}</h1>
+            {meeting
+              ? <p className="text-xs text-slate-400">{meeting.title} · {meeting.date}</p>
+              : <p className="text-xs text-slate-400">DABs 자료 취합 시스템</p>
+            }
+          </div>
+          {isClosed && (
+            <span className="ml-auto px-2.5 py-1 bg-slate-100 text-slate-500 text-xs font-semibold rounded-full">
+              마감됨
+            </span>
           )}
+        </div>
 
-          {/* 진행 표시 */}
-          {(step === 'uploading' || step === 'saving') && (
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs text-slate-500">
-                <span>{step === 'uploading' ? '파일 업로드 중...' : '데이터 저장 중...'}</span>
-                <span>{progress}%</span>
-              </div>
-              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-blue-500 rounded-full transition-all duration-300"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-            </div>
-          )}
+        {/* 탭 네비게이션 */}
+        <div className="max-w-2xl mx-auto px-4 flex gap-0 border-t border-slate-100 overflow-x-auto">
+          {([
+            { key: 'submit',    label: '📄 자료제출' },
+            { key: 'high_risk', label: '⚠️ 고위험작업' },
+            { key: 'general',   label: '🔧 일반작업' },
+            { key: 'material',  label: '🚛 자재하역/운반' },
+          ] as { key: Tab; label: string }[]).map(t => (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              className={[
+                'px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors',
+                activeTab === t.key
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-700',
+              ].join(' ')}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </header>
 
-          {/* 제출 버튼 */}
-          <button
-            type="submit"
-            disabled={step === 'uploading' || step === 'saving'}
-            className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800
-                       text-white font-semibold text-sm transition-colors
-                       disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {step === 'uploading' || step === 'saving' ? '제출 중...' : '자료 제출하기'}
-          </button>
+      <main className="max-w-2xl mx-auto px-4 py-6">
+        {!meeting && noMeeting ? (
+          <div className="text-center py-20">
+            <p className="text-4xl mb-4">📭</p>
+            <p className="text-slate-500">오늘 예정된 회의가 없습니다.</p>
+          </div>
+        ) : (
+          <>
+            {/* ── 탭: 자료제출 ───────────────────────────────── */}
+            {activeTab === 'submit' && (
+              <SubmitTab
+                meeting={meeting}
+                isClosed={isClosed}
+                personnel={personnel} setPersonnel={setPersonnel}
+                workProcess={workProcess} setWorkProcess={setWorkProcess}
+                equipRows={equipRows} setEquipRows={setEquipRows}
+                file={file} setFile={setFile}
+                dragOver={dragOver} setDragOver={setDragOver}
+                errors={errors}
+                step={step} progress={progress}
+                errorMsg={errorMsg} downloadUrl={downloadUrl}
+                prevLoading={prevLoading} prevDate={prevDate} prevLoaded={prevLoaded}
+                fileInputRef={fileInputRef}
+                onLoadPrevious={handleLoadPrevious}
+                onDrop={handleDrop}
+                onFileChange={f => validateAndSetFile(f)}
+                onSubmit={handleSubmit}
+              />
+            )}
 
-        </form>
+            {/* ── 탭: 고위험작업 ──────────────────────────────── */}
+            {activeTab === 'high_risk' && (
+              <WorkItemTab
+                workType="high_risk"
+                label="고위험작업"
+                color="red"
+                isClosed={isClosed}
+                items={workItems.filter(i => i.work_type === 'high_risk')}
+                isLoading={workLoading}
+                myTeamId={teamId}
+                myTeamName={team.name}
+                onAdd={data => addWorkItem('high_risk', data)}
+                onDelete={deleteWorkItem}
+              />
+            )}
 
-        <p className="text-center text-xs text-slate-400 mt-6">
-          제출 후 수정이 필요하면 같은 링크로 다시 접속하여 재제출하면 덮어쓰기됩니다.
-        </p>
-      </div>
-    </main>
+            {/* ── 탭: 일반작업 ──────────────────────────────── */}
+            {activeTab === 'general' && (
+              <WorkItemTab
+                workType="general"
+                label="일반작업"
+                color="blue"
+                isClosed={isClosed}
+                items={workItems.filter(i => i.work_type === 'general')}
+                isLoading={workLoading}
+                myTeamId={teamId}
+                myTeamName={team.name}
+                onAdd={data => addWorkItem('general', data)}
+                onDelete={deleteWorkItem}
+              />
+            )}
+
+            {/* ── 탭: 자재하역/운반 ──────────────────────────── */}
+            {activeTab === 'material' && (
+              <MaterialTab
+                isClosed={isClosed}
+                slots={slots}
+                isLoading={slotsLoading}
+                myTeamId={teamId}
+                myTeamName={team.name}
+                onReserve={reserveSlot}
+                onCancel={cancelReservation}
+              />
+            )}
+          </>
+        )}
+      </main>
+    </div>
   )
 }
 
-// ── 서브 컴포넌트 ─────────────────────────────────────────────
+// ============================================================
+// 탭 컴포넌트들
+// ============================================================
 
-// 인원 카테고리 셀 컴포넌트
-function PersonnelCell({
-  label, hint, value, onChange, color, fullWidth = false,
+// ── 자료제출 탭 ───────────────────────────────────────────────
+function SubmitTab({
+  meeting, isClosed,
+  personnel, setPersonnel, workProcess, setWorkProcess,
+  equipRows, setEquipRows, file, setFile,
+  dragOver, setDragOver, errors, step, progress, errorMsg, downloadUrl,
+  prevLoading, prevDate, prevLoaded, fileInputRef,
+  onLoadPrevious, onDrop, onFileChange, onSubmit,
 }: {
-  label: string
-  hint?: string
-  value: string
-  onChange: (v: string) => void
-  color: 'amber' | 'violet' | 'red'
-  fullWidth?: boolean
+  meeting: Meeting | null; isClosed: boolean
+  personnel: Record<string, string>; setPersonnel: React.Dispatch<React.SetStateAction<{elderly:string;superElderly:string;foreign:string;female:string;diseased:string;total:string}>>
+  workProcess: string; setWorkProcess: (v: string) => void
+  equipRows: {type: string; count: string; isCustom: boolean}[]
+  setEquipRows: (v: {type: string; count: string; isCustom: boolean}[]) => void
+  file: File | null; setFile: (v: File | null) => void
+  dragOver: boolean; setDragOver: (v: boolean) => void
+  errors: Record<string, string>
+  step: UploadStep; progress: number; errorMsg: string; downloadUrl: string
+  prevLoading: boolean; prevDate: string | null; prevLoaded: boolean
+  fileInputRef: React.RefObject<HTMLInputElement | null>
+  onLoadPrevious: () => void; onDrop: (e: React.DragEvent) => void
+  onFileChange: (f: File) => void; onSubmit: (e: React.FormEvent) => void
 }) {
-  const dotColor = {
-    amber:  'bg-amber-400',
-    violet: 'bg-violet-400',
-    red:    'bg-red-400',
-  }[color]
+  if (!meeting) return (
+    <div className="text-center py-20">
+      <p className="text-4xl mb-4">📭</p>
+      <p className="text-slate-500">오늘 예정된 회의가 없습니다.</p>
+    </div>
+  )
+
+  if (step === 'done') return (
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
+      <div className="text-5xl mb-4">✅</div>
+      <h2 className="text-xl font-bold text-slate-800 mb-2">제출 완료!</h2>
+      <p className="text-slate-500 text-sm mb-6">자료가 성공적으로 업로드되었습니다.</p>
+      {downloadUrl && (
+        <a href={downloadUrl} target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition-colors">
+          📄 제출 파일 확인
+        </a>
+      )}
+    </div>
+  )
+
+  const isUploading = step === 'uploading' || step === 'saving'
 
   return (
-    <div className={['px-4 py-3 bg-white', fullWidth ? 'flex items-center gap-3' : ''].join(' ')}>
-      {/* 라벨 */}
-      <div className={['flex items-center gap-1.5 mb-2', fullWidth ? 'mb-0 w-28 shrink-0' : ''].join(' ')}>
-        <span className={`w-2 h-2 rounded-full ${dotColor} shrink-0`} />
-        <span className="text-xs font-semibold text-slate-600">{label}</span>
-        {hint && <span className="text-xs text-slate-400">({hint})</span>}
+    <form onSubmit={onSubmit} className="space-y-5">
+      {/* 이전 내용 불러오기 */}
+      <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-5 py-3">
+        <div>
+          <p className="text-sm font-medium text-blue-700">이전 제출 내용 불러오기</p>
+          {prevLoaded && prevDate && (
+            <p className="text-xs text-blue-500">{prevDate} 제출 내용을 불러왔습니다.</p>
+          )}
+        </div>
+        <button type="button" onClick={onLoadPrevious} disabled={prevLoading || isClosed}
+          className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          {prevLoading ? '불러오는 중...' : '불러오기'}
+        </button>
       </div>
-      {/* 입력 */}
-      <div className={['relative', fullWidth ? 'flex-1' : ''].join(' ')}>
-        <input
-          type="number"
-          min={0}
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          placeholder="0"
-          className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-800
-                     outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-7
-                     placeholder:text-slate-300"
+
+      {/* 인원 */}
+      <Card title="👷 투입 인원">
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { key: 'total',        label: '총 인원 *', placeholder: '명' },
+            { key: 'elderly',      label: '고령자 (65세↑)', placeholder: '명' },
+            { key: 'superElderly', label: '초고령자 (75세↑)', placeholder: '명' },
+            { key: 'foreign',      label: '외국인 근로자', placeholder: '명' },
+            { key: 'female',       label: '여성 근로자', placeholder: '명' },
+            { key: 'diseased',     label: '유질환자', placeholder: '명' },
+          ].map(({ key, label, placeholder }) => (
+            <div key={key} className="space-y-1">
+              <label className="block text-xs font-medium text-slate-600">{label}</label>
+              <input type="number" min="0" placeholder={placeholder}
+                value={personnel[key as keyof typeof personnel]}
+                onChange={e => setPersonnel(prev => ({ ...prev, [key]: e.target.value }))}
+                disabled={isClosed}
+                className={inputCls + (key === 'total' ? ' col-span-2' : '')}
+              />
+            </div>
+          ))}
+        </div>
+        {errors.personnelTotal && <p className="text-xs text-red-500 mt-1">⚠️ {errors.personnelTotal}</p>}
+      </Card>
+
+      {/* 작업공정 */}
+      <Card title="📋 작업공정">
+        <textarea rows={3} placeholder="오늘 진행할 작업 공정을 간략히 입력해 주세요."
+          value={workProcess} onChange={e => setWorkProcess(e.target.value)}
+          disabled={isClosed}
+          className={inputCls + ' resize-none w-full'}
         />
-        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none">명</span>
-      </div>
-    </div>
-  )
-}
+        {errors.workProcess && <p className="text-xs text-red-500 mt-1">⚠️ {errors.workProcess}</p>}
+      </Card>
 
-function Field({
-  label, required, error, hint, children,
-}: {
-  label: string
-  required?: boolean
-  error?: string
-  hint?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="space-y-1.5">
-      <label className="block text-sm font-medium text-slate-700">
-        {label}
-        {required && <span className="text-red-500 ml-1">*</span>}
-      </label>
-      {children}
-      {hint && !error && <p className="text-xs text-slate-400">{hint}</p>}
-      {error && <p className="text-xs text-red-500 flex items-center gap-1"><span>●</span>{error}</p>}
-    </div>
-  )
-}
-
-function LoadingScreen() {
-  return (
-    <main className="min-h-screen flex items-center justify-center bg-slate-50">
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-slate-500 text-sm">불러오는 중...</p>
-      </div>
-    </main>
-  )
-}
-
-function ErrorScreen({ message }: { message: string }) {
-  return (
-    <main className="min-h-screen flex items-center justify-center bg-slate-50">
-      <div className="text-center space-y-2">
-        <p className="text-4xl">🚫</p>
-        <p className="text-slate-700 font-medium">{message}</p>
-      </div>
-    </main>
-  )
-}
-
-function NoMeetingScreen({ teamName }: { teamName: string }) {
-  return (
-    <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 px-4">
-      <div className="bg-white rounded-2xl shadow-lg p-10 max-w-sm w-full text-center space-y-4">
-        <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto">
-          <span className="text-3xl">📅</span>
+      {/* 장비 */}
+      <Card title="🚧 투입 장비">
+        <div className="space-y-2">
+          {equipRows.map((row, idx) => (
+            <div key={idx} className="flex gap-2 items-start">
+              {row.isCustom ? (
+                <input type="text" placeholder="장비명 직접 입력"
+                  value={row.type}
+                  onChange={e => {
+                    const next = [...equipRows]
+                    next[idx] = { ...next[idx], type: e.target.value }
+                    setEquipRows(next)
+                  }}
+                  disabled={isClosed}
+                  className={inputCls + ' flex-1'}
+                />
+              ) : (
+                <select value={row.type}
+                  onChange={e => {
+                    const next = [...equipRows]
+                    const val  = e.target.value
+                    next[idx]  = val === DIRECT_INPUT_VALUE
+                      ? { type: '', count: row.count, isCustom: true }
+                      : { ...next[idx], type: val, isCustom: false }
+                    setEquipRows(next)
+                  }}
+                  disabled={isClosed}
+                  className={inputCls + ' flex-1'}
+                >
+                  <option value="">장비 선택</option>
+                  {EQUIPMENT_LIST.map(eq => <option key={eq} value={eq}>{eq}</option>)}
+                  <option value={DIRECT_INPUT_VALUE}>직접 입력...</option>
+                </select>
+              )}
+              <input type="number" min="1" placeholder="수량"
+                value={row.count}
+                onChange={e => {
+                  const next = [...equipRows]; next[idx] = { ...next[idx], count: e.target.value }; setEquipRows(next)
+                }}
+                disabled={isClosed}
+                className={inputCls + ' w-20'}
+              />
+              <span className="text-sm text-slate-500 py-2.5">대</span>
+              {equipRows.length > 1 && (
+                <button type="button" onClick={() => setEquipRows(equipRows.filter((_, i) => i !== idx))}
+                  disabled={isClosed}
+                  className="p-2.5 text-slate-400 hover:text-red-500 transition-colors">✕</button>
+              )}
+            </div>
+          ))}
         </div>
-        <h2 className="text-xl font-bold text-slate-800">오늘 회의가 없습니다</h2>
-        <p className="text-slate-500 text-sm">
-          <span className="font-medium text-slate-700">{teamName}</span> 님,<br />
-          오늘은 예정된 회의가 없거나 아직 회의가 열리지 않았습니다.<br />
-          회의가 열리면 다시 접속해 주세요.
-        </p>
-      </div>
-    </main>
+        {errors.equipment && <p className="text-xs text-red-500 mt-1">⚠️ {errors.equipment}</p>}
+        <button type="button" onClick={() => setEquipRows([...equipRows, { type: '', count: '', isCustom: false }])}
+          disabled={isClosed}
+          className="mt-2 text-sm text-blue-600 hover:text-blue-800 underline underline-offset-2 disabled:opacity-50">
+          + 장비 추가
+        </button>
+      </Card>
+
+      {/* 파일 첨부 */}
+      <Card title="📎 PDF 파일 첨부">
+        <div
+          onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+          onClick={() => fileInputRef.current?.click()}
+          className={[
+            'border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors',
+            dragOver ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-blue-300',
+            isClosed ? 'opacity-50 pointer-events-none' : '',
+          ].join(' ')}
+        >
+          <input ref={fileInputRef} type="file" accept=".pdf" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) onFileChange(f) }}
+          />
+          {file ? (
+            <div className="flex items-center justify-center gap-3">
+              <span className="text-2xl">📄</span>
+              <div className="text-left">
+                <p className="text-sm font-medium text-slate-700">{file.name}</p>
+                <p className="text-xs text-slate-400">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+              </div>
+              <button type="button" onClick={e => { e.stopPropagation(); setFile(null) }}
+                className="ml-2 text-slate-400 hover:text-red-500">✕</button>
+            </div>
+          ) : (
+            <div className="text-slate-400">
+              <p className="text-3xl mb-2">☁️</p>
+              <p className="text-sm">PDF를 여기에 끌어다 놓거나 클릭하여 선택</p>
+              <p className="text-xs mt-1">최대 {MAX_FILE_MB}MB</p>
+            </div>
+          )}
+        </div>
+        {errors.file && <p className="text-xs text-red-500 mt-1">⚠️ {errors.file}</p>}
+      </Card>
+
+      {/* 업로드 진행 */}
+      {isUploading && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <div className="flex justify-between text-sm mb-2">
+            <span className="text-slate-600">{step === 'saving' ? '저장 중...' : '업로드 중...'}</span>
+            <span className="font-medium text-blue-600">{progress}%</span>
+          </div>
+          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div className="h-full bg-blue-500 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+      )}
+
+      {step === 'error' && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+          ⚠️ {errorMsg}
+        </div>
+      )}
+
+      {!isClosed ? (
+        <button type="submit" disabled={isUploading}
+          className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition-colors disabled:opacity-50">
+          {isUploading ? '제출 중...' : '자료 제출하기 →'}
+        </button>
+      ) : (
+        <div className="text-center py-4 text-slate-400 text-sm">회의가 마감되었습니다.</div>
+      )}
+    </form>
   )
 }
 
-function SuccessScreen({
-  meeting, team, downloadUrl,
+// ── 작업 항목 탭 (고위험 / 일반 공용) ─────────────────────────
+function WorkItemTab({
+  workType, label, color, isClosed, items, isLoading, myTeamId, myTeamName, onAdd, onDelete,
 }: {
-  meeting: Meeting
-  team: Team
-  downloadUrl: string
+  workType: 'high_risk' | 'general'; label: string; color: 'red' | 'blue'
+  isClosed: boolean; items: WorkItem[]; isLoading: boolean
+  myTeamId: string; myTeamName: string
+  onAdd: (data: Partial<WorkItem>) => Promise<void>
+  onDelete: (id: string) => Promise<void>
 }) {
+  const [showForm,    setShowForm]    = useState(false)
+  const [workName,    setWorkName]    = useState('')
+  const [location,    setLocation]    = useState('')
+  const [workerCount, setWorkerCount] = useState('')
+  const [description, setDescription] = useState('')
+  const [saving,      setSaving]      = useState(false)
+
+  const colorCls = color === 'red'
+    ? { badge: 'bg-red-100 text-red-700', btn: 'bg-red-600 hover:bg-red-700', border: 'border-red-200' }
+    : { badge: 'bg-blue-100 text-blue-700', btn: 'bg-blue-600 hover:bg-blue-700', border: 'border-blue-200' }
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault()
+    if (!workName.trim()) return
+    setSaving(true)
+    await onAdd({ work_name: workName, location, worker_count: Number(workerCount) || 0, description })
+    setWorkName(''); setLocation(''); setWorkerCount(''); setDescription('')
+    setShowForm(false); setSaving(false)
+  }
+
+  if (isLoading) return <LoadingSpinner />
+
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 px-4">
-      <div className="bg-white rounded-2xl shadow-lg p-10 max-w-sm w-full text-center space-y-4">
-        <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
-          <span className="text-3xl">✅</span>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-semibold text-slate-700">{label} 현황</h2>
+          <p className="text-xs text-slate-400 mt-0.5">모든 협력업체가 함께 작업 내용을 등록합니다</p>
         </div>
-        <h2 className="text-xl font-bold text-slate-800">제출 완료!</h2>
-        <p className="text-slate-500 text-sm">
-          <span className="font-medium text-slate-700">{team.name}</span>의 자료가<br />
-          <span className="font-medium text-slate-700">{meeting.title}</span>에<br />
-          성공적으로 제출되었습니다.
-        </p>
-        {downloadUrl && (
-          <a
-            href={downloadUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block mt-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700
-                       text-white text-sm font-medium transition-colors"
-          >
-            제출 파일 확인하기 →
-          </a>
+        {!isClosed && (
+          <button onClick={() => setShowForm(true)}
+            className={`px-4 py-2 ${colorCls.btn} text-white text-sm font-semibold rounded-lg transition-colors`}>
+            + 작업 추가
+          </button>
         )}
       </div>
-    </main>
+
+      {/* 추가 폼 */}
+      {showForm && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+          <h3 className="font-medium text-slate-700 mb-4">새 {label} 등록</h3>
+          <form onSubmit={handleAdd} className="space-y-3">
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-slate-600">작업명 *</label>
+              <input type="text" placeholder="예) 철근 배근 작업" value={workName}
+                onChange={e => setWorkName(e.target.value)} className={inputCls} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-slate-600">위치/구간</label>
+                <input type="text" placeholder="예) A동 3층" value={location}
+                  onChange={e => setLocation(e.target.value)} className={inputCls} />
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-slate-600">투입 인원</label>
+                <input type="number" min="0" placeholder="명" value={workerCount}
+                  onChange={e => setWorkerCount(e.target.value)} className={inputCls} />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-slate-600">상세 내용</label>
+              <textarea rows={2} placeholder="작업 상세 내용" value={description}
+                onChange={e => setDescription(e.target.value)}
+                className={inputCls + ' resize-none w-full'} />
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setShowForm(false)}
+                className="flex-1 py-2 border border-slate-200 text-slate-600 text-sm rounded-lg hover:bg-slate-50">
+                취소
+              </button>
+              <button type="submit" disabled={saving}
+                className={`flex-1 py-2 ${colorCls.btn} text-white text-sm font-semibold rounded-lg transition-colors`}>
+                {saving ? '저장 중...' : '등록'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* 작업 목록 */}
+      {items.length === 0 ? (
+        <div className="text-center py-16 text-slate-400">
+          <p className="text-3xl mb-3">{color === 'red' ? '⚠️' : '🔧'}</p>
+          <p className="text-sm">등록된 {label}이 없습니다.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {items.map(item => (
+            <div key={item.id} className={`bg-white rounded-xl border p-4 ${colorCls.border}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <h3 className="font-semibold text-slate-800">{item.work_name}</h3>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${colorCls.badge}`}>
+                      {item.teams?.name ?? '미지정'}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-3 text-xs text-slate-500">
+                    {item.location && <span>📍 {item.location}</span>}
+                    {item.worker_count > 0 && <span>👷 {item.worker_count}명</span>}
+                  </div>
+                  {item.description && (
+                    <p className="text-xs text-slate-500 mt-1.5">{item.description}</p>
+                  )}
+                </div>
+                {item.team_id === myTeamId && !isClosed && (
+                  <button onClick={() => onDelete(item.id)}
+                    className="text-slate-300 hover:text-red-400 transition-colors text-sm p-1">
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
-// ── 스타일 헬퍼 ──────────────────────────────────────────────
-function inputCls(hasError: boolean) {
-  return [
-    'w-full rounded-lg border px-4 py-2.5 text-sm text-slate-800',
-    'outline-none transition-colors placeholder:text-slate-300',
-    'focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
-    hasError
-      ? 'border-red-300 bg-red-50 focus:ring-red-400 focus:border-red-400'
-      : 'border-slate-300 bg-white hover:border-slate-400',
-  ].join(' ')
-}
+// ── 자재 하역/운반 탭 ─────────────────────────────────────────
+function MaterialTab({
+  isClosed, slots, isLoading, myTeamId, myTeamName, onReserve, onCancel,
+}: {
+  isClosed: boolean; slots: MaterialSlot[]; isLoading: boolean
+  myTeamId: string; myTeamName: string
+  onReserve: (slotId: string, desc: string, qty: string, vehicle: string) => Promise<void>
+  onCancel: (reservationId: string) => Promise<void>
+}) {
+  const [openSlotId,  setOpenSlotId]  = useState<string | null>(null)
+  const [desc,        setDesc]        = useState('')
+  const [qty,         setQty]         = useState('')
+  const [vehicle,     setVehicle]     = useState('')
+  const [submitting,  setSubmitting]  = useState(false)
 
-// ── 아이콘 ───────────────────────────────────────────────────
-function UploadIcon({ className = '' }) {
+  if (isLoading) return <LoadingSpinner />
+
+  async function handleReserve(slotId: string) {
+    if (!desc.trim()) { alert('자재 내용을 입력해주세요'); return }
+    setSubmitting(true)
+    await onReserve(slotId, desc, qty, vehicle)
+    setOpenSlotId(null); setDesc(''); setQty(''); setVehicle('')
+    setSubmitting(false)
+  }
+
   return (
-    <svg className={`w-10 h-10 ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round"
-        d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-    </svg>
+    <div className="space-y-4">
+      <div>
+        <h2 className="font-semibold text-slate-700">자재 하역/운반 시간 예약</h2>
+        <p className="text-xs text-slate-400 mt-0.5">시간대당 최대 5개 업체 신청 가능 · 초과 시 자동 마감</p>
+      </div>
+
+      <div className="space-y-2">
+        {slots.map(slot => {
+          const reservations = slot.material_reservations ?? []
+          const count        = reservations.length
+          const isFull       = count >= slot.max_teams
+          const myRes        = reservations.find(r => r.team_id === myTeamId)
+          const isOpen       = openSlotId === slot.id
+
+          return (
+            <div key={slot.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              {/* 슬롯 헤더 */}
+              <div className="flex items-center justify-between px-5 py-3.5">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-semibold text-slate-800">🕐 {slot.slot_time}</span>
+                  <div className="flex gap-1">
+                    {Array.from({ length: slot.max_teams }).map((_, i) => (
+                      <div key={i} className={[
+                        'w-3 h-3 rounded-full',
+                        i < count ? 'bg-orange-400' : 'bg-slate-200',
+                      ].join(' ')} />
+                    ))}
+                  </div>
+                  <span className="text-xs text-slate-400">{count}/{slot.max_teams}</span>
+                </div>
+                {isFull ? (
+                  <span className="text-xs font-semibold px-2.5 py-1 bg-red-100 text-red-600 rounded-full">
+                    마감
+                  </span>
+                ) : myRes ? (
+                  <button onClick={() => onCancel(myRes.id)}
+                    className="text-xs text-red-400 hover:text-red-600 underline underline-offset-2">
+                    예약취소
+                  </button>
+                ) : !isClosed ? (
+                  <button onClick={() => setOpenSlotId(isOpen ? null : slot.id)}
+                    className="text-xs font-semibold px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors">
+                    {isOpen ? '취소' : '신청'}
+                  </button>
+                ) : null}
+              </div>
+
+              {/* 예약 폼 */}
+              {isOpen && !myRes && !isFull && (
+                <div className="border-t border-slate-100 px-5 py-4 bg-slate-50 space-y-3">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-slate-600">자재 내용 *</label>
+                    <input type="text" placeholder="예) 철근 20톤" value={desc}
+                      onChange={e => setDesc(e.target.value)} className={inputCls} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-slate-600">수량/규격</label>
+                      <input type="text" placeholder="예) 20톤" value={qty}
+                        onChange={e => setQty(e.target.value)} className={inputCls} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-slate-600">차량 종류</label>
+                      <select value={vehicle} onChange={e => setVehicle(e.target.value)} className={inputCls}>
+                        <option value="">선택</option>
+                        {VEHICLE_LIST.map(v => <option key={v} value={v}>{v}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <button onClick={() => handleReserve(slot.id)} disabled={submitting}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
+                    {submitting ? '신청 중...' : '예약 신청'}
+                  </button>
+                </div>
+              )}
+
+              {/* 예약 목록 */}
+              {reservations.length > 0 && (
+                <div className="border-t border-slate-100 divide-y divide-slate-50">
+                  {reservations.map(r => (
+                    <div key={r.id} className={[
+                      'flex items-center gap-3 px-5 py-2.5 text-xs',
+                      r.team_id === myTeamId ? 'bg-emerald-50' : '',
+                    ].join(' ')}>
+                      <span className="font-semibold text-slate-700">{r.teams?.name ?? '업체'}</span>
+                      {r.material_description && <span className="text-slate-500">{r.material_description}</span>}
+                      {r.quantity && <span className="text-slate-400">· {r.quantity}</span>}
+                      {r.vehicle_type && <span className="text-slate-400">· {r.vehicle_type}</span>}
+                      {r.team_id === myTeamId && (
+                        <span className="ml-auto text-emerald-600 font-medium">내 예약</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
-function PdfIcon({ className = '' }) {
+// ── 공통 컴포넌트 ─────────────────────────────────────────────
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <svg className={`w-10 h-10 ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round"
-        d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-    </svg>
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-slate-100">
+        <h2 className="text-sm font-semibold text-slate-700">{title}</h2>
+      </div>
+      <div className="p-5">{children}</div>
+    </div>
   )
 }
+
+function LoadingSpinner() {
+  return (
+    <div className="flex justify-center py-20">
+      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+}
+
+function FullPageSpinner() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-100">
+      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+}
+
+function ErrorPage({ message }: { message: string }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-100">
+      <div className="text-center">
+        <p className="text-4xl mb-4">😕</p>
+        <p className="text-slate-500">{message}</p>
+      </div>
+    </div>
+  )
+}
+
+const inputCls =
+  'w-full border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm text-slate-800 ' +
+  'outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ' +
+  'placeholder:text-slate-300 transition-colors disabled:opacity-50 disabled:bg-slate-50'

@@ -63,6 +63,49 @@ export default function AdminMeetingsPage() {
   const [rangeDownloading, setRangeDownloading] = useState(false)
   const [rangeError,       setRangeError]       = useState('')
 
+  // 공지사항 관리
+  const [announcements,    setAnnouncements]    = useState<{id: string; title: string; content: string; is_active: boolean}[]>([])
+  const [showAnnoForm,     setShowAnnoForm]     = useState(false)
+  const [annoTitle,        setAnnoTitle]        = useState('')
+  const [annoContent,      setAnnoContent]      = useState('')
+  const [annoSaving,       setAnnoSaving]       = useState(false)
+
+  // ── 공지사항 로드 ────────────────────────────────────────
+  useEffect(() => {
+    fetch('/api/announcements')
+      .then(r => r.json())
+      .then(data => Array.isArray(data) && setAnnouncements(data))
+      .catch(() => {})
+  }, [])
+
+  async function handleAnnoAdd(e: React.FormEvent) {
+    e.preventDefault()
+    if (!annoTitle.trim() || !annoContent.trim()) return
+    setAnnoSaving(true)
+    const res = await fetch('/api/announcements', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: annoTitle, content: annoContent, is_active: true }),
+    })
+    const item = await res.json()
+    setAnnouncements(prev => [item, ...prev])
+    setAnnoTitle(''); setAnnoContent(''); setShowAnnoForm(false); setAnnoSaving(false)
+  }
+
+  async function handleAnnoToggle(id: string, is_active: boolean) {
+    await fetch('/api/announcements', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, is_active: !is_active }),
+    })
+    setAnnouncements(prev => prev.map(a => a.id === id ? { ...a, is_active: !is_active } : a))
+  }
+
+  async function handleAnnoDelete(id: string) {
+    await fetch(`/api/announcements?id=${id}`, { method: 'DELETE' })
+    setAnnouncements(prev => prev.filter(a => a.id !== id))
+  }
+
   // ── 데이터 로드 ──────────────────────────────────────────
   async function loadData() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -405,6 +448,70 @@ export default function AdminMeetingsPage() {
               </p>
             )}
           </div>
+        </section>
+
+        {/* ── 공지사항 관리 ────────────────────────────────── */}
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <SectionLabel label="공지사항 관리" badge="협력업체 로그인 시 팝업" color="slate" />
+            <button
+              onClick={() => setShowAnnoForm(true)}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg transition-colors"
+            >
+              + 공지 추가
+            </button>
+          </div>
+
+          {showAnnoForm && (
+            <div className="bg-white rounded-xl border border-amber-200 p-5 mb-3 shadow-sm">
+              <form onSubmit={handleAnnoAdd} className="space-y-3">
+                <input
+                  type="text" placeholder="공지 제목"
+                  value={annoTitle} onChange={e => setAnnoTitle(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-400"
+                />
+                <textarea
+                  rows={3} placeholder="공지 내용"
+                  value={annoContent} onChange={e => setAnnoContent(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+                />
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setShowAnnoForm(false)}
+                    className="flex-1 py-2 border border-slate-200 text-slate-600 text-sm rounded-lg hover:bg-slate-50">취소</button>
+                  <button type="submit" disabled={annoSaving}
+                    className="flex-1 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg disabled:opacity-50">
+                    {annoSaving ? '저장 중...' : '공지 등록'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {announcements.length === 0 ? (
+            <p className="text-sm text-slate-400 px-1">등록된 공지사항이 없습니다.</p>
+          ) : (
+            <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 overflow-hidden">
+              {announcements.map(a => (
+                <div key={a.id} className="flex items-center gap-4 px-5 py-3.5">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-700 truncate">{a.title}</p>
+                    <p className="text-xs text-slate-400 truncate">{a.content}</p>
+                  </div>
+                  <button
+                    onClick={() => handleAnnoToggle(a.id, a.is_active)}
+                    className={[
+                      'shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full transition-colors',
+                      a.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-400',
+                    ].join(' ')}
+                  >
+                    {a.is_active ? '활성' : '비활성'}
+                  </button>
+                  <button onClick={() => handleAnnoDelete(a.id)}
+                    className="text-slate-300 hover:text-red-400 transition-colors text-sm">✕</button>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* 빈 상태 */}

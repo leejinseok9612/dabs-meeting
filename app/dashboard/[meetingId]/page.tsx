@@ -75,6 +75,12 @@ export default function DashboardPage() {
   const [mergeError,   setMergeError]   = useState('')
   const [downloadUrl,  setDownloadUrl]  = useState('')
 
+  // 지적도/공사현황도
+  const [mapUrl,       setMapUrl]       = useState<string | null>(null)
+  const [mapName,      setMapName]      = useState<string | null>(null)
+  const [mapUploading, setMapUploading] = useState(false)
+  const mapInputRef = useRef<HTMLInputElement>(null)
+
   // ── 통계 계산 ──────────────────────────────────────────
   const submitted   = submissions.filter(s => s.status === 'submitted')
   const totalPersonnel = submitted.reduce((sum, s) => sum + (s.personnel_count ?? 0), 0)
@@ -90,7 +96,7 @@ export default function DashboardPage() {
     const [{ data: mtg }, { data: subs }] = await Promise.all([
       supabase
         .from('meetings')
-        .select('id,title,date,status')
+        .select('id,title,date,status,map_file_url,map_file_name')
         .eq('id', meetingId)
         .single(),
       supabase
@@ -100,7 +106,9 @@ export default function DashboardPage() {
     ])
 
     if (!mtg) { router.push('/dashboard'); return }
-    setMeeting(mtg)
+    setMeeting(mtg as unknown as Meeting)
+    setMapUrl((mtg as unknown as {map_file_url?: string}).map_file_url ?? null)
+    setMapName((mtg as unknown as {map_file_name?: string}).map_file_name ?? null)
     setSubmissions((subs ?? []) as unknown as SubmissionRow[])
     setLastUpdated(new Date())
     setPageLoading(false)
@@ -158,6 +166,22 @@ export default function DashboardPage() {
     channelRef.current = channel
     return () => { channel.unsubscribe() }
   }, [meetingId, supabase])
+
+  // ── 지적도/공사현황도 업로드 ──────────────────────────
+  async function handleMapUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (!f || !meeting) return
+    setMapUploading(true)
+    const fd = new FormData()
+    fd.append('file', f)
+    fd.append('meetingId', meeting.id)
+    const res = await fetch('/api/upload-map', { method: 'POST', body: fd })
+    if (res.ok) {
+      const { url, name } = await res.json()
+      setMapUrl(url); setMapName(name)
+    }
+    setMapUploading(false)
+  }
 
   // ── 병합 실행 ─────────────────────────────────────────
   async function handleMerge() {
@@ -297,6 +321,48 @@ export default function DashboardPage() {
             }
           />
         </div>
+
+        {/* ── 지적도/공사현황도 ────────────────────────────── */}
+        <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="font-semibold text-slate-700">🗺️ 지적도 / 공사현황도</h2>
+              <p className="text-xs text-slate-400 mt-0.5">이 회의의 현장 도면 파일을 첨부합니다</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {mapUploading && (
+                <span className="text-xs text-slate-400 flex items-center gap-1">
+                  <span className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                  업로드 중...
+                </span>
+              )}
+              <input ref={mapInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.dwg"
+                className="hidden" onChange={handleMapUpload} />
+              <button onClick={() => mapInputRef.current?.click()} disabled={mapUploading}
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                {mapUrl ? '교체' : '파일 첨부'}
+              </button>
+            </div>
+          </div>
+          {mapUrl ? (
+            <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-3">
+              <span className="text-xl">📁</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-700 truncate">{mapName}</p>
+              </div>
+              <a href={mapUrl} target="_blank" rel="noopener noreferrer"
+                className="text-sm text-blue-600 hover:text-blue-800 underline underline-offset-2">
+                열기
+              </a>
+            </div>
+          ) : (
+            <div className="border-2 border-dashed border-slate-200 rounded-xl py-8 text-center text-slate-400">
+              <p className="text-3xl mb-2">🗺️</p>
+              <p className="text-sm">첨부된 파일이 없습니다</p>
+              <p className="text-xs mt-1">PDF, JPG, PNG, DWG 지원</p>
+            </div>
+          )}
+        </section>
 
         {/* ── 제출 현황 테이블 ─────────────────────────────── */}
         <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
