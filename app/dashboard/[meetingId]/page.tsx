@@ -9,6 +9,7 @@ import { createClient }                             from '@/lib/supabase/client'
 import { useParams, useRouter }                     from 'next/navigation'
 import type { RealtimeChannel }                     from '@supabase/supabase-js'
 import PinGate                                      from '@/app/components/PinGate'
+import MapAnnotator                                 from '@/app/components/MapAnnotator'
 
 // ── 고정 업체 순서 ─────────────────────────────────────────
 const COMPANY_ORDER = ['천호엔지니어링', '참마루건설', '지디건설'] as const
@@ -56,8 +57,6 @@ interface Meeting {
   status: 'open' | 'closed'
 }
 
-type MergeStep = 'idle' | 'merging' | 'done' | 'error'
-
 // ── 메인 컴포넌트 ────────────────────────────────────────
 export default function DashboardPage() {
   const params    = useParams()
@@ -74,17 +73,15 @@ export default function DashboardPage() {
   const [pageLoading, setPageLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
-  // 병합 상태
-  const [mergeStep,    setMergeStep]    = useState<MergeStep>('idle')
-  const [mergeError,   setMergeError]   = useState('')
-  const [downloadUrl,  setDownloadUrl]  = useState('')
-
   // 지적도/공사현황도
   const [mapUrl,       setMapUrl]       = useState<string | null>(null)
   const [mapName,      setMapName]      = useState<string | null>(null)
   const [mapUploading, setMapUploading] = useState(false)
   const [mapError,     setMapError]     = useState<string | null>(null)
   const mapInputRef = useRef<HTMLInputElement>(null)
+
+  // 전체 팀 목록 (MapAnnotator 범례용)
+  const [allTeams, setAllTeams] = useState<{id:string;name:string}[]>([])
 
   // ── 통계 계산 ──────────────────────────────────────────
   const submitted   = submissions.filter(s => s.status === 'submitted')
@@ -119,7 +116,12 @@ export default function DashboardPage() {
     setPageLoading(false)
   }, [meetingId, supabase, router])
 
-  useEffect(() => { if (pinVerified) loadData() }, [loadData, pinVerified])
+  useEffect(() => {
+    if (pinVerified) {
+      loadData()
+      fetch('/api/teams').then(r => r.json()).then(d => Array.isArray(d) && setAllTeams(d)).catch(() => {})
+    }
+  }, [loadData, pinVerified])
 
   // ── Supabase Realtime 구독 ────────────────────────────
   useEffect(() => {
@@ -194,52 +196,6 @@ export default function DashboardPage() {
       setMapError('네트워크 오류가 발생했습니다.')
     }
     setMapUploading(false)
-  }
-
-  // ── 병합 실행 ─────────────────────────────────────────
-  async function handleMerge() {
-    if (submittedCount === 0) return
-    setMergeStep('merging')
-    setMergeError('')
-    setDownloadUrl('')
-
-    try {
-      const res  = await fetch('/api/merge', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ meetingId }),
-      })
-      const data = await res.json()
-
-      if (!res.ok || !data.success) {
-        throw new Error(data.error ?? '병합 실패')
-      }
-      setDownloadUrl(data.downloadUrl)
-      setMergeStep('done')
-    } catch (err: unknown) {
-      setMergeError(err instanceof Error ? err.message : '알 수 없는 오류')
-      setMergeStep('error')
-    }
-  }
-
-  // ── 강제 다운로드 (Blob) ──────────────────────────────
-  async function handleDownload() {
-    if (!downloadUrl || !meeting) return
-    try {
-      const res  = await fetch(downloadUrl)
-      const blob = await res.blob()
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement('a')
-      a.href     = url
-      a.download = `DABs_${meeting.date}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
-    } catch {
-      // 실패 시 새 탭에서 열기로 fallback
-      window.open(downloadUrl, '_blank')
-    }
   }
 
   // ── PIN 인증 / 로딩 ────────────────────────────────────
@@ -369,18 +325,20 @@ export default function DashboardPage() {
                 <span className="text-xl">🖼️</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-slate-700 truncate">{mapName}</p>
-                  <p className="text-xs text-slate-400">업체들이 이 지도에 장비를 표시합니다</p>
+                  <p className="text-xs text-slate-400">아이콘을 드래그&드랍해서 장비·작업구역을 표시하세요</p>
                 </div>
                 <a href={mapUrl} target="_blank" rel="noopener noreferrer"
                   className="text-sm text-blue-600 hover:text-blue-800 underline underline-offset-2">
                   원본보기
                 </a>
               </div>
-              {/* 지도 미리보기 */}
-              <img
-                src={mapUrl}
-                alt="지적도 미리보기"
-                className="w-full rounded-xl border border-slate-200 max-h-72 object-contain bg-slate-50"
+              {/* 지도 인터랙션 (관리자도 마커 추가/삭제 가능) */}
+              <MapAnnotator
+                meetingId={meetingId}
+                mapUrl={mapUrl}
+                myTeamId=""
+                allTeamIds={allTeams.map(t => t.id)}
+                readOnly={false}
               />
             </div>
           ) : (
@@ -432,66 +390,6 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* ── 병합 실행 섹션 ───────────────────────────────── */}
-        <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-          <div className="flex items-start justify-between gap-6 flex-wrap">
-            <div>
-              <h2 className="font-semibold text-slate-700 mb-1">PDF 병합 및 다운로드</h2>
-              <p className="text-sm text-slate-400">
-                표지 자동 생성 후 업체 자료를 순서대로 병합합니다.
-                <br />
-                <span className="text-xs">(표지 → 천호엔지니어링 → 참마루건설 → 지디건설)</span>
-              </p>
-            </div>
-
-            <div className="flex flex-col items-end gap-3">
-              {/* 병합 버튼 */}
-              <button
-                onClick={handleMerge}
-                disabled={submittedCount === 0 || mergeStep === 'merging'}
-                className={[
-                  'inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm',
-                  'transition-all shadow-sm',
-                  submittedCount === 0 || mergeStep === 'merging'
-                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                    : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white',
-                ].join(' ')}
-              >
-                {mergeStep === 'merging' ? (
-                  <>
-                    <Spinner />
-                    병합 중...
-                  </>
-                ) : (
-                  <>
-                    <MergeIcon />
-                    오늘의 DABs 자료 병합하기
-                  </>
-                )}
-              </button>
-
-              {/* 에러 */}
-              {mergeStep === 'error' && (
-                <p className="text-xs text-red-500 flex items-center gap-1">
-                  <span>⚠️</span> {mergeError}
-                </p>
-              )}
-
-              {/* 다운로드 버튼 (표지 + 본문 통합) */}
-              {mergeStep === 'done' && downloadUrl && (
-                <button
-                  onClick={handleDownload}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl
-                             bg-emerald-600 hover:bg-emerald-700 text-white text-sm
-                             font-semibold transition-colors shadow-sm"
-                >
-                  <DownloadIcon />
-                  병합 완료 — PDF 다운로드 (표지 포함)
-                </button>
-              )}
-            </div>
-          </div>
-        </section>
 
       </main>
     </div>
@@ -689,24 +587,6 @@ function ChartIcon() {
   )
 }
 
-function MergeIcon() {
-  return (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round"
-        d="M7.5 7.5h-.75A2.25 2.25 0 004.5 9.75v7.5a2.25 2.25 0 002.25 2.25h7.5a2.25 2.25 0 002.25-2.25v-7.5a2.25 2.25 0 00-2.25-2.25h-.75m-6 3.75l3 3m0 0l3-3m-3 3V1.5m6 9h.75a2.25 2.25 0 012.25 2.25v7.5a2.25 2.25 0 01-2.25 2.25h-7.5a2.25 2.25 0 01-2.25-2.25v-.75" />
-    </svg>
-  )
-}
-
-function DownloadIcon() {
-  return (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round"
-        d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-    </svg>
-  )
-}
-
 function PdfSmallIcon() {
   return (
     <svg className="w-3 h-3 flex-shrink-0 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -716,8 +596,3 @@ function PdfSmallIcon() {
   )
 }
 
-function Spinner() {
-  return (
-    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-  )
-}
