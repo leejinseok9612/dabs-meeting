@@ -238,17 +238,33 @@ function AuthShell({ children }: { children: React.ReactNode }) {
         {children}
       </div>
 
-      {/* 역할 안내 */}
-      <div className="mt-6 flex gap-6 text-xs text-slate-400">
-        <span className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-blue-400" />
-          관리자 — 대시보드 접근
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-400" />
-          업체 담당자 — 자료 제출
-        </span>
+      {/* 관리자 대시보드 버튼 */}
+      <div className="mt-5 w-full max-w-sm">
+        <a
+          href="/dashboard"
+          className="flex items-center justify-between w-full px-5 py-3.5
+                     bg-slate-800 hover:bg-slate-700 text-white rounded-2xl
+                     shadow-lg shadow-slate-300 transition-all hover:-translate-y-0.5
+                     group"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-xl">🔒</span>
+            <div>
+              <p className="text-sm font-semibold leading-tight">관리자 대시보드</p>
+              <p className="text-xs text-slate-400">로그인 후 PIN 입력</p>
+            </div>
+          </div>
+          <svg className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors"
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </a>
       </div>
+
+      {/* 업체 담당자 안내 */}
+      <p className="mt-4 text-xs text-slate-400">
+        업체 담당자는 관리자에게 받은 링크로 접속하세요
+      </p>
     </main>
   )
 }
