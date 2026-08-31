@@ -5,7 +5,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
-import { createClient as createSupabaseClient }      from '@supabase/supabase-js'
+import { createClient }                             from '@/lib/supabase/client'
 import { useParams, useRouter }                     from 'next/navigation'
 import type { RealtimeChannel }                     from '@supabase/supabase-js'
 
@@ -62,10 +62,7 @@ export default function DashboardPage() {
   const params    = useParams()
   const meetingId = params.meetingId as string
   const router    = useRouter()
-  const supabase  = useMemo(() => createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  ), [])
+  const supabase  = useMemo(() => createClient(), [])
   const channelRef = useRef<RealtimeChannel | null>(null)
 
   const [meeting,     setMeeting]     = useState<Meeting | null>(null)

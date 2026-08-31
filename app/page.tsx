@@ -5,7 +5,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, FormEvent } from 'react'
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
 const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_HINT ?? '').split(',').map(e => e.trim())
@@ -15,10 +15,7 @@ type PageState = 'checking' | 'unauthenticated' | 'redirecting'
 
 // ── 메인 ────────────────────────────────────────────────────
 export default function RootPage() {
-  const supabase  = useMemo(() => createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  ), [])
+  const supabase  = useMemo(() => createClient(), [])
   const router    = useRouter()
   const [state, setState] = useState<PageState>('checking')
 
@@ -63,10 +60,7 @@ export default function RootPage() {
 
 // ── 로그인 패널 ──────────────────────────────────────────────
 function LoginPanel() {
-  const supabase = useMemo(() => createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  ), [])
+  const supabase = useMemo(() => createClient(), [])
   const [mode,     setMode]     = useState<AuthMode>('login')
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')

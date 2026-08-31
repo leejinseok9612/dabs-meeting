@@ -4,7 +4,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, FormEvent } from 'react'
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
 // ── 타입 ────────────────────────────────────────────────────
@@ -36,10 +36,7 @@ function thisMonthStart() {
 
 // ── 메인 ────────────────────────────────────────────────────
 export default function AdminMeetingsPage() {
-  const supabase = useMemo(() => createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  ), [])
+  const supabase = useMemo(() => createClient(), [])
   const router   = useRouter()
 
   const [meetings,     setMeetings]     = useState<Meeting[]>([])
