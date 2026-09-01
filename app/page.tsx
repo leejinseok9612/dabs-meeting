@@ -140,8 +140,8 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
     return (
       <AuthShell>
         <div className="flex flex-col items-center py-8 gap-3">
-          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-slate-400">업체 정보를 불러오는 중...</p>
+          <div className="w-8 h-8 border-4 border-gray-900 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-gray-500">업체 정보를 불러오는 중...</p>
         </div>
       </AuthShell>
     )
@@ -152,9 +152,9 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
     return (
       <AuthShell>
         <div className="flex flex-col items-center py-8 gap-3">
-          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-slate-600 font-medium">{myTeam.name}</p>
-          <p className="text-xs text-slate-400">페이지로 이동 중...</p>
+          <div className="w-8 h-8 border-4 border-gray-900 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-gray-700 font-medium">{myTeam.name}</p>
+          <p className="text-xs text-gray-500">페이지로 이동 중...</p>
         </div>
       </AuthShell>
     )
@@ -166,16 +166,16 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
       <div className="space-y-5">
 
         {/* 로그인 상태 */}
-        <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
-          <span className="w-7 h-7 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 text-xs font-bold shrink-0">✓</span>
-          <p className="text-xs text-emerald-700 truncate">{email}</p>
+        <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+          <p className="text-xs text-gray-600 truncate">{email}</p>
         </div>
 
         {/* 업체 선택 */}
         <div className="space-y-3">
           <div>
-            <p className="text-sm font-semibold text-slate-800 mb-0.5">소속 업체를 선택하세요</p>
-            <p className="text-xs text-slate-400">한 번 선택하면 다음부터 자동으로 이동합니다</p>
+            <p className="text-sm font-semibold tracking-tight text-gray-900 mb-0.5">소속 업체를 선택하세요</p>
+            <p className="text-xs text-gray-500">한 번 선택하면 다음부터 자동으로 이동합니다</p>
           </div>
 
           <div className="space-y-2">
@@ -184,60 +184,57 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
                 key={t.id}
                 onClick={() => setSelectedId(t.id)}
                 className={[
-                  'w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 text-left transition-all',
+                  'w-full flex items-center gap-3 px-4 py-3 rounded-lg border text-left transition-all',
                   selectedId === t.id
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-slate-200 hover:border-slate-300 bg-white',
+                    ? 'border-gray-900 bg-white'
+                    : 'border-gray-200 hover:border-gray-300 bg-white',
                 ].join(' ')}
               >
                 <span className={[
                   'w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors',
-                  selectedId === t.id ? 'border-blue-500 bg-blue-500' : 'border-slate-300',
+                  selectedId === t.id ? 'border-gray-900 bg-gray-900' : 'border-gray-300',
                 ].join(' ')}>
                   {selectedId === t.id && (
                     <span className="w-2 h-2 rounded-full bg-white" />
                   )}
                 </span>
-                <span className={`text-sm font-medium ${selectedId === t.id ? 'text-blue-700' : 'text-slate-700'}`}>
+                <span className={`text-sm font-medium ${selectedId === t.id ? 'text-gray-900' : 'text-gray-700'}`}>
                   {t.name}
                 </span>
               </button>
             ))}
 
             {allTeams.length === 0 && (
-              <p className="text-sm text-slate-400 text-center py-4">
+              <p className="text-sm text-gray-500 text-center py-4">
                 등록 가능한 업체가 없습니다.<br />관리자에게 문의하세요.
               </p>
             )}
           </div>
 
           {claimError && (
-            <p className="text-xs text-red-500 flex items-center gap-1">⚠️ {claimError}</p>
+            <p className="text-xs text-red-600 flex items-center gap-1">{claimError}</p>
           )}
 
           <button
             onClick={handleClaim}
             disabled={!selectedId || claiming}
-            className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white
+            className="w-full py-3 rounded-lg bg-gray-900 hover:bg-gray-800 text-white
                        font-semibold text-sm transition-colors disabled:opacity-40"
           >
-            {claiming ? '등록 중...' : '내 업체로 등록하고 입장 →'}
+            {claiming ? '등록 중...' : '내 업체로 등록하고 입장'}
           </button>
         </div>
 
         {/* 관리자 대시보드 */}
-        <div className="border-t border-slate-100 pt-4 space-y-2">
+        <div className="border-t border-gray-200 pt-4 space-y-2">
           <a
             href="/dashboard"
             className="flex items-center justify-between w-full px-4 py-3
-                       bg-slate-800 hover:bg-slate-700 text-white rounded-xl
+                       bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg
                        transition-all group text-sm"
           >
-            <div className="flex items-center gap-2.5">
-              <span>🔒</span>
-              <span className="font-semibold">관리자 대시보드</span>
-            </div>
-            <svg className="w-4 h-4 text-slate-400 group-hover:text-white"
+            <span className="font-semibold">관리자 대시보드</span>
+            <svg className="w-4 h-4 text-gray-400 group-hover:text-gray-600"
               fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
             </svg>
@@ -246,7 +243,7 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
           <button
             onClick={handleSignOut}
             disabled={loggingOut}
-            className="w-full py-2 rounded-xl text-slate-400 hover:text-red-500
+            className="w-full py-2 rounded-lg text-gray-500 hover:text-red-600
                        text-xs transition-colors disabled:opacity-50"
           >
             {loggingOut ? '로그아웃 중...' : '로그아웃'}
@@ -304,15 +301,15 @@ function LoginPanel() {
     return (
       <AuthShell>
         <div className="text-center space-y-3 py-4">
-          <div className="text-5xl">📬</div>
-          <h2 className="text-xl font-bold text-slate-800">이메일을 확인하세요</h2>
-          <p className="text-slate-500 text-sm leading-relaxed">
-            <span className="font-medium text-slate-700">{email}</span>로<br />
+          <div className="text-4xl">✓</div>
+          <h2 className="text-lg font-semibold tracking-tight text-gray-900">이메일을 확인하세요</h2>
+          <p className="text-gray-500 text-sm leading-relaxed">
+            <span className="font-medium text-gray-600">{email}</span>로<br />
             {mode === 'signup' ? '가입 확인 링크를' : '로그인 링크를'} 보냈습니다.
           </p>
           <button
             onClick={() => setSent(false)}
-            className="text-xs text-blue-600 underline underline-offset-2 hover:text-blue-800"
+            className="text-xs text-gray-600 underline underline-offset-2 hover:text-gray-900"
           >
             다른 방법으로 로그인
           </button>
@@ -323,21 +320,24 @@ function LoginPanel() {
 
   return (
     <AuthShell>
-      {/* 탭: 로그인 / 회원가입 */}
-      <div className="flex rounded-xl overflow-hidden border border-slate-200 mb-6">
+      {/* 탭: 로그인 / 회원가입 (언더라인 스타일) */}
+      <div className="flex gap-8 border-b border-gray-200 mb-6">
         {(['login', 'signup'] as AuthMode[]).map(m => (
           <button
             key={m}
             type="button"
             onClick={() => { setMode(m); setError('') }}
             className={[
-              'flex-1 py-2.5 text-sm font-semibold transition-colors',
+              'text-sm font-semibold pb-3 transition-colors relative',
               mode === m
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-slate-500 hover:bg-slate-50',
+                ? 'text-gray-900'
+                : 'text-gray-500 hover:text-gray-700',
             ].join(' ')}
           >
             {m === 'login' ? '로그인' : '계정 만들기'}
+            {mode === m && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gray-900" />
+            )}
           </button>
         ))}
       </div>
@@ -345,22 +345,22 @@ function LoginPanel() {
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* 이메일 */}
         <div className="space-y-1.5">
-          <label className="block text-sm font-medium text-slate-700">이메일</label>
+          <label className="block text-xs text-gray-500 uppercase tracking-wide font-medium">이메일</label>
           <input
             type="email"
             required
             value={email}
             onChange={e => setEmail(e.target.value)}
             placeholder="you@example.com"
-            className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm
-                       outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                       placeholder:text-slate-300 transition-colors"
+            className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm
+                       outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900
+                       placeholder:text-gray-400 transition-colors"
           />
         </div>
 
         {/* 비밀번호 */}
         <div className="space-y-1.5">
-          <label className="block text-sm font-medium text-slate-700">비밀번호</label>
+          <label className="block text-xs text-gray-500 uppercase tracking-wide font-medium">비밀번호</label>
           <input
             type="password"
             required
@@ -368,16 +368,16 @@ function LoginPanel() {
             value={password}
             onChange={e => setPassword(e.target.value)}
             placeholder="6자 이상"
-            className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm
-                       outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                       placeholder:text-slate-300 transition-colors"
+            className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm
+                       outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900
+                       placeholder:text-gray-400 transition-colors"
           />
         </div>
 
         {/* 에러 메시지 */}
         {error && (
-          <p className="text-xs text-red-500 flex items-center gap-1">
-            <span>⚠️</span> {error}
+          <p className="text-xs text-red-600">
+            {error}
           </p>
         )}
 
@@ -385,7 +385,7 @@ function LoginPanel() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white
+          className="w-full py-3 rounded-lg bg-gray-900 hover:bg-gray-800 text-white
                      font-semibold text-sm transition-colors disabled:opacity-50"
         >
           {loading ? '처리 중...' : mode === 'login' ? '로그인' : '계정 만들기'}
@@ -395,10 +395,10 @@ function LoginPanel() {
       {/* 구분선 */}
       <div className="relative my-5">
         <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-slate-200" />
+          <div className="w-full border-t border-gray-200" />
         </div>
         <div className="relative flex justify-center">
-          <span className="px-3 bg-white text-xs text-slate-400">또는</span>
+          <span className="px-3 bg-white text-xs text-gray-400">또는</span>
         </div>
       </div>
 
@@ -407,11 +407,11 @@ function LoginPanel() {
         type="button"
         onClick={handleMagicLink}
         disabled={loading}
-        className="w-full py-3 rounded-xl border border-slate-300 hover:border-blue-400
-                   text-slate-600 hover:text-blue-600 font-medium text-sm
-                   transition-colors flex items-center justify-center gap-2"
+        className="w-full py-3 rounded-lg border border-gray-200 hover:bg-gray-50
+                   text-gray-600 font-medium text-sm
+                   transition-colors"
       >
-        <span>✉️</span> 이메일 링크로 로그인
+        이메일 링크로 로그인
       </button>
     </AuthShell>
   )
@@ -420,20 +420,20 @@ function LoginPanel() {
 // ── 공통 레이아웃 래퍼 ───────────────────────────────────────
 function AuthShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50
+    <main className="min-h-screen bg-gray-50
                      flex flex-col items-center justify-center px-4">
       {/* 로고/타이틀 */}
       <div className="mb-8 text-center">
-        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl
-                        bg-blue-600 shadow-lg shadow-blue-200 mb-4">
-          <span className="text-2xl">📋</span>
+        <div className="inline-flex items-center justify-center w-8 h-8 rounded-lg
+                        bg-gray-900 mb-4">
+          <span className="text-sm font-bold tracking-tight text-white">DABs</span>
         </div>
-        <h1 className="text-2xl font-bold text-slate-800">DABs 자료 취합</h1>
-        <p className="text-slate-500 text-sm mt-1">회의 자료 제출 및 관리 시스템</p>
+        <h1 className="text-2xl font-semibold tracking-tight text-gray-900">회의 자료 취합</h1>
+        <p className="text-gray-500 text-sm mt-1">DABs 제출 및 관리 시스템</p>
       </div>
 
       {/* 카드 */}
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-lg shadow-slate-200 p-8">
+      <div className="w-full max-w-sm bg-white border border-gray-200 rounded-xl shadow-sm p-8">
         {children}
       </div>
     </main>
@@ -443,15 +443,10 @@ function AuthShell({ children }: { children: React.ReactNode }) {
 // ── 스플래시 (세션 확인 중) ──────────────────────────────────
 function SplashScreen() {
   return (
-    <main className="min-h-screen flex items-center justify-center bg-slate-50">
-      <div className="flex flex-col items-center gap-4">
-        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-600">
-          <span className="text-2xl">📋</span>
-        </div>
-        <div className="flex items-center gap-2 text-slate-500 text-sm">
-          <span className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          DABs 자료 취합 시스템
-        </div>
+    <main className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
+        <span className="text-sm text-gray-500">로딩 중...</span>
       </div>
     </main>
   )
