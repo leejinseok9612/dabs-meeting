@@ -4,7 +4,7 @@
 // ============================================================
 'use client'
 
-import { useState, useEffect, useMemo, FormEvent } from 'react'
+import { useState, useEffect, useMemo, FormEvent, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -57,69 +57,196 @@ export default function RootPage() {
   return <LoginPanel />
 }
 
-// ── 로그인 완료 패널 (협력업체 / 관리자 공통) ─────────────────
+// ── 로그인 완료 패널 ─────────────────────────────────────────
 function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnType<typeof createClient> }) {
-  const [loggingOut, setLoggingOut] = useState(false)
+  const router = useRouter()
+
+  // 팀 조회 상태
+  const [teamLoading,   setTeamLoading]   = useState(true)
+  const [myTeam,        setMyTeam]        = useState<{ id: string; name: string } | null>(null)
+  const [allTeams,      setAllTeams]      = useState<{ id: string; name: string }[]>([])
+  const [selectedId,    setSelectedId]    = useState('')
+  const [claiming,      setClaiming]      = useState(false)
+  const [claimError,    setClaimError]    = useState('')
+  const [loggingOut,    setLoggingOut]    = useState(false)
+
+  // 내 업체 & 전체 업체 목록 로드
+  const loadTeam = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setTeamLoading(false); return }
+
+    // 이미 등록된 업체 있는지 확인
+    const { data: assigned } = await supabase
+      .from('team_assignments')
+      .select('team_id, teams(id, name)')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (assigned?.teams) {
+      const t = assigned.teams as unknown as { id: string; name: string }
+      setMyTeam(t)
+      // 바로 자기 업체 페이지로 이동
+      router.replace(`/submit/${t.id}`)
+      return
+    }
+
+    // 미등록 → 업체 목록 불러오기
+    const { data: teams } = await supabase
+      .from('teams')
+      .select('id, name')
+      .order('name')
+    setAllTeams(teams ?? [])
+    setTeamLoading(false)
+  }, [supabase, router])
+
+  useEffect(() => { loadTeam() }, [loadTeam])
+
+  // 업체 등록
+  async function handleClaim() {
+    if (!selectedId) return
+    setClaiming(true)
+    setClaimError('')
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setClaimError('로그인 정보를 찾을 수 없습니다.'); setClaiming(false); return }
+
+    const { error } = await supabase
+      .from('team_assignments')
+      .insert({ user_id: user.id, team_id: selectedId })
+
+    if (error) {
+      setClaimError(error.code === '23505'
+        ? '이미 등록된 업체입니다. 관리자에게 문의하세요.'
+        : error.message)
+      setClaiming(false)
+      return
+    }
+
+    router.replace(`/submit/${selectedId}`)
+  }
 
   async function handleSignOut() {
     setLoggingOut(true)
     await supabase.auth.signOut()
-    // onAuthStateChange가 state를 'unauthenticated'로 바꿔줌
   }
 
+  // ── 팀 조회 중 ──
+  if (teamLoading) {
+    return (
+      <AuthShell>
+        <div className="flex flex-col items-center py-8 gap-3">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-slate-400">업체 정보를 불러오는 중...</p>
+        </div>
+      </AuthShell>
+    )
+  }
+
+  // ── 업체가 이미 배정됨 (리다이렉트 중) ──
+  if (myTeam) {
+    return (
+      <AuthShell>
+        <div className="flex flex-col items-center py-8 gap-3">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-slate-600 font-medium">{myTeam.name}</p>
+          <p className="text-xs text-slate-400">페이지로 이동 중...</p>
+        </div>
+      </AuthShell>
+    )
+  }
+
+  // ── 업체 선택 UI ──
   return (
     <AuthShell>
       <div className="space-y-5">
-        {/* 로그인 상태 표시 */}
-        <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3.5">
-          <span className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 text-sm font-bold shrink-0">
-            ✓
-          </span>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-emerald-800">로그인됨</p>
-            <p className="text-xs text-emerald-600 truncate">{email}</p>
+
+        {/* 로그인 상태 */}
+        <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+          <span className="w-7 h-7 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 text-xs font-bold shrink-0">✓</span>
+          <p className="text-xs text-emerald-700 truncate">{email}</p>
+        </div>
+
+        {/* 업체 선택 */}
+        <div className="space-y-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-800 mb-0.5">소속 업체를 선택하세요</p>
+            <p className="text-xs text-slate-400">한 번 선택하면 다음부터 자동으로 이동합니다</p>
           </div>
+
+          <div className="space-y-2">
+            {allTeams.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setSelectedId(t.id)}
+                className={[
+                  'w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 text-left transition-all',
+                  selectedId === t.id
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-slate-200 hover:border-slate-300 bg-white',
+                ].join(' ')}
+              >
+                <span className={[
+                  'w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors',
+                  selectedId === t.id ? 'border-blue-500 bg-blue-500' : 'border-slate-300',
+                ].join(' ')}>
+                  {selectedId === t.id && (
+                    <span className="w-2 h-2 rounded-full bg-white" />
+                  )}
+                </span>
+                <span className={`text-sm font-medium ${selectedId === t.id ? 'text-blue-700' : 'text-slate-700'}`}>
+                  {t.name}
+                </span>
+              </button>
+            ))}
+
+            {allTeams.length === 0 && (
+              <p className="text-sm text-slate-400 text-center py-4">
+                등록 가능한 업체가 없습니다.<br />관리자에게 문의하세요.
+              </p>
+            )}
+          </div>
+
+          {claimError && (
+            <p className="text-xs text-red-500 flex items-center gap-1">⚠️ {claimError}</p>
+          )}
+
+          <button
+            onClick={handleClaim}
+            disabled={!selectedId || claiming}
+            className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white
+                       font-semibold text-sm transition-colors disabled:opacity-40"
+          >
+            {claiming ? '등록 중...' : '내 업체로 등록하고 입장 →'}
+          </button>
         </div>
 
-        {/* 협력업체 안내 */}
-        <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-center">
-          <p className="text-2xl mb-2">🏗️</p>
-          <p className="text-sm font-semibold text-slate-700 mb-1">협력업체 담당자</p>
-          <p className="text-xs text-slate-500 leading-relaxed">
-            관리자에게 받은 링크로 접속하세요.<br />
-            <span className="font-mono text-slate-400">/submit/[팀코드]</span>
-          </p>
-        </div>
-
-        {/* 관리자 대시보드 버튼 */}
-        <a
-          href="/dashboard"
-          className="flex items-center justify-between w-full px-5 py-3.5
-                     bg-slate-800 hover:bg-slate-700 text-white rounded-xl
-                     transition-all hover:-translate-y-0.5 group"
-        >
-          <div className="flex items-center gap-3">
-            <span className="text-xl">🔒</span>
-            <div>
-              <p className="text-sm font-semibold leading-tight">관리자 대시보드</p>
-              <p className="text-xs text-slate-400">PIN 번호 입력 후 입장</p>
+        {/* 관리자 대시보드 */}
+        <div className="border-t border-slate-100 pt-4 space-y-2">
+          <a
+            href="/dashboard"
+            className="flex items-center justify-between w-full px-4 py-3
+                       bg-slate-800 hover:bg-slate-700 text-white rounded-xl
+                       transition-all group text-sm"
+          >
+            <div className="flex items-center gap-2.5">
+              <span>🔒</span>
+              <span className="font-semibold">관리자 대시보드</span>
             </div>
-          </div>
-          <svg className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors"
-            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-          </svg>
-        </a>
+            <svg className="w-4 h-4 text-slate-400 group-hover:text-white"
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </a>
 
-        {/* 로그아웃 */}
-        <button
-          onClick={handleSignOut}
-          disabled={loggingOut}
-          className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-500
-                     hover:text-red-500 hover:border-red-200 text-sm transition-colors disabled:opacity-50"
-        >
-          {loggingOut ? '로그아웃 중...' : '로그아웃'}
-        </button>
+          <button
+            onClick={handleSignOut}
+            disabled={loggingOut}
+            className="w-full py-2 rounded-xl text-slate-400 hover:text-red-500
+                       text-xs transition-colors disabled:opacity-50"
+          >
+            {loggingOut ? '로그아웃 중...' : '로그아웃'}
+          </button>
+        </div>
       </div>
     </AuthShell>
   )
