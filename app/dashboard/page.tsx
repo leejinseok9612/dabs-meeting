@@ -282,34 +282,33 @@ export default function AdminMeetingsPage() {
   const otherMeetings  = meetings.filter(m => m.date !== TODAY)
 
   return (
-    <div className="min-h-screen bg-slate-100">
+    <div className="min-h-screen bg-gray-50">
 
       {/* ── 헤더 ─────────────────────────────────────────── */}
-      <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-20">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-20">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center">
-              <span className="text-lg">📋</span>
+            <div className="px-2.5 py-1 rounded-lg bg-gray-900 text-white text-xs font-semibold">
+              DABs
             </div>
             <div>
-              <h1 className="font-bold text-slate-800 leading-tight">DABs 관리자</h1>
-              <p className="text-xs text-slate-400">관리자 모드</p>
+              <h1 className="font-bold text-gray-900 leading-tight">관리자</h1>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={() => { setShowForm(true); setFormError('') }}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700
-                         text-white text-sm font-semibold rounded-lg transition-colors shadow-sm"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 hover:bg-gray-800
+                         text-white text-sm font-medium rounded-lg transition-colors"
             >
               <PlusIcon /> 새 회의 만들기
             </button>
             <button
               onClick={handleSignOut}
-              className="px-3 py-2 text-sm text-slate-500 hover:text-red-500
-                         border border-slate-200 rounded-lg transition-colors"
+              className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50
+                         border border-gray-200 rounded-lg transition-colors"
             >
-              로그아웃
+              나가기
             </button>
           </div>
         </div>
@@ -320,7 +319,7 @@ export default function AdminMeetingsPage() {
         {/* ── 오늘의 회의 ────────────────────────────────── */}
         {todayMeetings.length > 0 && (
           <section>
-            <SectionLabel label="오늘의 회의" badge={`${TODAY}`} color="blue" />
+            <SectionLabel label="오늘의 회의" badge={`${TODAY}`} />
             <div className="space-y-3">
               {todayMeetings.map(m => (
                 <MeetingCard
@@ -338,7 +337,7 @@ export default function AdminMeetingsPage() {
         {/* ── 이전 회의 ───────────────────────────────────── */}
         {otherMeetings.length > 0 && (
           <section>
-            <SectionLabel label="이전 회의" badge={`${otherMeetings.length}개`} color="slate" />
+            <SectionLabel label="이전 회의" badge={`${otherMeetings.length}개`} />
             <div className="space-y-3">
               {otherMeetings.map(m => (
                 <MeetingCard
@@ -356,34 +355,34 @@ export default function AdminMeetingsPage() {
         {/* ── 업체 고정 제출 링크 ──────────────────────────── */}
         {teams.length > 0 && (
           <section>
-            <SectionLabel label="업체 고정 제출 링크" badge="복사해서 공유" color="slate" />
-            <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 overflow-hidden">
+            <SectionLabel label="업체 고정 제출 링크" badge="복사해서 공유" />
+            <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
               {teams.map(t => {
                 const url = typeof window !== 'undefined'
                   ? `${window.location.origin}/submit/${t.id}`
                   : `/submit/${t.id}`
                 return (
-                  <div key={t.id} className="flex items-center justify-between px-5 py-3.5 gap-4">
+                  <div key={t.id} className="flex items-center justify-between px-5 py-3.5 gap-4 hover:bg-gray-50 transition-colors">
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-700">{t.name}</p>
-                      <p className="text-xs text-slate-400 truncate">/submit/{t.id}</p>
+                      <p className="text-sm font-semibold text-gray-900">{t.name}</p>
+                      <p className="text-xs text-gray-400 truncate">/submit/{t.id}</p>
                     </div>
                     <button
                       onClick={() => copyLink(t.id)}
                       className={[
-                        'shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all',
+                        'shrink-0 px-2 py-1 rounded-md text-xs border transition-all',
                         copiedId === t.id
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-700',
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'border-gray-200 text-gray-600 hover:bg-gray-50',
                       ].join(' ')}
                     >
-                      {copiedId === t.id ? '✅ 복사됨!' : '🔗 링크 복사'}
+                      {copiedId === t.id ? '복사됨!' : '링크 복사'}
                     </button>
                   </div>
                 )
               })}
             </div>
-            <p className="text-xs text-slate-400 mt-2 px-1">
+            <p className="text-xs text-gray-400 mt-2 px-1">
               이 링크는 영구적으로 유효합니다. 업체 담당자에게 한 번만 공유하세요.
             </p>
           </section>
@@ -391,47 +390,47 @@ export default function AdminMeetingsPage() {
 
         {/* ── 기간별 PDF 일괄 다운로드 ─────────────────────── */}
         <section>
-          <SectionLabel label="기간별 PDF 일괄 다운로드" badge="병합 완료된 회의만" color="slate" />
-          <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
-            <p className="text-xs text-slate-400">
+          <SectionLabel label="기간별 PDF 일괄 다운로드" badge="병합 완료된 회의만" />
+          <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+            <p className="text-xs text-gray-500">
               선택한 기간 내에 병합이 완료된 각 회의의 PDF를 날짜순으로 합쳐서 한 번에 다운로드합니다.
             </p>
 
             {/* 날짜 선택 행 */}
             <div className="flex flex-wrap items-end gap-3">
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-slate-500">시작일</label>
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">시작일</label>
                 <input
                   type="date"
                   value={rangeStart}
                   max={rangeEnd}
                   onChange={e => setRangeStart(e.target.value)}
-                  className="border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800
-                             outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900
+                             outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900"
                 />
               </div>
-              <span className="text-slate-400 text-sm pb-2">~</span>
+              <span className="text-gray-400 text-sm pb-2">~</span>
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-slate-500">종료일</label>
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">종료일</label>
                 <input
                   type="date"
                   value={rangeEnd}
                   min={rangeStart}
                   max={TODAY}
                   onChange={e => setRangeEnd(e.target.value)}
-                  className="border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800
-                             outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900
+                             outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900"
                 />
               </div>
               <button
                 onClick={handleRangeDownload}
                 disabled={rangeDownloading}
                 className={[
-                  'inline-flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold',
-                  'transition-colors shadow-sm',
+                  'inline-flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium',
+                  'transition-colors',
                   rangeDownloading
-                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                    : 'bg-indigo-600 hover:bg-indigo-700 text-white',
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-gray-900 hover:bg-gray-800 text-white',
                 ].join(' ')}
               >
                 {rangeDownloading ? (
@@ -449,7 +448,7 @@ export default function AdminMeetingsPage() {
             </div>
 
             {rangeError && (
-              <p className="text-xs text-red-500 flex items-center gap-1.5">
+              <p className="text-xs text-red-600 flex items-center gap-1.5">
                 <span>⚠️</span>{rangeError}
               </p>
             )}
@@ -459,33 +458,33 @@ export default function AdminMeetingsPage() {
         {/* ── 공지사항 관리 ────────────────────────────────── */}
         <section>
           <div className="flex items-center justify-between mb-3">
-            <SectionLabel label="공지사항 관리" badge="협력업체 로그인 시 팝업" color="slate" />
+            <SectionLabel label="공지사항 관리" badge="협력업체 로그인 시 팝업" />
             <button
               onClick={() => setShowAnnoForm(true)}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg transition-colors"
+              className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition-colors"
             >
               + 공지 추가
             </button>
           </div>
 
           {showAnnoForm && (
-            <div className="bg-white rounded-xl border border-amber-200 p-5 mb-3 shadow-sm">
+            <div className="bg-white rounded-xl border border-gray-200 p-5 mb-3">
               <form onSubmit={handleAnnoAdd} className="space-y-3">
                 <input
                   type="text" placeholder="공지 제목"
                   value={annoTitle} onChange={e => setAnnoTitle(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-400"
+                  className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900"
                 />
                 <textarea
                   rows={3} placeholder="공지 내용"
                   value={annoContent} onChange={e => setAnnoContent(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+                  className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900 resize-none"
                 />
                 <div className="flex gap-2">
                   <button type="button" onClick={() => setShowAnnoForm(false)}
-                    className="flex-1 py-2 border border-slate-200 text-slate-600 text-sm rounded-lg hover:bg-slate-50">취소</button>
+                    className="flex-1 py-2 border border-gray-200 text-gray-600 text-sm rounded-lg hover:bg-gray-50">취소</button>
                   <button type="submit" disabled={annoSaving}
-                    className="flex-1 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg disabled:opacity-50">
+                    className="flex-1 py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-lg disabled:opacity-50">
                     {annoSaving ? '저장 중...' : '공지 등록'}
                   </button>
                 </div>
@@ -494,26 +493,26 @@ export default function AdminMeetingsPage() {
           )}
 
           {announcements.length === 0 ? (
-            <p className="text-sm text-slate-400 px-1">등록된 공지사항이 없습니다.</p>
+            <p className="text-sm text-gray-400 px-1">등록된 공지사항이 없습니다.</p>
           ) : (
-            <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 overflow-hidden">
+            <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
               {announcements.map(a => (
-                <div key={a.id} className="flex items-center gap-4 px-5 py-3.5">
+                <div key={a.id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-700 truncate">{a.title}</p>
-                    <p className="text-xs text-slate-400 truncate">{a.content}</p>
+                    <p className="text-sm font-semibold text-gray-900 truncate">{a.title}</p>
+                    <p className="text-xs text-gray-400 truncate">{a.content}</p>
                   </div>
                   <button
                     onClick={() => handleAnnoToggle(a.id, a.is_active)}
                     className={[
-                      'shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full transition-colors',
-                      a.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-400',
+                      'shrink-0 text-xs font-medium px-2.5 py-1 rounded-full transition-colors',
+                      a.is_active ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-500 border border-gray-200',
                     ].join(' ')}
                   >
                     {a.is_active ? '활성' : '비활성'}
                   </button>
                   <button onClick={() => handleAnnoDelete(a.id)}
-                    className="text-slate-300 hover:text-red-400 transition-colors text-sm">✕</button>
+                    className="text-gray-300 hover:text-red-500 transition-colors text-sm">✕</button>
                 </div>
               ))}
             </div>
@@ -523,12 +522,12 @@ export default function AdminMeetingsPage() {
         {/* 빈 상태 */}
         {meetings.length === 0 && (
           <div className="text-center py-20">
-            <p className="text-4xl mb-4">📭</p>
-            <p className="text-slate-500">아직 등록된 회의가 없습니다.</p>
+            <p className="text-gray-400 mb-4">회의 없음</p>
+            <p className="text-gray-500 mb-6">아직 등록된 회의가 없습니다.</p>
             <button
               onClick={() => setShowForm(true)}
-              className="mt-4 px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold
-                         rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-5 py-2.5 bg-gray-900 text-white text-sm font-medium
+                         rounded-lg hover:bg-gray-800 transition-colors"
             >
               첫 회의 만들기
             </button>
@@ -543,13 +542,13 @@ export default function AdminMeetingsPage() {
                      flex items-center justify-center px-4"
           onClick={(e) => { if (e.target === e.currentTarget) setShowForm(false) }}
         >
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8
+          <div className="bg-white rounded-xl border border-gray-200 shadow-lg w-full max-w-md p-8
                           animate-[fadeInUp_0.2s_ease]">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-bold text-slate-800">새 회의 만들기</h2>
+              <h2 className="text-lg font-bold text-gray-900">새 회의 만들기</h2>
               <button
                 onClick={() => setShowForm(false)}
-                className="text-slate-400 hover:text-slate-600 p-1"
+                className="text-gray-400 hover:text-gray-600 p-1"
               >
                 <CloseIcon />
               </button>
@@ -558,7 +557,7 @@ export default function AdminMeetingsPage() {
             <form onSubmit={handleCreate} className="space-y-5">
               {/* 회의명 */}
               <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-slate-700">
+                <label className="block text-sm font-medium text-gray-900">
                   회의명 <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -573,7 +572,7 @@ export default function AdminMeetingsPage() {
 
               {/* 날짜 */}
               <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-slate-700">
+                <label className="block text-sm font-medium text-gray-900">
                   회의 날짜 <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -587,8 +586,8 @@ export default function AdminMeetingsPage() {
 
               {/* 설명 */}
               <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-slate-700">
-                  설명 <span className="text-slate-400 font-normal">(선택)</span>
+                <label className="block text-sm font-medium text-gray-900">
+                  설명 <span className="text-gray-400 font-normal">(선택)</span>
                 </label>
                 <textarea
                   rows={3}
@@ -600,31 +599,31 @@ export default function AdminMeetingsPage() {
               </div>
 
               {/* 안내 박스 */}
-              <div className="rounded-lg bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-blue-700">
+              <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 text-xs text-gray-600">
                 회의 생성 시 등록된 모든 업체의 제출 슬롯이 자동으로 만들어집니다.
               </div>
 
               {formError && (
-                <p className="text-xs text-red-500 flex gap-1"><span>⚠️</span>{formError}</p>
+                <p className="text-xs text-red-600 flex gap-1"><span>⚠️</span>{formError}</p>
               )}
 
               <div className="flex gap-3 pt-1">
                 <button
                   type="button"
                   onClick={() => setShowForm(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600
-                             text-sm font-medium hover:bg-slate-50 transition-colors"
+                  className="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-600
+                             text-sm font-medium hover:bg-gray-50 transition-colors"
                 >
                   취소
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700
-                             text-white text-sm font-semibold transition-colors
+                  className="flex-1 py-2.5 rounded-lg bg-gray-900 hover:bg-gray-800
+                             text-white text-sm font-medium transition-colors
                              disabled:opacity-50"
                 >
-                  {submitting ? '생성 중...' : '회의 생성 →'}
+                  {submitting ? '생성 중...' : '회의 생성'}
                 </button>
               </div>
             </form>
@@ -653,51 +652,48 @@ function MeetingCard({
     <div
       onClick={onClick}
       className={[
-        'group cursor-pointer rounded-xl border p-5 transition-all',
-        'hover:shadow-md hover:-translate-y-0.5',
-        highlight
-          ? 'bg-white border-blue-200 shadow-sm shadow-blue-100'
-          : 'bg-white border-slate-200',
+        'group cursor-pointer rounded-xl border p-5 transition-colors',
+        'bg-white border-gray-200 hover:border-gray-300',
       ].join(' ')}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           {/* 제목 */}
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <h3 className="font-semibold text-slate-800 truncate group-hover:text-blue-600 transition-colors">
+            <h3 className="font-semibold text-gray-900 truncate">
               {meeting.title}
             </h3>
             {highlight && (
-              <span className="text-xs font-medium px-2 py-0.5 bg-blue-100 text-blue-600 rounded-full">
+              <span className="text-xs font-medium px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
                 오늘
               </span>
             )}
           </div>
 
           {/* 날짜 + 설명 */}
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-gray-500">
             {new Date(meeting.date).toLocaleDateString('ko-KR', {
               year: 'numeric', month: 'long', day: 'numeric',
             })}
           </p>
           {meeting.description && (
-            <p className="text-xs text-slate-400 mt-1 truncate">{meeting.description}</p>
+            <p className="text-xs text-gray-400 mt-1 truncate">{meeting.description}</p>
           )}
 
           {/* 프로그레스 바 */}
           {meeting.total_count > 0 && (
             <div className="mt-3 space-y-1">
-              <div className="flex justify-between text-xs text-slate-400">
+              <div className="flex justify-between text-xs text-gray-500">
                 <span>제출 현황</span>
-                <span className="font-medium text-slate-600">
+                <span className="font-medium text-gray-600">
                   {meeting.submitted_count}/{meeting.total_count}개 업체
                 </span>
               </div>
-              <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div
                   className={[
                     'h-full rounded-full transition-all duration-500',
-                    pct === 100 ? 'bg-emerald-500' : highlight ? 'bg-blue-500' : 'bg-slate-400',
+                    pct === 100 ? 'bg-emerald-600' : 'bg-gray-900',
                   ].join(' ')}
                   style={{ width: `${pct}%` }}
                 />
@@ -712,16 +708,16 @@ function MeetingCard({
           onClick={e => e.stopPropagation()}
         >
           <span className={[
-            'text-xs font-semibold px-2.5 py-1 rounded-full',
+            'text-xs font-medium px-2.5 py-1 rounded-full',
             meeting.status === 'open'
-              ? 'bg-emerald-100 text-emerald-700'
-              : 'bg-slate-200 text-slate-500',
+              ? 'text-emerald-600'
+              : 'text-gray-400',
           ].join(' ')}>
             {meeting.status === 'open' ? '접수중' : '마감'}
           </span>
           <button
             onClick={onToggle}
-            className="text-xs text-slate-400 hover:text-slate-600 underline underline-offset-2"
+            className="text-xs text-gray-500 hover:text-gray-900 underline underline-offset-2"
           >
             {meeting.status === 'open' ? '마감 처리' : '재오픈'}
           </button>
@@ -731,28 +727,24 @@ function MeetingCard({
   )
 }
 
-function SectionLabel({ label, badge, color }: {
+function SectionLabel({ label, badge }: {
   label: string
   badge: string
-  color: 'blue' | 'slate'
 }) {
-  const c = color === 'blue'
-    ? 'bg-blue-100 text-blue-600'
-    : 'bg-slate-200 text-slate-500'
   return (
     <div className="flex items-center gap-2 mb-3">
-      <h2 className="text-sm font-semibold text-slate-600">{label}</h2>
-      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${c}`}>{badge}</span>
+      <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</h2>
+      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{badge}</span>
     </div>
   )
 }
 
 function PageLoader() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-slate-400 text-sm">불러오는 중...</p>
+        <div className="w-8 h-8 border-4 border-gray-900 border-t-transparent rounded-full animate-spin" />
+        <p className="text-gray-400 text-sm">불러오는 중...</p>
       </div>
     </div>
   )
@@ -760,9 +752,9 @@ function PageLoader() {
 
 // ── 스타일/아이콘 헬퍼 ───────────────────────────────────────
 const inputCls =
-  'w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-800 ' +
-  'outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ' +
-  'placeholder:text-slate-300 transition-colors'
+  'w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm text-gray-900 ' +
+  'outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900 ' +
+  'placeholder:text-gray-300 transition-colors'
 
 function PlusIcon() {
   return (

@@ -205,48 +205,48 @@ export default function DashboardPage() {
   const sorted = sortByCompanyOrder(submissions)
 
   return (
-    <div className="min-h-screen bg-slate-100">
+    <div className="min-h-screen bg-gray-50">
 
       {/* ── 상단 헤더 바 ────────────────────────────────── */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-20">
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.push('/dashboard')}
-              className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-blue-600
-                         hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900
+                         px-3 py-1.5 rounded-lg transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
               </svg>
               회의 목록
             </button>
-            <div className="w-px h-6 bg-slate-200" />
+            <div className="w-px h-6 bg-gray-200" />
             <div>
-              <p className="text-xs font-semibold text-blue-600 uppercase tracking-widest mb-0.5">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-0.5">
                 DABs 관리자 대시보드
               </p>
-              <h1 className="text-lg font-bold text-slate-800 leading-tight">
+              <h1 className="text-lg font-bold text-gray-900 leading-tight">
                 {meeting?.title}
               </h1>
             </div>
           </div>
           <div className="flex items-center gap-3">
             {/* Realtime 상태 표시 */}
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               실시간 연결됨
             </div>
             {lastUpdated && (
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-gray-500">
                 {lastUpdated.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} 업데이트
               </span>
             )}
             <span className={[
               'text-xs font-medium px-2.5 py-1 rounded-full',
               meeting?.status === 'open'
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-slate-200 text-slate-500',
+                ? 'text-emerald-600'
+                : 'text-gray-400',
             ].join(' ')}>
               {meeting?.status === 'open' ? '접수중' : '마감'}
             </span>
@@ -262,29 +262,23 @@ export default function DashboardPage() {
             label="총 투입 인원"
             value={totalPersonnel}
             unit="명"
-            color="blue"
             icon={<PeopleIcon />}
           />
           <StatCard
             label="제출 완료 업체"
             value={submittedCount}
             unit={`/ ${totalCompanies}개`}
-            color="emerald"
             icon={<CheckIcon />}
           />
           <StatCard
             label="제출 진행률"
             value={progressPct}
             unit="%"
-            color={progressPct === 100 ? 'violet' : 'amber'}
             icon={<ChartIcon />}
             extra={
-              <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div
-                  className={[
-                    'h-full rounded-full transition-all duration-700',
-                    progressPct === 100 ? 'bg-violet-500' : 'bg-amber-400',
-                  ].join(' ')}
+                  className="h-full rounded-full transition-all duration-700 bg-gray-900"
                   style={{ width: `${progressPct}%` }}
                 />
               </div>
@@ -293,23 +287,23 @@ export default function DashboardPage() {
         </div>
 
         {/* ── 지적도/공사현황도 ────────────────────────────── */}
-        <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+        <section className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="font-semibold text-slate-700">🗺️ 지적도 / 공사현황도</h2>
-              <p className="text-xs text-slate-400 mt-0.5">이 회의의 현장 도면 파일을 첨부합니다</p>
+              <h2 className="font-semibold text-gray-900">지적도 / 공사현황도</h2>
+              <p className="text-xs text-gray-500 mt-0.5">이 회의의 현장 도면 파일을 첨부합니다</p>
             </div>
             <div className="flex items-center gap-2">
               {mapUploading && (
-                <span className="text-xs text-slate-400 flex items-center gap-1">
-                  <span className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs text-gray-500 flex items-center gap-1">
+                  <span className="w-3 h-3 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
                   업로드 중...
                 </span>
               )}
               <input ref={mapInputRef} type="file" accept=".jpg,.jpeg,.png"
                 className="hidden" onChange={handleMapUpload} />
               <button onClick={() => mapInputRef.current?.click()} disabled={mapUploading}
-                className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+                className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
                 {mapUrl ? '교체' : '파일 첨부'}
               </button>
             </div>
@@ -321,14 +315,13 @@ export default function DashboardPage() {
           )}
           {mapUrl ? (
             <div className="space-y-3">
-              <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-3">
-                <span className="text-xl">🖼️</span>
+              <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-700 truncate">{mapName}</p>
-                  <p className="text-xs text-slate-400">아이콘을 드래그&드랍해서 장비·작업구역을 표시하세요</p>
+                  <p className="text-sm font-medium text-gray-900 truncate">{mapName}</p>
+                  <p className="text-xs text-gray-500">아이콘을 드래그&드랍해서 장비·작업구역을 표시하세요</p>
                 </div>
                 <a href={mapUrl} target="_blank" rel="noopener noreferrer"
-                  className="text-sm text-blue-600 hover:text-blue-800 underline underline-offset-2">
+                  className="text-sm text-blue-600 hover:text-blue-800 underline underline-offset-2 whitespace-nowrap">
                   원본보기
                 </a>
               </div>
@@ -342,20 +335,20 @@ export default function DashboardPage() {
               />
             </div>
           ) : (
-            <div className="border-2 border-dashed border-slate-200 rounded-xl py-8 text-center text-slate-400">
-              <p className="text-3xl mb-2">🗺️</p>
-              <p className="text-sm">첨부된 파일이 없습니다</p>
-              <p className="text-xs mt-1">JPG, PNG 이미지 파일을 업로드하세요</p>
-              <p className="text-xs mt-0.5 text-slate-300">※ 업체들이 이 이미지 위에 드래그&드랍으로 장비를 표시합니다</p>
+            <div className="border-2 border-dashed border-gray-200 rounded-xl py-8 text-center text-gray-400">
+              <p className="text-sm mb-2">지적도 없음</p>
+              <p className="text-sm text-gray-400">첨부된 파일이 없습니다</p>
+              <p className="text-xs mt-1 text-gray-400">JPG, PNG 이미지 파일을 업로드하세요</p>
+              <p className="text-xs mt-0.5 text-gray-300">업체들이 이 이미지 위에 드래그&드랍으로 장비를 표시합니다</p>
             </div>
           )}
         </section>
 
         {/* ── 제출 현황 테이블 ─────────────────────────────── */}
-        <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h2 className="font-semibold text-slate-700">업체별 제출 현황</h2>
-            <span className="text-xs text-slate-400">
+        <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="font-semibold text-gray-900">업체별 제출 현황</h2>
+            <span className="text-xs text-gray-400">
               순서: {COMPANY_ORDER.join(' › ')}
             </span>
           </div>
@@ -363,7 +356,7 @@ export default function DashboardPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
+                <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide border-b border-gray-100">
                   <th className="text-left px-6 py-3 font-medium w-8">#</th>
                   <th className="text-left px-6 py-3 font-medium">업체명</th>
                   <th className="text-left px-4 py-3 font-medium">투입 인원</th>
@@ -374,13 +367,13 @@ export default function DashboardPage() {
                   <th className="text-left px-4 py-3 font-medium">상태</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-gray-100">
                 {sorted.map((sub, idx) => (
                   <SubmissionRow key={sub.id} row={sub} index={idx + 1} />
                 ))}
                 {sorted.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-6 py-12 text-center text-slate-400 text-sm">
+                    <td colSpan={8} className="px-6 py-12 text-center text-gray-400 text-sm">
                       아직 제출된 자료가 없습니다.
                     </td>
                   </tr>
@@ -404,28 +397,28 @@ function SubmissionRow({ row, index }: { row: SubmissionRow; index: number }) {
 
   return (
     <tr className={[
-      'transition-colors',
-      isSubmitted ? 'bg-white hover:bg-emerald-50' : 'bg-slate-50/60 hover:bg-slate-50',
+      'transition-colors hover:bg-gray-50',
+      isSubmitted ? 'bg-white' : 'bg-gray-50',
     ].join(' ')}>
       {/* 순번 */}
-      <td className="px-6 py-4 text-slate-400 text-xs">{index}</td>
+      <td className="px-6 py-4 text-gray-400 text-xs">{index}</td>
 
       {/* 업체명 */}
-      <td className="px-6 py-4 font-medium text-slate-800">
+      <td className="px-6 py-4 font-medium text-gray-900">
         {row.teams?.name ?? '—'}
         {row.teams?.department && (
-          <span className="ml-1.5 text-xs text-slate-400">({row.teams.department})</span>
+          <span className="ml-1.5 text-xs text-gray-400">({row.teams.department})</span>
         )}
       </td>
 
       {/* 투입 인원 */}
-      <td className="px-4 py-4 text-slate-600 min-w-[130px]">
+      <td className="px-4 py-4 text-gray-600 min-w-[130px]">
         {isSubmitted && row.personnel_count != null ? (
           <div className="space-y-1.5">
             {/* 총인원 뱃지 */}
             <div className="inline-flex items-baseline gap-0.5">
-              <span className="text-base font-bold text-blue-600">{row.personnel_count}</span>
-              <span className="text-xs font-normal text-slate-400">명</span>
+              <span className="text-xl font-bold text-gray-900">{row.personnel_count}</span>
+              <span className="text-xs font-normal text-gray-400">명</span>
             </div>
             {/* 세부 내역 */}
             {row.personnel_detail && (
@@ -442,48 +435,48 @@ function SubmissionRow({ row, index }: { row: SubmissionRow; index: number }) {
                   .filter(item => (row.personnel_detail![item.key] ?? 0) > 0)
                   .map(item => (
                     <div key={item.key} className="flex items-center gap-1">
-                      <span className="text-[10px] font-medium text-slate-500 w-12 shrink-0">{item.label}</span>
-                      <span className="text-[10px] text-slate-400">{row.personnel_detail![item.key]}명</span>
+                      <span className="text-[10px] font-medium text-gray-500 w-12 shrink-0">{item.label}</span>
+                      <span className="text-[10px] text-gray-400">{row.personnel_detail![item.key]}명</span>
                     </div>
                   ))}
               </div>
             )}
           </div>
         ) : (
-          <span className="text-slate-300">—</span>
+          <span className="text-gray-300">—</span>
         )}
       </td>
 
       {/* 작업공정 */}
-      <td className="px-4 py-4 text-slate-500 text-xs">
-        {row.work_process || <span className="text-slate-300">—</span>}
+      <td className="px-4 py-4 text-gray-500 text-xs">
+        {row.work_process || <span className="text-gray-300">—</span>}
       </td>
 
       {/* 투입 장비 */}
-      <td className="px-4 py-4 text-slate-500 text-xs max-w-[180px]">
+      <td className="px-4 py-4 text-gray-500 text-xs max-w-[180px]">
         {row.equipment
           ? row.equipment.split(',').map((e, i) => (
               <span key={i} className="block leading-5">{e.trim()}</span>
             ))
-          : <span className="text-slate-300">—</span>}
+          : <span className="text-gray-300">—</span>}
       </td>
 
       {/* 파일명 */}
-      <td className="px-4 py-4 text-xs text-slate-400 max-w-[140px] truncate" title={row.file_name ?? ''}>
+      <td className="px-4 py-4 text-xs text-gray-400 max-w-[140px] truncate" title={row.file_name ?? ''}>
         {row.file_name
           ? <span className="flex items-center gap-1"><PdfSmallIcon />{row.file_name}</span>
-          : <span className="text-slate-300">—</span>
+          : <span className="text-gray-300">—</span>
         }
       </td>
 
       {/* 제출 시간 */}
-      <td className="px-4 py-4 text-xs text-slate-400 whitespace-nowrap">
+      <td className="px-4 py-4 text-xs text-gray-400 whitespace-nowrap">
         {row.submitted_at
           ? new Date(row.submitted_at).toLocaleString('ko-KR', {
               month: '2-digit', day: '2-digit',
               hour: '2-digit', minute: '2-digit',
             })
-          : <span className="text-slate-300">—</span>
+          : <span className="text-gray-300">—</span>
         }
       </td>
 
@@ -497,50 +490,39 @@ function SubmissionRow({ row, index }: { row: SubmissionRow; index: number }) {
 
 function StatusBadge({ status }: { status: SubmissionRow['status'] }) {
   const map = {
-    submitted: 'bg-emerald-100 text-emerald-700 ring-emerald-200',
-    pending:   'bg-amber-100  text-amber-700  ring-amber-200',
-    rejected:  'bg-red-100    text-red-600    ring-red-200',
+    submitted: { bg: 'bg-gray-900', text: 'text-white', dot: 'bg-white' },
+    pending:   { bg: 'bg-gray-100', text: 'text-gray-500', dot: 'bg-gray-400' },
+    rejected:  { bg: 'bg-red-50', text: 'text-red-600 border border-red-100', dot: 'bg-red-400' },
   } as const
   const label = { submitted: '제출완료', pending: '미제출', rejected: '반려' }
+  const c = map[status]
 
   return (
-    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ring-1 ${map[status]}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${
-        status === 'submitted' ? 'bg-emerald-500 animate-pulse' :
-        status === 'pending'   ? 'bg-amber-400' : 'bg-red-400'
-      }`} />
+    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${c.bg} ${c.text}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
       {label[status]}
     </span>
   )
 }
 
 function StatCard({
-  label, value, unit, color, icon, extra,
+  label, value, unit, icon, extra,
 }: {
   label: string
   value: number
   unit: string
-  color: 'blue' | 'emerald' | 'amber' | 'violet'
   icon: React.ReactNode
   extra?: React.ReactNode
 }) {
-  const colorMap = {
-    blue:    { bg: 'bg-blue-50',   icon: 'text-blue-500',   value: 'text-blue-700' },
-    emerald: { bg: 'bg-emerald-50', icon: 'text-emerald-500', value: 'text-emerald-700' },
-    amber:   { bg: 'bg-amber-50',  icon: 'text-amber-500',  value: 'text-amber-700' },
-    violet:  { bg: 'bg-violet-50', icon: 'text-violet-500', value: 'text-violet-700' },
-  }
-  const c = colorMap[color]
-
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+    <div className="bg-white rounded-xl border border-gray-200 p-5">
       <div className="flex items-start justify-between mb-3">
-        <p className="text-sm text-slate-500 font-medium">{label}</p>
-        <span className={`${c.bg} ${c.icon} p-2 rounded-lg`}>{icon}</span>
+        <p className="text-sm text-gray-500 font-medium">{label}</p>
+        <span className="bg-gray-100 text-gray-900 p-2 rounded-lg">{icon}</span>
       </div>
-      <p className={`text-4xl font-bold ${c.value} leading-none`}>
+      <p className="text-3xl font-bold text-gray-900 leading-none">
         {value.toLocaleString()}
-        <span className="text-base font-medium text-slate-400 ml-1.5">{unit}</span>
+        <span className="text-base font-medium text-gray-400 ml-1.5">{unit}</span>
       </p>
       {extra}
     </div>
@@ -549,10 +531,10 @@ function StatCard({
 
 function PageLoader() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="flex flex-col items-center gap-3">
-        <div className="w-9 h-9 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-slate-400 text-sm">대시보드 불러오는 중...</p>
+        <div className="w-9 h-9 border-4 border-gray-900 border-t-transparent rounded-full animate-spin" />
+        <p className="text-gray-400 text-sm">대시보드 불러오는 중...</p>
       </div>
     </div>
   )
