@@ -334,30 +334,27 @@ export default function SubmissionPage() {
   const hasMap = !!meeting?.map_file_url
 
   return (
-    <div className="min-h-screen bg-slate-100">
+    <div className="min-h-screen bg-gray-50">
 
       {/* ── 공지사항 팝업 ──────────────────────────────────── */}
       {showPopup && announcements[popupIdx] && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
-            <div className="flex items-center gap-2 mb-4">
-              <span className="text-2xl">📢</span>
-              <h2 className="text-lg font-bold text-slate-800">공지사항</h2>
-              <span className="ml-auto text-xs text-slate-400">{popupIdx + 1}/{announcements.length}</span>
-            </div>
-            <h3 className="font-semibold text-slate-700 mb-2">{announcements[popupIdx].title}</h3>
-            <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap mb-6">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-8 border border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900 mb-1">공지사항</h2>
+            <p className="text-xs text-gray-500 mb-4">{popupIdx + 1}/{announcements.length}</p>
+            <h3 className="font-medium text-gray-900 mb-2">{announcements[popupIdx].title}</h3>
+            <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap mb-6">
               {announcements[popupIdx].content}
             </p>
             <div className="flex gap-2">
               {popupIdx < announcements.length - 1 ? (
                 <button onClick={() => setPopupIdx(i => i + 1)}
-                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors">
-                  다음 공지 →
+                  className="flex-1 py-2.5 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition-colors">
+                  다음 공지
                 </button>
               ) : (
                 <button onClick={() => setShowPopup(false)}
-                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors">
+                  className="flex-1 py-2.5 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition-colors">
                   확인
                 </button>
               )}
@@ -367,26 +364,23 @@ export default function SubmissionPage() {
       )}
 
       {/* ── 헤더 ───────────────────────────────────────────── */}
-      <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-20">
-        <div className="max-w-screen-2xl mx-auto px-4 py-4 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center shrink-0">
-            <span className="text-lg">📋</span>
-          </div>
-          <div className="min-w-0">
-            <h1 className="font-bold text-slate-800 leading-tight truncate">{team.name}</h1>
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-20">
+        <div className="max-w-screen-2xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="min-w-0 flex-1">
+            <h1 className="font-semibold text-gray-900 leading-tight truncate">{team.name}</h1>
             {meeting
-              ? <p className="text-xs text-slate-400 truncate">{meeting.title} · {meeting.date}</p>
-              : <p className="text-xs text-slate-400">DABs 자료 취합 시스템</p>
+              ? <p className="text-xs text-gray-500 truncate">{meeting.title} · {meeting.date}</p>
+              : <p className="text-xs text-gray-500">DABs 자료 취합 시스템</p>
             }
           </div>
           {isClosed && (
-            <span className="ml-auto shrink-0 px-2.5 py-1 bg-slate-100 text-slate-500 text-xs font-semibold rounded-full">
+            <span className="shrink-0 px-2.5 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-lg ml-4">
               마감됨
             </span>
           )}
           {hasMap && !isClosed && (
-            <span className="ml-auto shrink-0 flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="shrink-0 flex items-center gap-1.5 text-xs text-emerald-600 font-medium ml-4">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               실시간 공유 중
             </span>
           )}
@@ -397,8 +391,7 @@ export default function SubmissionPage() {
       <main className="max-w-screen-2xl mx-auto px-4 py-6">
         {!meeting && noMeeting ? (
           <div className="text-center py-20">
-            <p className="text-4xl mb-4">📭</p>
-            <p className="text-slate-500">오늘 예정된 회의가 없습니다.</p>
+            <p className="text-gray-500">오늘 예정된 회의가 없습니다.</p>
           </div>
         ) : (
           <div className={hasMap
@@ -422,22 +415,21 @@ export default function SubmissionPage() {
             {/* ── 오른쪽: 탭 + 폼 ───────────────────────────── */}
             <div>
               {/* 탭 네비게이션 */}
-              <div className="bg-white rounded-t-xl border border-slate-200 border-b-0
-                              flex overflow-x-auto">
+              <div className="bg-white border-b border-gray-200 flex overflow-x-auto px-4">
                 {([
-                  { key: 'high_risk', label: '⚠️ 고위험작업' },
-                  { key: 'general',   label: '🔧 일반작업' },
-                  { key: 'material',  label: '🚛 자재하역' },
-                  { key: 'submit',    label: '📄 자료제출' },
+                  { key: 'high_risk', label: '고위험작업' },
+                  { key: 'general',   label: '일반작업' },
+                  { key: 'material',  label: '자재하역' },
+                  { key: 'submit',    label: '자료제출' },
                 ] as { key: Tab; label: string }[]).map(t => (
                   <button
                     key={t.key}
                     onClick={() => setActiveTab(t.key)}
                     className={[
-                      'px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors flex-1',
+                      'px-4 py-3 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors',
                       activeTab === t.key
-                        ? 'border-blue-600 text-blue-600 bg-blue-50/60'
-                        : 'border-transparent text-slate-500 hover:text-slate-700',
+                        ? 'border-gray-900 text-gray-900 font-medium'
+                        : 'border-transparent text-gray-500 hover:text-gray-700',
                     ].join(' ')}
                   >
                     {t.label}
@@ -446,7 +438,7 @@ export default function SubmissionPage() {
               </div>
 
               {/* 탭 콘텐츠 */}
-              <div className="bg-white rounded-b-xl border border-slate-200 border-t-0 p-5 min-h-[400px]">
+              <div className="bg-white border border-gray-200 border-t-0 rounded-b-xl p-5 min-h-[400px]">
 
                 {/* ── 고위험작업 ─────────────────────────────── */}
                 {activeTab === 'high_risk' && (
@@ -545,20 +537,18 @@ function SubmitTab({
 }) {
   if (!meeting) return (
     <div className="text-center py-20">
-      <p className="text-4xl mb-4">📭</p>
-      <p className="text-slate-500">오늘 예정된 회의가 없습니다.</p>
+      <p className="text-gray-500">오늘 예정된 회의가 없습니다.</p>
     </div>
   )
 
   if (step === 'done') return (
     <div className="text-center py-12">
-      <div className="text-5xl mb-4">✅</div>
-      <h2 className="text-xl font-bold text-slate-800 mb-2">제출 완료!</h2>
-      <p className="text-slate-500 text-sm mb-6">자료가 성공적으로 업로드되었습니다.</p>
+      <h2 className="text-lg font-semibold text-gray-900 mb-2">제출 완료</h2>
+      <p className="text-gray-500 text-sm mb-6">자료가 성공적으로 업로드되었습니다.</p>
       {downloadUrl && (
         <a href={downloadUrl} target="_blank" rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition-colors">
-          📄 제출 파일 확인
+          className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors">
+          제출 파일 확인
         </a>
       )}
     </div>
@@ -569,21 +559,21 @@ function SubmitTab({
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       {/* 이전 내용 불러오기 */}
-      <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-5 py-3">
+      <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
         <div>
-          <p className="text-sm font-medium text-blue-700">이전 제출 내용 불러오기</p>
+          <p className="text-sm font-medium text-gray-900">이전 제출 내용 불러오기</p>
           {prevLoaded && prevDate && (
-            <p className="text-xs text-blue-500">{prevDate} 제출 내용을 불러왔습니다.</p>
+            <p className="text-xs text-gray-500">{prevDate} 제출 내용을 불러왔습니다.</p>
           )}
         </div>
         <button type="button" onClick={onLoadPrevious} disabled={prevLoading || isClosed}
-          className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          className="px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors">
           {prevLoading ? '불러오는 중...' : '불러오기'}
         </button>
       </div>
 
       {/* 인원 */}
-      <Card title="👷 투입 인원">
+      <Card title="투입 인원">
         <div className="grid grid-cols-2 gap-3">
           {[
             { key: 'total',        label: '총 인원 *', placeholder: '명' },
@@ -594,7 +584,7 @@ function SubmitTab({
             { key: 'diseased',     label: '유질환자', placeholder: '명' },
           ].map(({ key, label, placeholder }) => (
             <div key={key} className="space-y-1">
-              <label className="block text-xs font-medium text-slate-600">{label}</label>
+              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</label>
               <input type="number" min="0" placeholder={placeholder}
                 value={personnel[key as keyof typeof personnel]}
                 onChange={e => setPersonnel(prev => ({ ...prev, [key]: e.target.value }))}
@@ -604,21 +594,21 @@ function SubmitTab({
             </div>
           ))}
         </div>
-        {errors.personnelTotal && <p className="text-xs text-red-500 mt-1">⚠️ {errors.personnelTotal}</p>}
+        {errors.personnelTotal && <p className="text-xs text-red-500 mt-1">{errors.personnelTotal}</p>}
       </Card>
 
       {/* 작업공정 */}
-      <Card title="📋 작업공정">
+      <Card title="작업공정">
         <textarea rows={3} placeholder="오늘 진행할 작업 공정을 간략히 입력해 주세요."
           value={workProcess} onChange={e => setWorkProcess(e.target.value)}
           disabled={isClosed}
           className={inputCls + ' resize-none w-full'}
         />
-        {errors.workProcess && <p className="text-xs text-red-500 mt-1">⚠️ {errors.workProcess}</p>}
+        {errors.workProcess && <p className="text-xs text-red-500 mt-1">{errors.workProcess}</p>}
       </Card>
 
       {/* 장비 */}
-      <Card title="🚧 투입 장비">
+      <Card title="투입 장비">
         <div className="space-y-2">
           {equipRows.map((row, idx) => (
             <div key={idx} className="flex gap-2 items-start">
@@ -657,33 +647,33 @@ function SubmitTab({
                 disabled={isClosed}
                 className={inputCls + ' w-20'}
               />
-              <span className="text-sm text-slate-500 py-2.5">대</span>
+              <span className="text-sm text-gray-500 py-2.5">대</span>
               {equipRows.length > 1 && (
                 <button type="button" onClick={() => setEquipRows(equipRows.filter((_, i) => i !== idx))}
                   disabled={isClosed}
-                  className="p-2.5 text-slate-400 hover:text-red-500 transition-colors">✕</button>
+                  className="p-2.5 text-gray-400 hover:text-red-500 transition-colors">✕</button>
               )}
             </div>
           ))}
         </div>
-        {errors.equipment && <p className="text-xs text-red-500 mt-1">⚠️ {errors.equipment}</p>}
+        {errors.equipment && <p className="text-xs text-red-500 mt-1">{errors.equipment}</p>}
         <button type="button" onClick={() => setEquipRows([...equipRows, { type: '', count: '', isCustom: false }])}
           disabled={isClosed}
-          className="mt-2 text-sm text-blue-600 hover:text-blue-800 underline underline-offset-2 disabled:opacity-50">
-          + 장비 추가
+          className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-200 rounded-lg text-sm text-gray-500 hover:border-gray-300 hover:text-gray-700 transition-colors disabled:opacity-50">
+          장비 추가
         </button>
       </Card>
 
       {/* 파일 첨부 */}
-      <Card title="📎 PDF 파일 첨부">
+      <Card title="PDF 파일 첨부">
         <div
           onDragOver={e => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
           onDrop={onDrop}
           onClick={() => fileInputRef.current?.click()}
           className={[
-            'border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors',
-            dragOver ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-blue-300',
+            'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors',
+            dragOver ? 'border-gray-400 bg-gray-50' : 'border-gray-200 hover:border-gray-300',
             isClosed ? 'opacity-50 pointer-events-none' : '',
           ].join(' ')}
         >
@@ -691,52 +681,50 @@ function SubmitTab({
             onChange={e => { const f = e.target.files?.[0]; if (f) onFileChange(f) }}
           />
           {file ? (
-            <div className="flex items-center justify-center gap-3">
-              <span className="text-2xl">📄</span>
-              <div className="text-left">
-                <p className="text-sm font-medium text-slate-700">{file.name}</p>
-                <p className="text-xs text-slate-400">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+            <div className="flex items-center justify-start gap-3">
+              <div className="text-left flex-1">
+                <p className="text-sm font-medium text-gray-900">{file.name}</p>
+                <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
               </div>
               <button type="button" onClick={e => { e.stopPropagation(); setFile(null) }}
-                className="ml-2 text-slate-400 hover:text-red-500">✕</button>
+                className="text-gray-400 hover:text-red-500">✕</button>
             </div>
           ) : (
-            <div className="text-slate-400">
-              <p className="text-3xl mb-2">☁️</p>
+            <div className="text-gray-400">
               <p className="text-sm">PDF를 여기에 끌어다 놓거나 클릭하여 선택</p>
-              <p className="text-xs mt-1">최대 {MAX_FILE_MB}MB</p>
+              <p className="text-xs mt-1 text-gray-500">최대 {MAX_FILE_MB}MB</p>
             </div>
           )}
         </div>
-        {errors.file && <p className="text-xs text-red-500 mt-1">⚠️ {errors.file}</p>}
+        {errors.file && <p className="text-xs text-red-500 mt-1">{errors.file}</p>}
       </Card>
 
       {/* 업로드 진행 */}
       {isUploading && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <div className="flex justify-between text-sm mb-2">
-            <span className="text-slate-600">{step === 'saving' ? '저장 중...' : '업로드 중...'}</span>
-            <span className="font-medium text-blue-600">{progress}%</span>
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex justify-between text-sm mb-3">
+            <span className="text-gray-600">{step === 'saving' ? '저장 중...' : '업로드 중...'}</span>
+            <span className="font-medium text-gray-900">{progress}%</span>
           </div>
-          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-            <div className="h-full bg-blue-500 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
+          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-full bg-gray-900 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
           </div>
         </div>
       )}
 
       {step === 'error' && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
-          ⚠️ {errorMsg}
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
+          {errorMsg}
         </div>
       )}
 
       {!isClosed ? (
         <button type="submit" disabled={isUploading}
-          className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition-colors disabled:opacity-50">
-          {isUploading ? '제출 중...' : '자료 제출하기 →'}
+          className="w-full py-2.5 rounded-lg bg-gray-900 hover:bg-gray-800 text-white font-medium text-sm transition-colors disabled:opacity-50">
+          {isUploading ? '제출 중...' : '자료 제출하기'}
         </button>
       ) : (
-        <div className="text-center py-4 text-slate-400 text-sm">회의가 마감되었습니다.</div>
+        <div className="text-center py-4 text-gray-500 text-sm">회의가 마감되었습니다.</div>
       )}
     </form>
   )
@@ -760,8 +748,8 @@ function WorkItemTab({
   const [saving,      setSaving]      = useState(false)
 
   const colorCls = color === 'red'
-    ? { badge: 'bg-red-100 text-red-700', btn: 'bg-red-600 hover:bg-red-700', border: 'border-red-200' }
-    : { badge: 'bg-blue-100 text-blue-700', btn: 'bg-blue-600 hover:bg-blue-700', border: 'border-blue-200' }
+    ? { badge: 'text-red-700 text-xs font-medium', btn: 'bg-gray-900 hover:bg-gray-800', border: 'border-gray-200' }
+    : { badge: 'text-gray-700 text-xs font-medium', btn: 'bg-gray-900 hover:bg-gray-800', border: 'border-gray-200' }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
@@ -778,51 +766,51 @@ function WorkItemTab({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-semibold text-slate-700">{label} 현황</h2>
-          <p className="text-xs text-slate-400 mt-0.5">모든 협력업체가 함께 등록 · 실시간 공유</p>
+          <h2 className="font-semibold text-gray-900">{label} 현황</h2>
+          <p className="text-xs text-gray-500 mt-0.5">모든 협력업체가 함께 등록 · 실시간 공유</p>
         </div>
         {!isClosed && (
           <button onClick={() => setShowForm(true)}
-            className={`px-4 py-2 ${colorCls.btn} text-white text-sm font-semibold rounded-lg transition-colors`}>
-            + 작업 추가
+            className={`px-4 py-2 ${colorCls.btn} text-white text-sm font-medium rounded-lg transition-colors`}>
+            작업 추가
           </button>
         )}
       </div>
 
       {showForm && (
-        <div className="bg-slate-50 rounded-xl border border-slate-200 p-5">
-          <h3 className="font-medium text-slate-700 mb-4">새 {label} 등록</h3>
+        <div className="bg-white rounded-lg border border-gray-200 p-5">
+          <h3 className="font-medium text-gray-900 mb-4">새 {label} 등록</h3>
           <form onSubmit={handleAdd} className="space-y-3">
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-slate-600">작업명 *</label>
+              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">작업명 *</label>
               <input type="text" placeholder="예) 철근 배근 작업" value={workName}
                 onChange={e => setWorkName(e.target.value)} className={inputCls} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-slate-600">위치/구간</label>
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">위치/구간</label>
                 <input type="text" placeholder="예) A동 3층" value={location}
                   onChange={e => setLocation(e.target.value)} className={inputCls} />
               </div>
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-slate-600">투입 인원</label>
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">투입 인원</label>
                 <input type="number" min="0" placeholder="명" value={workerCount}
                   onChange={e => setWorkerCount(e.target.value)} className={inputCls} />
               </div>
             </div>
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-slate-600">상세 내용</label>
+              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">상세 내용</label>
               <textarea rows={2} placeholder="작업 상세 내용" value={description}
                 onChange={e => setDescription(e.target.value)}
                 className={inputCls + ' resize-none w-full'} />
             </div>
             <div className="flex gap-2">
               <button type="button" onClick={() => setShowForm(false)}
-                className="flex-1 py-2 border border-slate-200 text-slate-600 text-sm rounded-lg hover:bg-slate-50">
+                className="flex-1 py-2 border border-gray-200 text-gray-600 text-sm font-medium rounded-lg hover:bg-gray-50">
                 취소
               </button>
               <button type="submit" disabled={saving}
-                className={`flex-1 py-2 ${colorCls.btn} text-white text-sm font-semibold rounded-lg transition-colors`}>
+                className={`flex-1 py-2 ${colorCls.btn} text-white text-sm font-medium rounded-lg transition-colors`}>
                 {saving ? '저장 중...' : '등록'}
               </button>
             </div>
@@ -831,34 +819,33 @@ function WorkItemTab({
       )}
 
       {items.length === 0 ? (
-        <div className="text-center py-12 text-slate-400">
-          <p className="text-3xl mb-3">{color === 'red' ? '⚠️' : '🔧'}</p>
+        <div className="text-center py-12 text-gray-500">
           <p className="text-sm">등록된 {label}이 없습니다.</p>
-          <p className="text-xs mt-1 text-slate-300">다른 업체가 등록하면 여기에 실시간으로 표시됩니다.</p>
+          <p className="text-xs mt-1 text-gray-400">다른 업체가 등록하면 여기에 실시간으로 표시됩니다.</p>
         </div>
       ) : (
         <div className="space-y-3">
           {items.map(item => (
-            <div key={item.id} className={`rounded-xl border p-4 ${colorCls.border} bg-white`}>
+            <div key={item.id} className={`rounded-lg border p-4 ${colorCls.border} bg-white group`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <h3 className="font-semibold text-slate-800">{item.work_name}</h3>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${colorCls.badge}`}>
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <h3 className="font-medium text-gray-900">{item.work_name}</h3>
+                    <span className={`text-xs px-2 py-1 rounded font-medium text-gray-700 bg-gray-100 ${colorCls.badge}`}>
                       {item.teams?.name ?? '미지정'}
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-3 text-xs text-slate-500">
-                    {item.location && <span>📍 {item.location}</span>}
-                    {item.worker_count > 0 && <span>👷 {item.worker_count}명</span>}
+                  <div className="flex flex-wrap gap-3 text-xs text-gray-600">
+                    {item.location && <span>{item.location}</span>}
+                    {item.worker_count > 0 && <span>{item.worker_count}명</span>}
                   </div>
                   {item.description && (
-                    <p className="text-xs text-slate-500 mt-1.5">{item.description}</p>
+                    <p className="text-xs text-gray-600 mt-2">{item.description}</p>
                   )}
                 </div>
                 {item.team_id === myTeamId && !isClosed && (
                   <button onClick={() => onDelete(item.id)}
-                    className="text-slate-300 hover:text-red-400 transition-colors text-sm p-1">
+                    className="text-gray-400 hover:text-red-500 transition-colors text-sm p-1 opacity-0 group-hover:opacity-100">
                     ✕
                   </button>
                 )}
@@ -899,8 +886,8 @@ function MaterialTab({
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="font-semibold text-slate-700">자재 하역/운반 시간 예약</h2>
-        <p className="text-xs text-slate-400 mt-0.5">시간대당 최대 5개 업체 신청 가능 · 실시간 공유</p>
+        <h2 className="font-semibold text-gray-900">자재 하역/운반 시간 예약</h2>
+        <p className="text-xs text-gray-500 mt-0.5">시간대당 최대 5개 업체 신청 가능 · 실시간 공유</p>
       </div>
 
       <div className="space-y-2">
@@ -912,45 +899,45 @@ function MaterialTab({
           const isOpen = openSlotId === slot.id
 
           return (
-            <div key={slot.id} className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-3.5">
+            <div key={slot.id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3">
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-semibold text-slate-800">🕐 {slot.slot_time}</span>
+                  <span className="text-sm font-medium text-gray-900">{slot.slot_time}</span>
                   <div className="flex gap-1">
                     {Array.from({ length: slot.max_teams }).map((_, i) => (
-                      <div key={i} className={['w-3 h-3 rounded-full', i < count ? 'bg-orange-400' : 'bg-slate-200'].join(' ')} />
+                      <div key={i} className={['w-2 h-2 rounded-full', i < count ? 'bg-emerald-500' : 'bg-gray-200'].join(' ')} />
                     ))}
                   </div>
-                  <span className="text-xs text-slate-400">{count}/{slot.max_teams}</span>
+                  <span className="text-xs text-gray-500">{count}/{slot.max_teams}</span>
                 </div>
                 {isFull ? (
-                  <span className="text-xs font-semibold px-2.5 py-1 bg-red-100 text-red-600 rounded-full">마감</span>
+                  <span className="text-xs font-medium px-2.5 py-1 bg-gray-100 text-gray-600 rounded">마감</span>
                 ) : myRes ? (
                   <button onClick={() => onCancel(myRes.id)}
-                    className="text-xs text-red-400 hover:text-red-600 underline underline-offset-2">예약취소</button>
+                    className="text-xs font-medium text-red-600 hover:text-red-700 transition-colors">예약취소</button>
                 ) : !isClosed ? (
                   <button onClick={() => setOpenSlotId(isOpen ? null : slot.id)}
-                    className="text-xs font-semibold px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors">
+                    className="text-xs font-medium px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white rounded transition-colors">
                     {isOpen ? '취소' : '신청'}
                   </button>
                 ) : null}
               </div>
 
               {isOpen && !myRes && !isFull && (
-                <div className="border-t border-slate-200 px-5 py-4 bg-white space-y-3">
+                <div className="border-t border-gray-200 px-4 py-4 bg-gray-50 space-y-3">
                   <div className="space-y-1">
-                    <label className="block text-xs font-medium text-slate-600">자재 내용 *</label>
+                    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">자재 내용 *</label>
                     <input type="text" placeholder="예) 철근 20톤" value={desc}
                       onChange={e => setDesc(e.target.value)} className={inputCls} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <label className="block text-xs font-medium text-slate-600">수량/규격</label>
+                      <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">수량/규격</label>
                       <input type="text" placeholder="예) 20톤" value={qty}
                         onChange={e => setQty(e.target.value)} className={inputCls} />
                     </div>
                     <div className="space-y-1">
-                      <label className="block text-xs font-medium text-slate-600">차량 종류</label>
+                      <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">차량 종류</label>
                       <select value={vehicle} onChange={e => setVehicle(e.target.value)} className={inputCls}>
                         <option value="">선택</option>
                         {VEHICLE_LIST.map(v => <option key={v} value={v}>{v}</option>)}
@@ -958,23 +945,23 @@ function MaterialTab({
                     </div>
                   </div>
                   <button onClick={() => handleReserve(slot.id)} disabled={submitting}
-                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50">
+                    className="w-full py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
                     {submitting ? '신청 중...' : '예약 신청'}
                   </button>
                 </div>
               )}
 
               {reservations.length > 0 && (
-                <div className="border-t border-slate-200 divide-y divide-slate-100">
+                <div className="border-t border-gray-200 divide-y divide-gray-100">
                   {reservations.map(r => (
                     <div key={r.id} className={[
-                      'flex items-center gap-3 px-5 py-2.5 text-xs',
-                      r.team_id === myTeamId ? 'bg-emerald-50' : 'bg-white',
+                      'flex items-center gap-3 px-4 py-2.5 text-xs',
+                      r.team_id === myTeamId ? 'bg-gray-50' : 'bg-white',
                     ].join(' ')}>
-                      <span className="font-semibold text-slate-700">{r.teams?.name ?? '업체'}</span>
-                      {r.material_description && <span className="text-slate-500">{r.material_description}</span>}
-                      {r.quantity && <span className="text-slate-400">· {r.quantity}</span>}
-                      {r.vehicle_type && <span className="text-slate-400">· {r.vehicle_type}</span>}
+                      <span className="font-medium text-gray-900">{r.teams?.name ?? '업체'}</span>
+                      {r.material_description && <span className="text-gray-600">{r.material_description}</span>}
+                      {r.quantity && <span className="text-gray-500">· {r.quantity}</span>}
+                      {r.vehicle_type && <span className="text-gray-500">· {r.vehicle_type}</span>}
                       {r.team_id === myTeamId && (
                         <span className="ml-auto text-emerald-600 font-medium">내 예약</span>
                       )}
@@ -993,9 +980,9 @@ function MaterialTab({
 // ── 공통 컴포넌트 ─────────────────────────────────────────────
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
-      <div className="px-5 py-3 border-b border-slate-200">
-        <h2 className="text-sm font-semibold text-slate-700">{title}</h2>
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="px-5 py-3 border-b border-gray-200">
+        <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
       </div>
       <div className="p-5">{children}</div>
     </div>
@@ -1005,31 +992,30 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 function LoadingSpinner() {
   return (
     <div className="flex justify-center py-20">
-      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      <div className="w-8 h-8 border-4 border-gray-900 border-t-transparent rounded-full animate-spin" />
     </div>
   )
 }
 
 function FullPageSpinner() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100">
-      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="w-8 h-8 border-4 border-gray-900 border-t-transparent rounded-full animate-spin" />
     </div>
   )
 }
 
 function ErrorPage({ message }: { message: string }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="text-center">
-        <p className="text-4xl mb-4">😕</p>
-        <p className="text-slate-500">{message}</p>
+        <p className="text-gray-500">{message}</p>
       </div>
     </div>
   )
 }
 
 const inputCls =
-  'w-full border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm text-slate-800 ' +
-  'outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ' +
-  'placeholder:text-slate-300 transition-colors disabled:opacity-50 disabled:bg-slate-50'
+  'w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 ' +
+  'outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900 ' +
+  'placeholder:text-gray-400 transition-colors disabled:opacity-50 disabled:bg-gray-50'
