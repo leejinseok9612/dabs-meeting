@@ -72,10 +72,16 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
 
   // 내 업체 & 전체 업체 목록 로드
   const loadTeam = useCallback(async () => {
+    // ① 이번 세션에 관리자 PIN 인증을 한 적 있으면 → 대시보드로 바로 이동
+    if (sessionStorage.getItem('admin_verified') === 'true') {
+      router.replace('/dashboard')
+      return
+    }
+
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setTeamLoading(false); return }
 
-    // 이미 등록된 업체 있는지 확인
+    // ② 이미 업체가 배정돼 있으면 → 업체 페이지로 바로 이동
     const { data: assigned } = await supabase
       .from('team_assignments')
       .select('team_id, teams(id, name)')
@@ -85,12 +91,11 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
     if (assigned?.teams) {
       const t = assigned.teams as unknown as { id: string; name: string }
       setMyTeam(t)
-      // 바로 자기 업체 페이지로 이동
       router.replace(`/submit/${t.id}`)
       return
     }
 
-    // 미등록 → 업체 목록 불러오기
+    // ③ 둘 다 아니면 → 업체 선택 화면 표시
     const { data: teams } = await supabase
       .from('teams')
       .select('id, name')
