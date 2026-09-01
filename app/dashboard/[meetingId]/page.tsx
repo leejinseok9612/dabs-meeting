@@ -432,18 +432,18 @@ function SubmissionRow({ row, index }: { row: SubmissionRow; index: number }) {
               <div className="space-y-0.5">
                 {(
                   [
-                    { key: 'elderly',      label: '고령',   color: 'text-amber-600'  },
-                    { key: 'superElderly', label: '초고령', color: 'text-amber-700'  },
-                    { key: 'foreign',      label: '외국인', color: 'text-violet-600' },
-                    { key: 'female',       label: '여성',   color: 'text-violet-600' },
-                    { key: 'diseased',     label: '유질환', color: 'text-red-500'    },
+                    { key: 'elderly',      label: '고령'   },
+                    { key: 'superElderly', label: '초고령' },
+                    { key: 'foreign',      label: '외국인' },
+                    { key: 'female',       label: '여성'   },
+                    { key: 'diseased',     label: '유질환' },
                   ] as const
                 )
                   .filter(item => (row.personnel_detail![item.key] ?? 0) > 0)
                   .map(item => (
                     <div key={item.key} className="flex items-center gap-1">
-                      <span className={`text-[10px] font-medium ${item.color} w-12 shrink-0`}>{item.label}</span>
-                      <span className="text-[10px] text-slate-500">{row.personnel_detail![item.key]}명</span>
+                      <span className="text-[10px] font-medium text-slate-500 w-12 shrink-0">{item.label}</span>
+                      <span className="text-[10px] text-slate-400">{row.personnel_detail![item.key]}명</span>
                     </div>
                   ))}
               </div>
