@@ -39,10 +39,33 @@ export async function GET(req: NextRequest) {
   const today = getTodayKST()
   const { data: meeting } = await adminSupabase
     .from('meetings')
-    .select('id, title, date, status')
+    .select('id, title, date, status, map_file_url, map_file_name')
     .eq('date', today)
     .eq('status', 'open')
     .maybeSingle()
+
+  // 지적도가 없으면 가장 최근 회의에서 자동으로 가져옴
+  if (meeting && !meeting.map_file_url) {
+    const { data: latest } = await adminSupabase
+      .from('meetings')
+      .select('map_file_url, map_file_name')
+      .neq('id', meeting.id)
+      .not('map_file_url', 'is', null)
+      .order('date', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (latest?.map_file_url) {
+      meeting.map_file_url  = latest.map_file_url
+      meeting.map_file_name = latest.map_file_name ?? null
+
+      // 현재 회의에도 저장해 다음 로드 시 바로 표시
+      await adminSupabase
+        .from('meetings')
+        .update({ map_file_url: latest.map_file_url, map_file_name: latest.map_file_name })
+        .eq('id', meeting.id)
+    }
+  }
 
   return NextResponse.json({ team, meeting: meeting ?? null })
 }

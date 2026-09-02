@@ -138,8 +138,36 @@ export default function DashboardPage() {
 
     if (!mtg) { router.push('/dashboard'); return }
     setMeeting(mtg as unknown as Meeting)
-    setMapUrl((mtg as unknown as {map_file_url?: string}).map_file_url ?? null)
-    setMapName((mtg as unknown as {map_file_name?: string}).map_file_name ?? null)
+
+    const mtgAny = mtg as unknown as { map_file_url?: string; map_file_name?: string }
+    let mapFileUrl  = mtgAny.map_file_url  ?? null
+    let mapFileName = mtgAny.map_file_name ?? null
+
+    // 현재 회의에 지적도가 없으면 가장 최근에 업로드된 지적도를 자동으로 가져옴
+    if (!mapFileUrl) {
+      const { data: latest } = await supabase
+        .from('meetings')
+        .select('map_file_url,map_file_name')
+        .neq('id', meetingId)
+        .not('map_file_url', 'is', null)
+        .order('date', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (latest?.map_file_url) {
+        mapFileUrl  = (latest as unknown as { map_file_url: string }).map_file_url
+        mapFileName = (latest as unknown as { map_file_name?: string }).map_file_name ?? null
+
+        // 현재 회의에도 저장해 다음 로드 시 바로 표시
+        await supabase
+          .from('meetings')
+          .update({ map_file_url: mapFileUrl, map_file_name: mapFileName })
+          .eq('id', meetingId)
+      }
+    }
+
+    setMapUrl(mapFileUrl)
+    setMapName(mapFileName)
     setSubmissions((subs ?? []) as unknown as SubmissionRow[])
     setLastUpdated(new Date())
     setPageLoading(false)

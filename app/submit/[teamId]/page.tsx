@@ -12,7 +12,7 @@ import MapAnnotator from '@/app/components/MapAnnotator'
 
 // ── 타입 ────────────────────────────────────────────────────
 interface Team    { id: string; name: string; department?: string }
-interface Meeting { id: string; title: string; date: string; status: 'open' | 'closed'; map_file_url?: string }
+interface Meeting { id: string; title: string; date: string; status: 'open' | 'closed'; map_file_url?: string; map_file_name?: string }
 interface Announcement { id: string; title: string; content: string }
 interface WorkItem {
   id: string; work_type: 'high_risk' | 'general'; team_id: string
