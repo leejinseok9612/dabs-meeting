@@ -10,6 +10,7 @@ import { useParams, useRouter }                     from 'next/navigation'
 import type { RealtimeChannel }                     from '@supabase/supabase-js'
 import PinGate                                      from '@/app/components/PinGate'
 import MapAnnotator                                 from '@/app/components/MapAnnotator'
+import type { WorkItemInfo }                        from '@/app/components/MapAnnotator'
 
 // ── 고정 업체 순서 ─────────────────────────────────────────
 const COMPANY_ORDER = ['천호엔지니어링', '참마루건설', '지디건설'] as const
@@ -67,7 +68,7 @@ interface MaterialReservation {
   quantity?: string; vehicle_type?: string; teams?: { id: string; name: string }
 }
 interface MaterialSlot {
-  id: string; slot_time: string; max_teams: number
+  id: string; slot_time: string; max_teams: number; gate: string
   material_reservations: MaterialReservation[]
 }
 
@@ -405,13 +406,14 @@ export default function DashboardPage() {
                   원본보기
                 </a>
               </div>
-              {/* 지도 — 읽기 전용 (업체 마커 확인용) */}
+              {/* 지도 — 읽기 전용 (업체 마커 확인용, 클릭 시 작업항목 팝업) */}
               <MapAnnotator
                 meetingId={meetingId}
                 mapUrl={mapUrl}
                 myTeamId=""
                 allTeamIds={allTeams.map(t => t.id)}
                 readOnly={true}
+                workItems={workItems as unknown as WorkItemInfo[]}
               />
             </div>
           ) : (
@@ -464,43 +466,7 @@ export default function DashboardPage() {
         ))}
 
         {/* ── 제출 현황 테이블 ─────────────────────────────── */}
-        <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">업체별 제출 현황</h2>
-            <span className="text-xs text-gray-400">
-              순서: {COMPANY_ORDER.join(' › ')}
-            </span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide border-b border-gray-100">
-                  <th className="text-left px-6 py-3 font-medium w-8">#</th>
-                  <th className="text-left px-6 py-3 font-medium">업체명</th>
-                  <th className="text-left px-4 py-3 font-medium">투입 인원</th>
-                  <th className="text-left px-4 py-3 font-medium">작업공정</th>
-                  <th className="text-left px-4 py-3 font-medium">투입 장비</th>
-                  <th className="text-left px-4 py-3 font-medium">제출 파일</th>
-                  <th className="text-left px-4 py-3 font-medium">제출 시간</th>
-                  <th className="text-left px-4 py-3 font-medium">상태</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {sorted.map((sub, idx) => (
-                  <SubmissionRow key={sub.id} row={sub} index={idx + 1} />
-                ))}
-                {sorted.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="px-6 py-12 text-center text-gray-400 text-sm">
-                      아직 제출된 자료가 없습니다.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <SubmissionsSection sorted={sorted} />
 
 
       </main>
@@ -510,105 +476,229 @@ export default function DashboardPage() {
 
 // ── 서브 컴포넌트 ─────────────────────────────────────────
 
-// ── 고위험/일반 작업 현황 ──────────────────────────────────
+// ── 고위험/일반 작업 현황 (업체 필터 포함) ─────────────────────
 function WorkItemSection({ items, color }: { items: WorkItem[]; color: 'red'|'gray' }) {
+  const [filterTeam, setFilterTeam] = useState<string | null>(null)
+
+  const teams = [...new Map(
+    items.filter(i => i.teams?.name).map(i => [i.teams!.name, i.teams!])
+  ).values()]
+
+  const filtered = filterTeam ? items.filter(i => i.teams?.name === filterTeam) : items
+
   if (items.length === 0) {
-    return (
-      <div className="px-6 py-10 text-center text-gray-400 text-sm">
-        등록된 작업이 없습니다.
-      </div>
-    )
+    return <div className="px-6 py-10 text-center text-gray-400 text-sm">등록된 작업이 없습니다.</div>
   }
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide border-b border-gray-100">
-            <th className="text-left px-6 py-3 font-medium">업체명</th>
-            <th className="text-left px-4 py-3 font-medium">작업명</th>
-            <th className="text-left px-4 py-3 font-medium">위치/구간</th>
-            <th className="text-left px-4 py-3 font-medium">투입 인원</th>
-            <th className="text-left px-4 py-3 font-medium">상세 내용</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {items.map(item => (
-            <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-              <td className="px-6 py-3 font-medium text-gray-900 whitespace-nowrap">
-                <span className={[
-                  'inline-block w-1.5 h-4 rounded-full mr-2 align-middle',
-                  color === 'red' ? 'bg-red-400' : 'bg-blue-400',
-                ].join(' ')} />
-                {item.teams?.name ?? '—'}
-              </td>
-              <td className="px-4 py-3 text-gray-800 font-medium">{item.work_name}</td>
-              <td className="px-4 py-3 text-gray-500 text-xs">{item.location || '—'}</td>
-              <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
-                {item.worker_count > 0 ? `${item.worker_count}명` : '—'}
-              </td>
-              <td className="px-4 py-3 text-gray-500 text-xs max-w-[220px]">
-                {item.description || '—'}
-              </td>
-            </tr>
+    <div>
+      {/* 업체 필터 버튼 */}
+      {teams.length > 1 && (
+        <div className="px-6 py-3 border-b border-gray-100 flex flex-wrap gap-2 bg-gray-50">
+          <button
+            onClick={() => setFilterTeam(null)}
+            className={[
+              'text-xs font-medium px-3 py-1 rounded-full transition-colors',
+              filterTeam === null ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-400',
+            ].join(' ')}
+          >
+            전체 ({items.length})
+          </button>
+          {teams.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setFilterTeam(prev => prev === t.name ? null : t.name)}
+              className={[
+                'text-xs font-medium px-3 py-1 rounded-full transition-colors',
+                filterTeam === t.name ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-400',
+              ].join(' ')}
+            >
+              {t.name} ({items.filter(i => i.teams?.name === t.name).length})
+            </button>
           ))}
-        </tbody>
-      </table>
+        </div>
+      )}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide border-b border-gray-100">
+              <th className="text-left px-6 py-3 font-medium">업체명</th>
+              <th className="text-left px-4 py-3 font-medium">작업명</th>
+              <th className="text-left px-4 py-3 font-medium">위치/구간</th>
+              <th className="text-left px-4 py-3 font-medium">투입 인원</th>
+              <th className="text-left px-4 py-3 font-medium">상세 내용</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {filtered.map(item => (
+              <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                <td className="px-6 py-3 font-medium text-gray-900 whitespace-nowrap">
+                  <span className={['inline-block w-1.5 h-4 rounded-full mr-2 align-middle',
+                    color === 'red' ? 'bg-red-400' : 'bg-blue-400'].join(' ')} />
+                  {item.teams?.name ?? '—'}
+                </td>
+                <td className="px-4 py-3 text-gray-800 font-medium">{item.work_name}</td>
+                <td className="px-4 py-3 text-gray-500 text-xs">{item.location || '—'}</td>
+                <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
+                  {item.worker_count > 0 ? `${item.worker_count}명` : '—'}
+                </td>
+                <td className="px-4 py-3 text-gray-500 text-xs max-w-[220px]">{item.description || '—'}</td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-300 text-sm">해당 업체의 작업이 없습니다.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
 
-// ── 자재 하역/운반 현황 테이블 ─────────────────────────────
+// ── 자재 하역/운반 현황 (GATE 탭) ──────────────────────────────
 function MaterialSection({ slots }: { slots: MaterialSlot[] }) {
-  const hasAny = slots.some(s => (s.material_reservations?.length ?? 0) > 0)
-  if (!hasAny) {
-    return (
-      <div className="px-6 py-10 text-center text-gray-400 text-sm">
-        예약된 자재 하역이 없습니다.
-      </div>
-    )
+  const gates    = [...new Set(slots.map(s => s.gate))].sort()
+  const [activeGate, setActiveGate] = useState<string>(gates[0] ?? 'GATE A')
+  const gateSlots = slots.filter(s => s.gate === activeGate)
+  const hasAny    = gateSlots.some(s => (s.material_reservations?.length ?? 0) > 0)
+
+  if (slots.length === 0) {
+    return <div className="px-6 py-10 text-center text-gray-400 text-sm">예약된 자재 하역이 없습니다.</div>
   }
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide border-b border-gray-100">
-            <th className="text-left px-6 py-3 font-medium">신청 시간</th>
-            <th className="text-left px-4 py-3 font-medium">업체명</th>
-            <th className="text-left px-4 py-3 font-medium">자재 내용</th>
-            <th className="text-left px-4 py-3 font-medium">수량/규격</th>
-            <th className="text-left px-4 py-3 font-medium">차량 종류</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {slots.flatMap(slot =>
-            (slot.material_reservations ?? []).map(r => (
-              <tr key={r.id} className="hover:bg-gray-50 transition-colors">
-                <td className="px-6 py-3 font-medium text-gray-900 whitespace-nowrap">
-                  {slot.slot_time}
-                </td>
-                <td className="px-4 py-3 text-gray-800 font-medium whitespace-nowrap">
-                  {r.teams?.name ?? '—'}
-                </td>
-                <td className="px-4 py-3 text-gray-600">
-                  {r.material_description || '—'}
-                </td>
-                <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                  {r.quantity || '—'}
-                </td>
-                <td className="px-4 py-3">
-                  {r.vehicle_type
-                    ? <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full font-medium">
-                        {r.vehicle_type}
-                      </span>
-                    : <span className="text-gray-300 text-xs">—</span>
-                  }
+    <div>
+      {/* GATE 탭 */}
+      <div className="flex border-b border-gray-100">
+        {gates.map(gate => {
+          const gSlots = slots.filter(s => s.gate === gate)
+          const count  = gSlots.reduce((acc, s) => acc + (s.material_reservations?.length ?? 0), 0)
+          return (
+            <button
+              key={gate}
+              onClick={() => setActiveGate(gate)}
+              className={[
+                'flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
+                activeGate === gate
+                  ? 'border-gray-900 text-gray-900'
+                  : 'border-transparent text-gray-400 hover:text-gray-600',
+              ].join(' ')}
+            >
+              🚛 {gate}
+              {count > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-gray-900 text-white">{count}</span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {!hasAny ? (
+        <div className="px-6 py-10 text-center text-gray-400 text-sm">
+          {activeGate}에 예약된 자재 하역이 없습니다.
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide border-b border-gray-100">
+                <th className="text-left px-6 py-3 font-medium">시간대</th>
+                <th className="text-left px-4 py-3 font-medium">업체명</th>
+                <th className="text-left px-4 py-3 font-medium">자재 내용</th>
+                <th className="text-left px-4 py-3 font-medium">수량/규격</th>
+                <th className="text-left px-4 py-3 font-medium">차량 종류</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {gateSlots.flatMap(slot =>
+                (slot.material_reservations ?? []).map(r => (
+                  <tr key={r.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-3 font-medium text-gray-900 whitespace-nowrap">{slot.slot_time}</td>
+                    <td className="px-4 py-3 text-gray-800 font-medium whitespace-nowrap">{r.teams?.name ?? '—'}</td>
+                    <td className="px-4 py-3 text-gray-600">{r.material_description || '—'}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{r.quantity || '—'}</td>
+                    <td className="px-4 py-3">
+                      {r.vehicle_type
+                        ? <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full font-medium">{r.vehicle_type}</span>
+                        : <span className="text-gray-300 text-xs">—</span>}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── 제출 현황 테이블 (상태 필터 포함) ──────────────────────────
+function SubmissionsSection({ sorted }: { sorted: SubmissionRow[] }) {
+  const [statusFilter, setStatusFilter] = useState<'all' | 'submitted' | 'pending'>('all')
+
+  const filtered = statusFilter === 'all'
+    ? sorted
+    : sorted.filter(s => s.status === statusFilter)
+
+  const submittedCount = sorted.filter(s => s.status === 'submitted').length
+  const pendingCount   = sorted.filter(s => s.status === 'pending').length
+
+  return (
+    <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
+        <h2 className="font-semibold text-gray-900">업체별 제출 현황</h2>
+        {/* 상태 필터 */}
+        <div className="flex gap-2">
+          {([
+            { key: 'all',       label: `전체 (${sorted.length})` },
+            { key: 'submitted', label: `제출완료 (${submittedCount})` },
+            { key: 'pending',   label: `미제출 (${pendingCount})` },
+          ] as const).map(f => (
+            <button
+              key={f.key}
+              onClick={() => setStatusFilter(f.key)}
+              className={[
+                'text-xs font-medium px-3 py-1.5 rounded-full transition-colors',
+                statusFilter === f.key
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+              ].join(' ')}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide border-b border-gray-100">
+              <th className="text-left px-6 py-3 font-medium w-8">#</th>
+              <th className="text-left px-6 py-3 font-medium">업체명</th>
+              <th className="text-left px-4 py-3 font-medium">투입 인원</th>
+              <th className="text-left px-4 py-3 font-medium">작업공정</th>
+              <th className="text-left px-4 py-3 font-medium">투입 장비</th>
+              <th className="text-left px-4 py-3 font-medium">제출 파일</th>
+              <th className="text-left px-4 py-3 font-medium">제출 시간</th>
+              <th className="text-left px-4 py-3 font-medium">상태</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {filtered.map((sub, idx) => (
+              <SubmissionRow key={sub.id} row={sub} index={idx + 1} />
+            ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={8} className="px-6 py-12 text-center text-gray-400 text-sm">
+                  {statusFilter === 'all' ? '아직 제출된 자료가 없습니다.' : '해당 조건의 업체가 없습니다.'}
                 </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
   )
 }
 

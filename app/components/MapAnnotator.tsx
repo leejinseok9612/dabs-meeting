@@ -36,23 +36,36 @@ export interface MapMarker {
   teams?: { id: string; name: string }
 }
 
+export interface WorkItemInfo {
+  id: string
+  work_type: 'high_risk' | 'general'
+  work_name: string
+  location?: string
+  worker_count: number
+  description?: string
+  team_id: string
+}
+
 interface Props {
   meetingId: string
-  mapUrl: string            // 배경 지적도 URL
+  mapUrl: string
   myTeamId: string          // 현재 사용자 팀 ID (관리자면 '')
   allTeamIds: string[]      // 전체 팀 순서 (색상 배정용)
   readOnly?: boolean        // 관리자 뷰: 편집 불가
-  onMarkerCountChange?: (count: number) => void  // 내 마커 수 변경 알림
+  onMarkerCountChange?: (count: number) => void
+  workItems?: WorkItemInfo[] // 마커 클릭 팝업용 작업항목
 }
 
 export default function MapAnnotator({
-  meetingId, mapUrl, myTeamId, allTeamIds, readOnly = false, onMarkerCountChange,
+  meetingId, mapUrl, myTeamId, allTeamIds, readOnly = false, onMarkerCountChange, workItems = [],
 }: Props) {
   const [markers,      setMarkers]      = useState<MapMarker[]>([])
   const [draggingType, setDraggingType] = useState<string | null>(null)
   const [labelInput,   setLabelInput]   = useState('')
   const [showLabelFor, setShowLabelFor] = useState<{type:string; x:number; y:number} | null>(null)
   const [hoverId,      setHoverId]      = useState<string | null>(null)
+  const [clickedMarker, setClickedMarker] = useState<MapMarker | null>(null)
+  const [filterTeamId, setFilterTeamId]   = useState<string | null>(null)   // 관리자 팀 필터
   const mapRef   = useRef<HTMLDivElement>(null)
   const supabase = useMemo(() => createClient(), [])
 
@@ -62,7 +75,6 @@ export default function MapAnnotator({
     const data = await res.json()
     if (Array.isArray(data)) {
       setMarkers(data)
-      // 부모 컴포넌트에 내 마커 수 알림 (업체: myTeamId 일치, 관리자: null 마커)
       if (onMarkerCountChange) {
         const myCount = myTeamId
           ? (data as MapMarker[]).filter(m => m.team_id === myTeamId).length
@@ -83,29 +95,19 @@ export default function MapAnnotator({
         filter: `meeting_id=eq.${meetingId}`,
       }, () => { loadMarkers() })
       .subscribe()
-
     return () => { channel.unsubscribe() }
   }, [meetingId, supabase, loadMarkers])
 
   // ── 드래그&드롭 핸들러 ────────────────────────────────────
-  function handleDragStart(type: string) {
-    setDraggingType(type)
-  }
-
-  function handleDragOver(e: React.DragEvent) {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
-  }
+  function handleDragStart(type: string) { setDraggingType(type) }
+  function handleDragOver(e: React.DragEvent) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault()
     if (!draggingType || !mapRef.current || readOnly) return
-
     const rect = mapRef.current.getBoundingClientRect()
     const x = ((e.clientX - rect.left) / rect.width) * 100
     const y = ((e.clientY - rect.top) / rect.height) * 100
-
-    // 라벨 입력 팝업 표시
     setShowLabelFor({ type: draggingType, x, y })
     setLabelInput('')
     setDraggingType(null)
@@ -114,13 +116,12 @@ export default function MapAnnotator({
   async function confirmPlace() {
     if (!showLabelFor) return
     const { type, x, y } = showLabelFor
-
     const res = await fetch('/api/map-markers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         meeting_id:  meetingId,
-        team_id:     myTeamId || null,   // 관리자는 myTeamId='' → null
+        team_id:     myTeamId || null,
         marker_type: type,
         x_pct:       Math.round(x * 10) / 10,
         y_pct:       Math.round(y * 10) / 10,
@@ -128,17 +129,18 @@ export default function MapAnnotator({
       }),
     })
     setShowLabelFor(null)
-    if (res.ok) loadMarkers()   // Realtime 보완: 즉시 갱신
+    if (res.ok) loadMarkers()
   }
 
   async function deleteMarker(id: string) {
     await fetch(`/api/map-markers?id=${id}`, { method: 'DELETE' })
+    setClickedMarker(null)
     setMarkers(prev => prev.filter(m => m.id !== id))
-    loadMarkers()   // 삭제 후 즉시 갱신
+    loadMarkers()
   }
 
   function getTeamColor(teamId: string | null): string {
-    if (!teamId) return '#6B7280'   // 관리자 마커 → 회색
+    if (!teamId) return '#6B7280'
     const idx = allTeamIds.indexOf(teamId)
     return TEAM_COLORS[idx >= 0 ? idx % TEAM_COLORS.length : 0]
   }
@@ -153,9 +155,19 @@ export default function MapAnnotator({
     })
     .filter(t => t.count > 0)
 
+  // 필터 적용된 마커 목록
+  const visibleMarkers = filterTeamId
+    ? markers.filter(m => m.team_id === filterTeamId)
+    : markers
+
+  // 클릭한 마커의 업체 작업항목
+  const clickedTeamItems = clickedMarker
+    ? workItems.filter(w => w.team_id === (clickedMarker.team_id ?? ''))
+    : []
+
   return (
     <div className="space-y-4">
-      {/* ── 도구 패널 (관리자 뷰에서는 숨김) ────────────────── */}
+      {/* ── 도구 패널 (업체 전용) ────────────────────────────── */}
       {!readOnly && (
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <p className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">
@@ -187,9 +199,42 @@ export default function MapAnnotator({
             {readOnly ? '🗺️ 전체 협업 현황' : '🗺️ 지적도 — 내 장비/작업구역 표시'}
           </h3>
           {!readOnly && (
-            <p className="text-xs text-slate-400">내 마커를 클릭하면 삭제됩니다</p>
+            <p className="text-xs text-slate-400">마커를 클릭하면 상세 정보를 볼 수 있습니다</p>
           )}
         </div>
+
+        {/* 관리자 팀 필터 */}
+        {readOnly && teamLegend.length > 0 && (
+          <div className="px-4 py-2 border-b border-slate-100 flex flex-wrap gap-2 bg-slate-50">
+            <button
+              onClick={() => setFilterTeamId(null)}
+              className={[
+                'text-xs font-medium px-3 py-1 rounded-full transition-colors',
+                filterTeamId === null
+                  ? 'bg-slate-800 text-white'
+                  : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400',
+              ].join(' ')}
+            >
+              전체 ({markers.length})
+            </button>
+            {teamLegend.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setFilterTeamId(prev => prev === t.id ? null : t.id)}
+                className={[
+                  'text-xs font-medium px-3 py-1 rounded-full transition-colors flex items-center gap-1.5',
+                  filterTeamId === t.id
+                    ? 'text-white'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400',
+                ].join(' ')}
+                style={filterTeamId === t.id ? { backgroundColor: t.color, borderColor: t.color } : {}}
+              >
+                <span className="w-2 h-2 rounded-full" style={{ background: t.color }} />
+                {t.name} ({t.count})
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* 지도 컨테이너 */}
         <div
@@ -199,7 +244,6 @@ export default function MapAnnotator({
           onDragOver={handleDragOver}
           onDrop={handleDrop}
         >
-          {/* 배경 이미지 */}
           <img
             src={mapUrl}
             alt="지적도"
@@ -207,7 +251,6 @@ export default function MapAnnotator({
             draggable={false}
           />
 
-          {/* 드롭 안내 오버레이 */}
           {draggingType && (
             <div className="absolute inset-0 bg-blue-500/10 border-4 border-dashed border-blue-400
                             flex items-center justify-center pointer-events-none z-10">
@@ -218,10 +261,9 @@ export default function MapAnnotator({
           )}
 
           {/* 마커들 */}
-          {markers.map(marker => {
+          {visibleMarkers.map(marker => {
             const typeInfo   = MARKER_TYPES[marker.marker_type]
             const teamColor  = getTeamColor(marker.team_id ?? null)
-            // 관리자(myTeamId='')는 team_id=null인 마커가 '내 것'
             const isMyMarker = myTeamId
               ? marker.team_id === myTeamId
               : marker.team_id === null || marker.team_id === undefined
@@ -234,18 +276,11 @@ export default function MapAnnotator({
                 style={{ left: `${marker.x_pct}%`, top: `${marker.y_pct}%` }}
                 onMouseEnter={() => setHoverId(marker.id)}
                 onMouseLeave={() => setHoverId(null)}
-                onClick={() => { if (isMyMarker && !readOnly) deleteMarker(marker.id) }}
+                onClick={() => setClickedMarker(marker)}
               >
-                {/* 마커 아이콘 */}
-                <div
-                  className={[
-                    'relative flex flex-col items-center cursor-pointer transition-transform',
-                    isMyMarker && !readOnly ? 'hover:scale-110' : '',
-                  ].join(' ')}
-                >
+                <div className="relative flex flex-col items-center cursor-pointer transition-transform hover:scale-110">
                   <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center shadow-lg text-xl
-                               border-3 border-white"
+                    className="w-10 h-10 rounded-full flex items-center justify-center shadow-lg text-xl border-3 border-white"
                     style={{
                       background: typeInfo?.bg ?? '#fff',
                       boxShadow: `0 0 0 3px ${teamColor}, 0 4px 12px rgba(0,0,0,0.2)`,
@@ -253,28 +288,20 @@ export default function MapAnnotator({
                   >
                     {typeInfo?.icon ?? '📍'}
                   </div>
-
-                  {/* 팀 색상 점 */}
                   <div
                     className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white"
                     style={{ background: teamColor }}
                   />
-
-                  {/* 툴팁 */}
                   {isHovered && (
-                    <div
-                      className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2
-                                 bg-slate-800 text-white text-xs rounded-lg px-2.5 py-1.5
-                                 whitespace-nowrap shadow-xl z-30"
-                    >
+                    <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2
+                                    bg-slate-800 text-white text-xs rounded-lg px-2.5 py-1.5
+                                    whitespace-nowrap shadow-xl z-30 pointer-events-none">
                       <p className="font-semibold" style={{ color: teamColor }}>
-                        {marker.teams?.name ?? '업체'}
+                        {marker.teams?.name ?? (isMyMarker ? '내 마커' : '업체')}
                       </p>
                       <p>{typeInfo?.label ?? marker.marker_type}</p>
                       {marker.label && <p className="text-slate-300">{marker.label}</p>}
-                      {isMyMarker && !readOnly && (
-                        <p className="text-red-300 text-xs mt-0.5">클릭하여 삭제</p>
-                      )}
+                      <p className="text-slate-400 text-[10px] mt-0.5">클릭하여 상세보기</p>
                     </div>
                   )}
                 </div>
@@ -282,7 +309,6 @@ export default function MapAnnotator({
             )
           })}
 
-          {/* 지도 없을 때 안내 */}
           {!mapUrl && (
             <div className="absolute inset-0 flex items-center justify-center bg-slate-50">
               <p className="text-slate-400 text-sm">관리자가 지적도를 업로드하면 여기에 표시됩니다</p>
@@ -291,7 +317,7 @@ export default function MapAnnotator({
         </div>
 
         {/* 범례 */}
-        {teamLegend.length > 0 && (
+        {teamLegend.length > 0 && !readOnly && (
           <div className="px-4 py-3 border-t border-slate-100 flex flex-wrap gap-3">
             {teamLegend.map(t => (
               <div key={t.id} className="flex items-center gap-1.5 text-xs text-slate-600">
@@ -334,6 +360,112 @@ export default function MapAnnotator({
                 지도에 표시
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 마커 클릭 상세 팝업 ───────────────────────────────── */}
+      {clickedMarker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          onClick={e => { if (e.target === e.currentTarget) setClickedMarker(null) }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+            {/* 헤더 */}
+            <div className="px-6 pt-6 pb-4 border-b border-gray-100">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-12 h-12 rounded-full flex items-center justify-center text-2xl shadow"
+                    style={{
+                      background: MARKER_TYPES[clickedMarker.marker_type]?.bg ?? '#f3f4f6',
+                      boxShadow: `0 0 0 3px ${getTeamColor(clickedMarker.team_id)}`,
+                    }}
+                  >
+                    {MARKER_TYPES[clickedMarker.marker_type]?.icon ?? '📍'}
+                  </div>
+                  <div>
+                    <p className="font-bold text-gray-900">
+                      {MARKER_TYPES[clickedMarker.marker_type]?.label ?? clickedMarker.marker_type}
+                    </p>
+                    <p className="text-sm font-medium" style={{ color: getTeamColor(clickedMarker.team_id) }}>
+                      {clickedMarker.teams?.name ?? '알 수 없는 업체'}
+                    </p>
+                    {clickedMarker.label && (
+                      <p className="text-xs text-gray-500 mt-0.5">{clickedMarker.label}</p>
+                    )}
+                  </div>
+                </div>
+                <button onClick={() => setClickedMarker(null)}
+                  className="text-gray-400 hover:text-gray-600 text-lg font-medium p-1">✕</button>
+              </div>
+            </div>
+
+            {/* 해당 업체 작업항목 */}
+            {clickedTeamItems.length > 0 && (
+              <div className="px-6 py-4 max-h-60 overflow-y-auto space-y-2">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  {clickedMarker.teams?.name ?? '이 업체'}의 작업 현황
+                </p>
+                {clickedTeamItems.map(item => (
+                  <div key={item.id} className={[
+                    'rounded-lg border px-3 py-2.5',
+                    item.work_type === 'high_risk'
+                      ? 'bg-red-50 border-red-100'
+                      : 'bg-blue-50 border-blue-100',
+                  ].join(' ')}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={[
+                        'text-[10px] font-bold px-1.5 py-0.5 rounded uppercase',
+                        item.work_type === 'high_risk'
+                          ? 'bg-red-500 text-white'
+                          : 'bg-blue-500 text-white',
+                      ].join(' ')}>
+                        {item.work_type === 'high_risk' ? '고위험' : '일반'}
+                      </span>
+                      <p className="text-sm font-medium text-gray-900">{item.work_name}</p>
+                    </div>
+                    {(item.location || item.worker_count > 0) && (
+                      <p className="text-xs text-gray-500">
+                        {[item.location, item.worker_count > 0 ? `${item.worker_count}명` : ''].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                    {item.description && (
+                      <p className="text-xs text-gray-400 mt-0.5">{item.description}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {clickedTeamItems.length === 0 && (
+              <div className="px-6 py-4 text-center text-gray-400 text-sm">
+                등록된 작업 항목이 없습니다
+              </div>
+            )}
+
+            {/* 푸터: 삭제 버튼 (내 마커 + 편집 모드) */}
+            {(() => {
+              const isOwn = myTeamId
+                ? clickedMarker.team_id === myTeamId
+                : clickedMarker.team_id === null
+              return isOwn && !readOnly ? (
+                <div className="px-6 pb-5 pt-2">
+                  <button
+                    onClick={() => deleteMarker(clickedMarker.id)}
+                    className="w-full py-2.5 bg-red-50 hover:bg-red-100 border border-red-200
+                               text-red-600 text-sm font-medium rounded-xl transition-colors"
+                  >
+                    이 마커 삭제
+                  </button>
+                </div>
+              ) : (
+                <div className="px-6 pb-5 pt-2">
+                  <button onClick={() => setClickedMarker(null)}
+                    className="w-full py-2.5 border border-gray-200 text-gray-600 text-sm rounded-xl hover:bg-gray-50">
+                    닫기
+                  </button>
+                </div>
+              )
+            })()}
           </div>
         </div>
       )}
