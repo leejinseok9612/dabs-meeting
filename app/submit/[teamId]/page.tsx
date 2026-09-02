@@ -235,8 +235,7 @@ export default function SubmissionPage() {
     const validEquip = equipRows.filter(r => r.type && Number(r.count) > 0)
     if (validEquip.length === 0)
       errs.equipment = '투입 장비를 1개 이상 입력해 주세요.'
-    if (!file)
-      errs.file = 'PDF 파일을 첨부해 주세요.'
+    // PDF는 선택사항 — 첨부하지 않아도 제출 가능
     setErrors(errs); return Object.keys(errs).length === 0
   }
 
@@ -245,43 +244,37 @@ export default function SubmissionPage() {
     if (!validate() || !meeting) return
     setStep('uploading'); setProgress(0); setErrorMsg('')
     try {
+      const equipStr = equipRows
+        .filter(r => r.type && Number(r.count) > 0)
+        .map(r => `${r.type} ${r.count}대`).join(', ')
+
       const fd = new FormData()
-      fd.append('file', file!)
-      fd.append('teamId', teamId)
-      fd.append('meetingId', meeting.id)
+      fd.append('team_id',          teamId)
+      fd.append('meeting_id',       meeting.id)
+      fd.append('personnel_count',  personnel.total)
+      fd.append('personnel_detail', JSON.stringify({
+        elderly:      Number(personnel.elderly)      || 0,
+        superElderly: Number(personnel.superElderly) || 0,
+        foreign:      Number(personnel.foreign)      || 0,
+        female:       Number(personnel.female)       || 0,
+        diseased:     Number(personnel.diseased)     || 0,
+      }))
+      fd.append('work_process', workProcess)
+      fd.append('equipment',    equipStr)
+      if (file) fd.append('file', file)
+
       const xhr = new XMLHttpRequest()
-      const uploadDone = await new Promise<string>((resolve, reject) => {
-        xhr.upload.onprogress = e => {
-          if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 80))
+      const result = await new Promise<string>((resolve, reject) => {
+        xhr.upload.onprogress = ev => {
+          if (ev.lengthComputable) setProgress(Math.round((ev.loaded / ev.total) * 90))
         }
         xhr.onload  = () => xhr.status < 300 ? resolve(xhr.responseText) : reject(new Error(xhr.responseText))
         xhr.onerror = () => reject(new Error('네트워크 오류'))
         xhr.open('POST', '/api/submit'); xhr.send(fd)
       })
-      setProgress(90); setStep('saving')
-      const { filePath } = JSON.parse(uploadDone)
-      const equipStr = equipRows
-        .filter(r => r.type && Number(r.count) > 0)
-        .map(r => `${r.type} ${r.count}대`).join(', ')
-      const infoRes = await fetch('/api/submit-info', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          teamId, meetingId: meeting.id, filePath,
-          personnelCount: Number(personnel.total),
-          personnelDetail: {
-            elderly: Number(personnel.elderly) || 0,
-            superElderly: Number(personnel.superElderly) || 0,
-            foreign: Number(personnel.foreign) || 0,
-            female: Number(personnel.female) || 0,
-            diseased: Number(personnel.diseased) || 0,
-          },
-          equipment: equipStr, workProcess,
-        }),
-      })
-      if (!infoRes.ok) throw new Error(await infoRes.text())
-      const { downloadUrl: url } = await infoRes.json()
-      setDownloadUrl(url); setProgress(100); setStep('done')
+
+      const { signedUrl } = JSON.parse(result)
+      setDownloadUrl(signedUrl ?? ''); setProgress(100); setStep('done')
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : '오류가 발생했습니다.')
       setStep('error')
@@ -315,8 +308,10 @@ export default function SubmissionPage() {
     if (!res.ok) {
       const err = await res.json()
       alert(err.error || '예약 실패')
+      return
     }
-    // Realtime이 자동 갱신
+    // 즉시 갱신 (Realtime 보완)
+    if (meeting) reloadSlots(meeting.id)
   }
 
   async function cancelReservation(reservationId: string) {
@@ -665,7 +660,7 @@ function SubmitTab({
       </Card>
 
       {/* 파일 첨부 */}
-      <Card title="PDF 파일 첨부">
+      <Card title="PDF 파일 첨부 (선택)">
         <div
           onDragOver={e => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
@@ -692,7 +687,7 @@ function SubmitTab({
           ) : (
             <div className="text-gray-400">
               <p className="text-sm">PDF를 여기에 끌어다 놓거나 클릭하여 선택</p>
-              <p className="text-xs mt-1 text-gray-500">최대 {MAX_FILE_MB}MB</p>
+              <p className="text-xs mt-1 text-gray-500">최대 {MAX_FILE_MB}MB · 첨부하지 않아도 제출 가능</p>
             </div>
           )}
         </div>
