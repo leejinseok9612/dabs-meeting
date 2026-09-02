@@ -232,10 +232,7 @@ export default function SubmissionPage() {
       errs.personnelTotal = '총 인원을 올바르게 입력해 주세요.'
     if (!workProcess.trim())
       errs.workProcess = '작업공정을 입력해 주세요.'
-    const validEquip = equipRows.filter(r => r.type && Number(r.count) > 0)
-    if (validEquip.length === 0)
-      errs.equipment = '투입 장비를 1개 이상 입력해 주세요.'
-    // PDF는 선택사항 — 첨부하지 않아도 제출 가능
+    // 장비·PDF 모두 선택사항
     setErrors(errs); return Object.keys(errs).length === 0
   }
 
@@ -603,7 +600,7 @@ function SubmitTab({
       </Card>
 
       {/* 장비 */}
-      <Card title="투입 장비">
+      <Card title="투입 장비 (선택)">
         <div className="space-y-2">
           {equipRows.map((row, idx) => (
             <div key={idx} className="flex gap-2 items-start">

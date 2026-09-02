@@ -28,7 +28,7 @@ const TEAM_COLORS = ['#3B82F6','#F97316','#22C55E','#8B5CF6','#EF4444','#EC4899'
 export interface MapMarker {
   id: string
   meeting_id: string
-  team_id: string
+  team_id: string | null   // 관리자 마커는 null
   marker_type: string
   x_pct: number
   y_pct: number
@@ -105,12 +105,12 @@ export default function MapAnnotator({
     if (!showLabelFor) return
     const { type, x, y } = showLabelFor
 
-    await fetch('/api/map-markers', {
+    const res = await fetch('/api/map-markers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         meeting_id:  meetingId,
-        team_id:     myTeamId,
+        team_id:     myTeamId || null,   // 관리자는 myTeamId='' → null
         marker_type: type,
         x_pct:       Math.round(x * 10) / 10,
         y_pct:       Math.round(y * 10) / 10,
@@ -118,14 +118,17 @@ export default function MapAnnotator({
       }),
     })
     setShowLabelFor(null)
+    if (res.ok) loadMarkers()   // Realtime 보완: 즉시 갱신
   }
 
   async function deleteMarker(id: string) {
     await fetch(`/api/map-markers?id=${id}`, { method: 'DELETE' })
     setMarkers(prev => prev.filter(m => m.id !== id))
+    loadMarkers()   // 삭제 후 즉시 갱신
   }
 
-  function getTeamColor(teamId: string): string {
+  function getTeamColor(teamId: string | null): string {
+    if (!teamId) return '#6B7280'   // 관리자 마커 → 회색
     const idx = allTeamIds.indexOf(teamId)
     return TEAM_COLORS[idx >= 0 ? idx % TEAM_COLORS.length : 0]
   }
@@ -207,8 +210,11 @@ export default function MapAnnotator({
           {/* 마커들 */}
           {markers.map(marker => {
             const typeInfo   = MARKER_TYPES[marker.marker_type]
-            const teamColor  = getTeamColor(marker.team_id)
-            const isMyMarker = marker.team_id === myTeamId
+            const teamColor  = getTeamColor(marker.team_id ?? null)
+            // 관리자(myTeamId='')는 team_id=null인 마커가 '내 것'
+            const isMyMarker = myTeamId
+              ? marker.team_id === myTeamId
+              : marker.team_id === null || marker.team_id === undefined
             const isHovered  = hoverId === marker.id
 
             return (
