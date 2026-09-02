@@ -28,7 +28,7 @@ interface MaterialSlot {
   material_reservations: MaterialReservation[]
 }
 
-type Tab       = 'submit' | 'high_risk' | 'general' | 'material'
+type Tab       = 'map' | 'high_risk' | 'general' | 'material' | 'submit'
 type UploadStep = 'idle' | 'uploading' | 'saving' | 'done' | 'error'
 
 // ── 상수 ────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ export default function SubmissionPage() {
   const [meeting,   setMeeting]   = useState<Meeting | null>(null)
   const [loading,   setLoading]   = useState(true)
   const [noMeeting, setNoMeeting] = useState(false)
-  const [activeTab, setActiveTab] = useState<Tab>('high_risk')
+  const [activeTab, setActiveTab] = useState<Tab>('map')
 
   // 공지사항
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
@@ -70,6 +70,20 @@ export default function SubmissionPage() {
   // 자재 슬롯 (실시간)
   const [slots,        setSlots]        = useState<MaterialSlot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
+
+  // 내 지도 마커 수 (제출 필수 조건)
+  const [myMarkerCount, setMyMarkerCount] = useState<number>(0)
+
+  const loadMyMarkers = useCallback((meetingId: string) => {
+    fetch(`/api/map-markers?meetingId=${meetingId}`)
+      .then(r => r.json())
+      .then((data: { team_id: string | null }[]) => {
+        if (Array.isArray(data)) {
+          setMyMarkerCount(data.filter(m => m.team_id === teamId).length)
+        }
+      })
+      .catch(() => {})
+  }, [teamId])
 
   // ── 자료제출 폼 상태 ─────────────────────────────────────
   const [personnel, setPersonnel] = useState({
@@ -99,8 +113,14 @@ export default function SubmissionPage() {
       const data = await res.json()
       if (!data.team) { setLoading(false); return }
       setTeam(data.team)
-      if (!data.meeting) setNoMeeting(true)
-      else setMeeting(data.meeting)
+      if (!data.meeting) {
+        setNoMeeting(true)
+      } else {
+        setMeeting(data.meeting)
+        loadMyMarkers(data.meeting.id)
+        // 지적도가 있으면 맨 처음에 지도 탭 표시
+        setActiveTab(data.meeting.map_file_url ? 'map' : 'high_risk')
+      }
       setLoading(false)
     }
     async function loadTeams() {
@@ -176,6 +196,18 @@ export default function SubmissionPage() {
     return () => { channel.unsubscribe() }
   }, [meeting, supabase, reloadSlots])
 
+  // 지도 마커 실시간 구독
+  useEffect(() => {
+    if (!meeting) return
+    const ch = supabase
+      .channel(`markers:${meeting.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'map_markers',
+        filter: `meeting_id=eq.${meeting.id}` },
+        () => loadMyMarkers(meeting.id))
+      .subscribe()
+    return () => { ch.unsubscribe() }
+  }, [meeting, supabase, loadMyMarkers])
+
   // ── 자료제출 핸들러 ───────────────────────────────────────
   async function handleLoadPrevious() {
     setPrevLoading(true)
@@ -232,7 +264,9 @@ export default function SubmissionPage() {
       errs.personnelTotal = '총 인원을 올바르게 입력해 주세요.'
     if (!workProcess.trim())
       errs.workProcess = '작업공정을 입력해 주세요.'
-    // 장비·PDF 모두 선택사항
+    // 지적도가 있으면 마커 필수
+    if (hasMap && myMarkerCount === 0)
+      errs.markers = '지적도에 장비 또는 작업구역을 1개 이상 표시해 주세요.'
     setErrors(errs); return Object.keys(errs).length === 0
   }
 
@@ -421,31 +455,69 @@ export default function SubmissionPage() {
               {/* 탭 네비게이션 */}
               <div className="bg-white border-b border-gray-200 flex overflow-x-auto px-4">
                 {([
+                  { key: 'map',       label: '지적도', badge: myMarkerCount > 0 ? `${myMarkerCount}` : null },
                   { key: 'high_risk', label: '고위험작업' },
                   { key: 'general',   label: '일반작업' },
                   { key: 'material',  label: '자재하역' },
                   { key: 'submit',    label: '자료제출' },
-                ] as { key: Tab; label: string }[]).map(t => (
+                ] as { key: Tab; label: string; badge?: string | null }[]).map(t => (
                   <button
                     key={t.key}
                     onClick={() => setActiveTab(t.key)}
                     className={[
-                      'px-4 py-3 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors',
+                      'px-4 py-3 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors flex items-center gap-1.5',
                       activeTab === t.key
                         ? 'border-gray-900 text-gray-900 font-medium'
                         : 'border-transparent text-gray-500 hover:text-gray-700',
                     ].join(' ')}
                   >
                     {t.label}
+                    {t.badge && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                        {t.badge}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
 
-              {/* 탭 콘텐츠 */}
+              {/* 탭 콘텐츠 — hidden 클래스로 마운트 상태 유지 (폼 입력 보존) */}
               <div className="bg-white border border-gray-200 border-t-0 rounded-b-xl p-5 min-h-[400px]">
 
+                {/* ── 지적도 (모바일에서만 표시, xl은 왼쪽 컬럼으로 항상 표시) ── */}
+                <div className={activeTab !== 'map' ? 'hidden' : ''}>
+                  {hasMap ? (
+                    <>
+                      <div className="xl:hidden">
+                        <MapAnnotator
+                          meetingId={meeting!.id}
+                          mapUrl={meeting!.map_file_url!}
+                          myTeamId={teamId}
+                          allTeamIds={allTeams.map(t => t.id)}
+                          readOnly={false}
+                        />
+                      </div>
+                      <div className="hidden xl:flex flex-col items-center justify-center py-16 gap-3 text-gray-400">
+                        <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round"
+                            d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z" />
+                        </svg>
+                        <p className="text-sm font-medium">왼쪽 지적도에서 장비를 드래그&드랍하세요</p>
+                        {myMarkerCount > 0
+                          ? <p className="text-xs text-emerald-600 font-medium">✓ {myMarkerCount}개 마커 등록됨</p>
+                          : <p className="text-xs text-amber-500">아직 마커가 없습니다. 자료제출 전에 추가해 주세요.</p>
+                        }
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-16 text-gray-400 text-sm">
+                      관리자가 아직 지적도를 등록하지 않았습니다.
+                    </div>
+                  )}
+                </div>
+
                 {/* ── 고위험작업 ─────────────────────────────── */}
-                {activeTab === 'high_risk' && (
+                <div className={activeTab !== 'high_risk' ? 'hidden' : ''}>
                   <WorkItemTab
                     workType="high_risk" label="고위험작업" color="red"
                     isClosed={isClosed}
@@ -455,10 +527,10 @@ export default function SubmissionPage() {
                     onAdd={data => addWorkItem('high_risk', data)}
                     onDelete={deleteWorkItem}
                   />
-                )}
+                </div>
 
                 {/* ── 일반작업 ───────────────────────────────── */}
-                {activeTab === 'general' && (
+                <div className={activeTab !== 'general' ? 'hidden' : ''}>
                   <WorkItemTab
                     workType="general" label="일반작업" color="blue"
                     isClosed={isClosed}
@@ -468,10 +540,10 @@ export default function SubmissionPage() {
                     onAdd={data => addWorkItem('general', data)}
                     onDelete={deleteWorkItem}
                   />
-                )}
+                </div>
 
                 {/* ── 자재하역/운반 ──────────────────────────── */}
-                {activeTab === 'material' && (
+                <div className={activeTab !== 'material' ? 'hidden' : ''}>
                   <MaterialTab
                     isClosed={isClosed}
                     slots={slots}
@@ -480,12 +552,13 @@ export default function SubmissionPage() {
                     onReserve={reserveSlot}
                     onCancel={cancelReservation}
                   />
-                )}
+                </div>
 
                 {/* ── 자료제출 ───────────────────────────────── */}
-                {activeTab === 'submit' && (
+                <div className={activeTab !== 'submit' ? 'hidden' : ''}>
                   <SubmitTab
                     meeting={meeting} isClosed={isClosed}
+                    hasMap={hasMap} myMarkerCount={myMarkerCount}
                     personnel={personnel} setPersonnel={setPersonnel}
                     workProcess={workProcess} setWorkProcess={setWorkProcess}
                     equipRows={equipRows} setEquipRows={setEquipRows}
@@ -500,8 +573,9 @@ export default function SubmissionPage() {
                     onDrop={handleDrop}
                     onFileChange={f => validateAndSetFile(f)}
                     onSubmit={handleSubmit}
+                    onGoToMap={() => setActiveTab('map')}
                   />
-                )}
+                </div>
               </div>
             </div>
 
@@ -518,14 +592,14 @@ export default function SubmissionPage() {
 
 // ── 자료제출 탭 ───────────────────────────────────────────────
 function SubmitTab({
-  meeting, isClosed,
+  meeting, isClosed, hasMap, myMarkerCount,
   personnel, setPersonnel, workProcess, setWorkProcess,
   equipRows, setEquipRows, file, setFile,
   dragOver, setDragOver, errors, step, progress, errorMsg, downloadUrl,
   prevLoading, prevDate, prevLoaded, fileInputRef,
-  onLoadPrevious, onDrop, onFileChange, onSubmit,
+  onLoadPrevious, onDrop, onFileChange, onSubmit, onGoToMap,
 }: {
-  meeting: Meeting | null; isClosed: boolean
+  meeting: Meeting | null; isClosed: boolean; hasMap: boolean; myMarkerCount: number
   personnel: Record<string, string>; setPersonnel: React.Dispatch<React.SetStateAction<{elderly:string;superElderly:string;foreign:string;female:string;diseased:string;total:string}>>
   workProcess: string; setWorkProcess: (v: string) => void
   equipRows: {type: string; count: string; isCustom: boolean}[]
@@ -538,7 +612,10 @@ function SubmitTab({
   fileInputRef: React.RefObject<HTMLInputElement | null>
   onLoadPrevious: () => void; onDrop: (e: React.DragEvent) => void
   onFileChange: (f: File) => void; onSubmit: (e: React.FormEvent) => void
+  onGoToMap: () => void
 }) {
+  // 한글 IME 조합 추적 (equipment 직접입력)
+  const equipComposingRef = useRef(false)
   if (!meeting) return (
     <div className="text-center py-20">
       <p className="text-gray-500">오늘 예정된 회의가 없습니다.</p>
@@ -562,6 +639,36 @@ function SubmitTab({
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
+
+      {/* 지적도 마커 상태 배너 */}
+      {hasMap && (
+        <button type="button" onClick={onGoToMap}
+          className={[
+            'w-full flex items-center justify-between px-4 py-3 rounded-lg border text-left transition-colors',
+            myMarkerCount > 0
+              ? 'bg-emerald-50 border-emerald-200'
+              : 'bg-amber-50 border-amber-200',
+          ].join(' ')}>
+          <div>
+            <p className={`text-sm font-medium ${myMarkerCount > 0 ? 'text-emerald-800' : 'text-amber-800'}`}>
+              {myMarkerCount > 0
+                ? `✓ 지적도 마커 ${myMarkerCount}개 등록됨`
+                : '⚠ 지적도에 장비/작업구역을 먼저 표시해 주세요'}
+            </p>
+            <p className={`text-xs mt-0.5 ${myMarkerCount > 0 ? 'text-emerald-600' : 'text-amber-600'}`}>
+              {myMarkerCount > 0 ? '지도 탭에서 수정 가능합니다' : '지도 탭으로 이동 →'}
+            </p>
+          </div>
+          <svg className={`w-4 h-4 ${myMarkerCount > 0 ? 'text-emerald-400' : 'text-amber-400'}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      )}
+      {errors.markers && (
+        <p className="text-xs text-red-500 -mt-3">{errors.markers}</p>
+      )}
+
       {/* 이전 내용 불러오기 */}
       <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
         <div>
@@ -619,8 +726,16 @@ function SubmitTab({
               {row.isCustom ? (
                 <input type="text" placeholder="장비명 직접 입력"
                   value={row.type}
+                  onCompositionStart={() => { equipComposingRef.current = true }}
+                  onCompositionEnd={e => {
+                    equipComposingRef.current = false
+                    const val = (e.target as HTMLInputElement).value
+                    const next = [...equipRows]; next[idx] = { ...next[idx], type: val }; setEquipRows(next)
+                  }}
                   onChange={e => {
-                    const next = [...equipRows]; next[idx] = { ...next[idx], type: e.target.value }; setEquipRows(next)
+                    if (!equipComposingRef.current) {
+                      const next = [...equipRows]; next[idx] = { ...next[idx], type: e.target.value }; setEquipRows(next)
+                    }
                   }}
                   disabled={isClosed}
                   className={inputCls + ' flex-1'}
@@ -750,6 +865,7 @@ function WorkItemTab({
   const [workerCount, setWorkerCount] = useState('')
   const [description, setDescription] = useState('')
   const [saving,      setSaving]      = useState(false)
+  const composingRef = useRef(false)
 
   const colorCls = color === 'red'
     ? { badge: 'text-red-700 text-xs font-medium', btn: 'bg-gray-900 hover:bg-gray-800', border: 'border-gray-200' }
@@ -788,13 +904,19 @@ function WorkItemTab({
             <div className="space-y-1">
               <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">작업명 *</label>
               <input type="text" placeholder="예) 철근 배근 작업" value={workName}
-                onChange={e => setWorkName(e.target.value)} className={inputCls} />
+                onCompositionStart={() => { composingRef.current = true }}
+                onCompositionEnd={e => { composingRef.current = false; setWorkName((e.target as HTMLInputElement).value) }}
+                onChange={e => { if (!composingRef.current) setWorkName(e.target.value) }}
+                className={inputCls} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">위치/구간</label>
                 <input type="text" placeholder="예) A동 3층" value={location}
-                  onChange={e => setLocation(e.target.value)} className={inputCls} />
+                  onCompositionStart={() => { composingRef.current = true }}
+                  onCompositionEnd={e => { composingRef.current = false; setLocation((e.target as HTMLInputElement).value) }}
+                  onChange={e => { if (!composingRef.current) setLocation(e.target.value) }}
+                  className={inputCls} />
               </div>
               <div className="space-y-1">
                 <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">투입 인원</label>
@@ -805,7 +927,9 @@ function WorkItemTab({
             <div className="space-y-1">
               <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">상세 내용</label>
               <textarea rows={2} placeholder="작업 상세 내용" value={description}
-                onChange={e => setDescription(e.target.value)}
+                onCompositionStart={() => { composingRef.current = true }}
+                onCompositionEnd={e => { composingRef.current = false; setDescription((e.target as HTMLTextAreaElement).value) }}
+                onChange={e => { if (!composingRef.current) setDescription(e.target.value) }}
                 className={inputCls + ' resize-none w-full'} />
             </div>
             <div className="flex gap-2">
@@ -876,6 +1000,7 @@ function MaterialTab({
   const [qty,        setQty]        = useState('')
   const [vehicle,    setVehicle]    = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const matComposingRef = useRef(false)
 
   if (isLoading) return <LoadingSpinner />
 
@@ -932,13 +1057,19 @@ function MaterialTab({
                   <div className="space-y-1">
                     <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">자재 내용 *</label>
                     <input type="text" placeholder="예) 철근 20톤" value={desc}
-                      onChange={e => setDesc(e.target.value)} className={inputCls} />
+                      onCompositionStart={() => { matComposingRef.current = true }}
+                      onCompositionEnd={e => { matComposingRef.current = false; setDesc((e.target as HTMLInputElement).value) }}
+                      onChange={e => { if (!matComposingRef.current) setDesc(e.target.value) }}
+                      className={inputCls} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">수량/규격</label>
                       <input type="text" placeholder="예) 20톤" value={qty}
-                        onChange={e => setQty(e.target.value)} className={inputCls} />
+                        onCompositionStart={() => { matComposingRef.current = true }}
+                        onCompositionEnd={e => { matComposingRef.current = false; setQty((e.target as HTMLInputElement).value) }}
+                        onChange={e => { if (!matComposingRef.current) setQty(e.target.value) }}
+                        className={inputCls} />
                     </div>
                     <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">차량 종류</label>
