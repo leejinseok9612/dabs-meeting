@@ -446,6 +446,7 @@ export default function SubmissionPage() {
                   myTeamId={teamId}
                   allTeamIds={allTeams.map(t => t.id)}
                   readOnly={false}
+                  onMarkerCountChange={count => setMyMarkerCount(count)}
                 />
               </div>
             )}
@@ -495,6 +496,7 @@ export default function SubmissionPage() {
                           myTeamId={teamId}
                           allTeamIds={allTeams.map(t => t.id)}
                           readOnly={false}
+                          onMarkerCountChange={count => setMyMarkerCount(count)}
                         />
                       </div>
                       <div className="hidden xl:flex flex-col items-center justify-center py-16 gap-3 text-gray-400">

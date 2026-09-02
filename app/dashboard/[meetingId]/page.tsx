@@ -100,7 +100,6 @@ export default function DashboardPage() {
   // 작업 현황 & 자재 슬롯
   const [workItems, setWorkItems] = useState<WorkItem[]>([])
   const [slots,     setSlots]     = useState<MaterialSlot[]>([])
-  const [openSection, setOpenSection] = useState<'high_risk'|'general'|'material'|null>(null)
 
   const loadWorkItems = useCallback(() => {
     fetch(`/api/work-items?meetingId=${meetingId}`)
@@ -372,7 +371,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="font-semibold text-gray-900">지적도 / 공사현황도</h2>
-              <p className="text-xs text-gray-500 mt-0.5">이 회의의 현장 도면 파일을 첨부합니다</p>
+              <p className="text-xs text-gray-500 mt-0.5">업체들이 표시한 장비·작업구역이 실시간으로 반영됩니다</p>
             </div>
             <div className="flex items-center gap-2">
               {mapUploading && (
@@ -399,20 +398,20 @@ export default function DashboardPage() {
               <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">{mapName}</p>
-                  <p className="text-xs text-gray-500">아이콘을 드래그&드랍해서 장비·작업구역을 표시하세요</p>
+                  <p className="text-xs text-gray-500">업체별 색상으로 마커가 구분됩니다 — 마커에 마우스를 올리면 업체명이 표시됩니다</p>
                 </div>
                 <a href={mapUrl} target="_blank" rel="noopener noreferrer"
                   className="text-sm text-blue-600 hover:text-blue-800 underline underline-offset-2 whitespace-nowrap">
                   원본보기
                 </a>
               </div>
-              {/* 지도 인터랙션 (관리자도 마커 추가/삭제 가능) */}
+              {/* 지도 — 읽기 전용 (업체 마커 확인용) */}
               <MapAnnotator
                 meetingId={meetingId}
                 mapUrl={mapUrl}
                 myTeamId=""
                 allTeamIds={allTeams.map(t => t.id)}
-                readOnly={false}
+                readOnly={true}
               />
             </div>
           ) : (
@@ -425,53 +424,41 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* ── 작업 현황 / 자재 하역 3섹션 ─────────────────── */}
+        {/* ── 작업 현황 / 자재 하역 3섹션 (항상 펼쳐진 상태) ── */}
         {(
           [
-            { key: 'high_risk', label: '고위험 작업 현황',
+            { key: 'high_risk' as const, label: '고위험 작업 현황',
               count: workItems.filter(w => w.work_type === 'high_risk').length },
-            { key: 'general',   label: '일반 작업 현황',
+            { key: 'general'   as const, label: '일반 작업 현황',
               count: workItems.filter(w => w.work_type === 'general').length },
-            { key: 'material',  label: '자재 하역/운반',
+            { key: 'material'  as const, label: '자재 하역/운반',
               count: slots.reduce((acc, s) => acc + (s.material_reservations?.length ?? 0), 0) },
-          ] as const
+          ]
         ).map(({ key, label, count }) => (
           <section key={key} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            {/* 헤드라인 클릭 → 열기/닫기 */}
-            <button
-              className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
-              onClick={() => setOpenSection(prev => prev === key ? null : key)}
-            >
-              <div className="flex items-center gap-3">
-                <h2 className="font-semibold text-gray-900">{label}</h2>
-                <span className={[
-                  'text-xs font-medium px-2 py-0.5 rounded-full',
-                  count > 0 ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400',
-                ].join(' ')}>
-                  {count}건
-                </span>
-              </div>
-              <ChevronIcon open={openSection === key} />
-            </button>
-
-            {openSection === key && (
-              <div className="border-t border-gray-100">
-                {key === 'high_risk' && (
-                  <WorkItemSection
-                    items={workItems.filter(w => w.work_type === 'high_risk')}
-                    color="red"
-                  />
-                )}
-                {key === 'general' && (
-                  <WorkItemSection
-                    items={workItems.filter(w => w.work_type === 'general')}
-                    color="gray"
-                  />
-                )}
-                {key === 'material' && (
-                  <MaterialSection slots={slots} />
-                )}
-              </div>
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100">
+              <h2 className="font-semibold text-gray-900">{label}</h2>
+              <span className={[
+                'text-xs font-medium px-2 py-0.5 rounded-full',
+                count > 0 ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400',
+              ].join(' ')}>
+                {count}건
+              </span>
+            </div>
+            {key === 'high_risk' && (
+              <WorkItemSection
+                items={workItems.filter(w => w.work_type === 'high_risk')}
+                color="red"
+              />
+            )}
+            {key === 'general' && (
+              <WorkItemSection
+                items={workItems.filter(w => w.work_type === 'general')}
+                color="gray"
+              />
+            )}
+            {key === 'material' && (
+              <MaterialSection slots={slots} />
             )}
           </section>
         ))}
@@ -522,16 +509,6 @@ export default function DashboardPage() {
 }
 
 // ── 서브 컴포넌트 ─────────────────────────────────────────
-
-// ── 아코디언 아이콘 ───────────────────────────────────────
-function ChevronIcon({ open }: { open: boolean }) {
-  return (
-    <svg className={['w-4 h-4 text-gray-400 transition-transform', open ? 'rotate-180' : ''].join(' ')}
-      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-    </svg>
-  )
-}
 
 // ── 고위험/일반 작업 현황 ──────────────────────────────────
 function WorkItemSection({ items, color }: { items: WorkItem[]; color: 'red'|'gray' }) {

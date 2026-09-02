@@ -42,10 +42,11 @@ interface Props {
   myTeamId: string          // 현재 사용자 팀 ID (관리자면 '')
   allTeamIds: string[]      // 전체 팀 순서 (색상 배정용)
   readOnly?: boolean        // 관리자 뷰: 편집 불가
+  onMarkerCountChange?: (count: number) => void  // 내 마커 수 변경 알림
 }
 
 export default function MapAnnotator({
-  meetingId, mapUrl, myTeamId, allTeamIds, readOnly = false,
+  meetingId, mapUrl, myTeamId, allTeamIds, readOnly = false, onMarkerCountChange,
 }: Props) {
   const [markers,      setMarkers]      = useState<MapMarker[]>([])
   const [draggingType, setDraggingType] = useState<string | null>(null)
@@ -59,8 +60,17 @@ export default function MapAnnotator({
   const loadMarkers = useCallback(async () => {
     const res  = await fetch(`/api/map-markers?meetingId=${meetingId}`)
     const data = await res.json()
-    if (Array.isArray(data)) setMarkers(data)
-  }, [meetingId])
+    if (Array.isArray(data)) {
+      setMarkers(data)
+      // 부모 컴포넌트에 내 마커 수 알림 (업체: myTeamId 일치, 관리자: null 마커)
+      if (onMarkerCountChange) {
+        const myCount = myTeamId
+          ? (data as MapMarker[]).filter(m => m.team_id === myTeamId).length
+          : (data as MapMarker[]).filter(m => !m.team_id).length
+        onMarkerCountChange(myCount)
+      }
+    }
+  }, [meetingId, myTeamId, onMarkerCountChange])
 
   useEffect(() => { loadMarkers() }, [loadMarkers])
 
