@@ -57,6 +57,20 @@ interface Meeting {
   status: 'open' | 'closed'
 }
 
+interface WorkItem {
+  id: string; work_type: 'high_risk' | 'general'; team_id: string
+  work_name: string; location?: string; worker_count: number; description?: string
+  teams?: { id: string; name: string }
+}
+interface MaterialReservation {
+  id: string; team_id: string; material_description?: string
+  quantity?: string; vehicle_type?: string; teams?: { id: string; name: string }
+}
+interface MaterialSlot {
+  id: string; slot_time: string; max_teams: number
+  material_reservations: MaterialReservation[]
+}
+
 // ── 메인 컴포넌트 ────────────────────────────────────────
 export default function DashboardPage() {
   const params    = useParams()
@@ -82,6 +96,21 @@ export default function DashboardPage() {
 
   // 전체 팀 목록 (MapAnnotator 범례용)
   const [allTeams, setAllTeams] = useState<{id:string;name:string}[]>([])
+
+  // 작업 현황 & 자재 슬롯
+  const [workItems, setWorkItems] = useState<WorkItem[]>([])
+  const [slots,     setSlots]     = useState<MaterialSlot[]>([])
+  const [openSection, setOpenSection] = useState<'high_risk'|'general'|'material'|null>(null)
+
+  const loadWorkItems = useCallback(() => {
+    fetch(`/api/work-items?meetingId=${meetingId}`)
+      .then(r => r.json()).then(d => Array.isArray(d) && setWorkItems(d)).catch(() => {})
+  }, [meetingId])
+
+  const loadSlots = useCallback(() => {
+    fetch(`/api/material-slots?meetingId=${meetingId}`)
+      .then(r => r.json()).then(d => Array.isArray(d) && setSlots(d)).catch(() => {})
+  }, [meetingId])
 
   // ── 통계 계산 ──────────────────────────────────────────
   const submitted   = submissions.filter(s => s.status === 'submitted')
@@ -119,9 +148,11 @@ export default function DashboardPage() {
   useEffect(() => {
     if (pinVerified) {
       loadData()
+      loadWorkItems()
+      loadSlots()
       fetch('/api/teams').then(r => r.json()).then(d => Array.isArray(d) && setAllTeams(d)).catch(() => {})
     }
-  }, [loadData, pinVerified])
+  }, [loadData, loadWorkItems, loadSlots, pinVerified])
 
   // ── Supabase Realtime 구독 ────────────────────────────
   useEffect(() => {
@@ -173,6 +204,28 @@ export default function DashboardPage() {
     channelRef.current = channel
     return () => { channel.unsubscribe() }
   }, [meetingId, supabase])
+
+  // 작업항목 실시간 구독
+  useEffect(() => {
+    if (!meetingId) return
+    const ch = supabase
+      .channel(`admin_work:${meetingId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'work_items',
+        filter: `meeting_id=eq.${meetingId}` }, () => loadWorkItems())
+      .subscribe()
+    return () => { ch.unsubscribe() }
+  }, [meetingId, supabase, loadWorkItems])
+
+  // 자재예약 실시간 구독
+  useEffect(() => {
+    if (!meetingId) return
+    const ch = supabase
+      .channel(`admin_material:${meetingId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'material_reservations' },
+        () => loadSlots())
+      .subscribe()
+    return () => { ch.unsubscribe() }
+  }, [meetingId, supabase, loadSlots])
 
   // ── 지적도/공사현황도 업로드 ──────────────────────────
   async function handleMapUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -344,6 +397,57 @@ export default function DashboardPage() {
           )}
         </section>
 
+        {/* ── 작업 현황 / 자재 하역 3섹션 ─────────────────── */}
+        {(
+          [
+            { key: 'high_risk', label: '고위험 작업 현황',
+              count: workItems.filter(w => w.work_type === 'high_risk').length },
+            { key: 'general',   label: '일반 작업 현황',
+              count: workItems.filter(w => w.work_type === 'general').length },
+            { key: 'material',  label: '자재 하역/운반',
+              count: slots.reduce((acc, s) => acc + (s.material_reservations?.length ?? 0), 0) },
+          ] as const
+        ).map(({ key, label, count }) => (
+          <section key={key} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            {/* 헤드라인 클릭 → 열기/닫기 */}
+            <button
+              className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
+              onClick={() => setOpenSection(prev => prev === key ? null : key)}
+            >
+              <div className="flex items-center gap-3">
+                <h2 className="font-semibold text-gray-900">{label}</h2>
+                <span className={[
+                  'text-xs font-medium px-2 py-0.5 rounded-full',
+                  count > 0 ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400',
+                ].join(' ')}>
+                  {count}건
+                </span>
+              </div>
+              <ChevronIcon open={openSection === key} />
+            </button>
+
+            {openSection === key && (
+              <div className="border-t border-gray-100">
+                {key === 'high_risk' && (
+                  <WorkItemSection
+                    items={workItems.filter(w => w.work_type === 'high_risk')}
+                    color="red"
+                  />
+                )}
+                {key === 'general' && (
+                  <WorkItemSection
+                    items={workItems.filter(w => w.work_type === 'general')}
+                    color="gray"
+                  />
+                )}
+                {key === 'material' && (
+                  <MaterialSection slots={slots} />
+                )}
+              </div>
+            )}
+          </section>
+        ))}
+
         {/* ── 제출 현황 테이블 ─────────────────────────────── */}
         <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -390,6 +494,118 @@ export default function DashboardPage() {
 }
 
 // ── 서브 컴포넌트 ─────────────────────────────────────────
+
+// ── 아코디언 아이콘 ───────────────────────────────────────
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg className={['w-4 h-4 text-gray-400 transition-transform', open ? 'rotate-180' : ''].join(' ')}
+      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+    </svg>
+  )
+}
+
+// ── 고위험/일반 작업 현황 ──────────────────────────────────
+function WorkItemSection({ items, color }: { items: WorkItem[]; color: 'red'|'gray' }) {
+  if (items.length === 0) {
+    return (
+      <div className="px-6 py-10 text-center text-gray-400 text-sm">
+        등록된 작업이 없습니다.
+      </div>
+    )
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide border-b border-gray-100">
+            <th className="text-left px-6 py-3 font-medium">업체명</th>
+            <th className="text-left px-4 py-3 font-medium">작업명</th>
+            <th className="text-left px-4 py-3 font-medium">위치/구간</th>
+            <th className="text-left px-4 py-3 font-medium">투입 인원</th>
+            <th className="text-left px-4 py-3 font-medium">상세 내용</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {items.map(item => (
+            <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+              <td className="px-6 py-3 font-medium text-gray-900 whitespace-nowrap">
+                <span className={[
+                  'inline-block w-1.5 h-4 rounded-full mr-2 align-middle',
+                  color === 'red' ? 'bg-red-400' : 'bg-blue-400',
+                ].join(' ')} />
+                {item.teams?.name ?? '—'}
+              </td>
+              <td className="px-4 py-3 text-gray-800 font-medium">{item.work_name}</td>
+              <td className="px-4 py-3 text-gray-500 text-xs">{item.location || '—'}</td>
+              <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
+                {item.worker_count > 0 ? `${item.worker_count}명` : '—'}
+              </td>
+              <td className="px-4 py-3 text-gray-500 text-xs max-w-[220px]">
+                {item.description || '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ── 자재 하역/운반 현황 테이블 ─────────────────────────────
+function MaterialSection({ slots }: { slots: MaterialSlot[] }) {
+  const hasAny = slots.some(s => (s.material_reservations?.length ?? 0) > 0)
+  if (!hasAny) {
+    return (
+      <div className="px-6 py-10 text-center text-gray-400 text-sm">
+        예약된 자재 하역이 없습니다.
+      </div>
+    )
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide border-b border-gray-100">
+            <th className="text-left px-6 py-3 font-medium">신청 시간</th>
+            <th className="text-left px-4 py-3 font-medium">업체명</th>
+            <th className="text-left px-4 py-3 font-medium">자재 내용</th>
+            <th className="text-left px-4 py-3 font-medium">수량/규격</th>
+            <th className="text-left px-4 py-3 font-medium">차량 종류</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {slots.flatMap(slot =>
+            (slot.material_reservations ?? []).map(r => (
+              <tr key={r.id} className="hover:bg-gray-50 transition-colors">
+                <td className="px-6 py-3 font-medium text-gray-900 whitespace-nowrap">
+                  {slot.slot_time}
+                </td>
+                <td className="px-4 py-3 text-gray-800 font-medium whitespace-nowrap">
+                  {r.teams?.name ?? '—'}
+                </td>
+                <td className="px-4 py-3 text-gray-600">
+                  {r.material_description || '—'}
+                </td>
+                <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                  {r.quantity || '—'}
+                </td>
+                <td className="px-4 py-3">
+                  {r.vehicle_type
+                    ? <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full font-medium">
+                        {r.vehicle_type}
+                      </span>
+                    : <span className="text-gray-300 text-xs">—</span>
+                  }
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
 function SubmissionRow({ row, index }: { row: SubmissionRow; index: number }) {
   const isSubmitted = row.status === 'submitted'
