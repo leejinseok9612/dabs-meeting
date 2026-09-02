@@ -50,26 +50,30 @@ export interface WorkItemInfo {
 interface Props {
   meetingId: string
   mapUrl: string
-  myTeamId: string          // 현재 사용자 팀 ID (관리자면 '')
-  allTeamIds: string[]      // 전체 팀 순서 (색상 배정용)
-  readOnly?: boolean        // 관리자 뷰: 편집 불가
+  myTeamId: string
+  allTeamIds: string[]
+  readOnly?: boolean
   onMarkerCountChange?: (count: number) => void
-  workItems?: WorkItemInfo[] // 마커 클릭 팝업용 작업항목
-  workType?: 'high_risk' | 'general'  // 마커 타입 필터 (없으면 전체)
-  onMarkerPlace?: (markerType: string, label: string) => void  // 마커 배치 콜백
+  workItems?: WorkItemInfo[]
+  workType?: 'high_risk' | 'general'
+  /** 마커를 지도에 드롭했을 때 — 오른쪽 패널 폼을 열어주세요 */
+  onMarkerDrop?: (markerType: string, x: number, y: number) => void
+  /** 마커 삭제 시 연결된 작업항목도 삭제 */
+  onMarkerDelete?: (marker: MapMarker) => void
+  /** 부모가 드롭 위치를 확정한 뒤 marker label을 넘기면 여기서 저장 */
+  pendingDrop?: { markerType: string; x: number; y: number } | null
+  onPendingDropSaved?: () => void
 }
 
 export default function MapAnnotator({
   meetingId, mapUrl, myTeamId, allTeamIds, readOnly = false, onMarkerCountChange, workItems = [],
-  workType, onMarkerPlace,
+  workType, onMarkerDrop, onMarkerDelete, pendingDrop, onPendingDropSaved,
 }: Props) {
   const [markers,      setMarkers]      = useState<MapMarker[]>([])
   const [draggingType, setDraggingType] = useState<string | null>(null)
-  const [labelInput,   setLabelInput]   = useState('')
-  const [showLabelFor, setShowLabelFor] = useState<{type:string; x:number; y:number} | null>(null)
   const [hoverId,      setHoverId]      = useState<string | null>(null)
   const [clickedMarker, setClickedMarker] = useState<MapMarker | null>(null)
-  const [filterTeamId, setFilterTeamId]   = useState<string | null>(null)   // 관리자 팀 필터
+  const [filterTeamId, setFilterTeamId]   = useState<string | null>(null)
   const mapRef   = useRef<HTMLDivElement>(null)
   const supabase = useMemo(() => createClient(), [])
 
@@ -129,43 +133,39 @@ export default function MapAnnotator({
     const rect = mapRef.current.getBoundingClientRect()
     const x = ((e.clientX - rect.left) / rect.width) * 100
     const y = ((e.clientY - rect.top) / rect.height) * 100
-    setShowLabelFor({ type: draggingType, x, y })
-    setLabelInput('')
+    // 폼은 오른쪽 패널(WorkItemTab)에서 표시 — 부모에게 위치만 전달
+    onMarkerDrop?.(draggingType, x, y)
     setDraggingType(null)
   }
 
-  async function confirmPlace() {
-    if (!showLabelFor) return
-    const { type, x, y } = showLabelFor
+  // 부모가 pendingDrop + label을 확정하면 여기서 마커 저장
+  const pendingDropRef = useRef(pendingDrop)
+  pendingDropRef.current = pendingDrop
+  async function savePendingMarker(label: string) {
+    const drop = pendingDropRef.current
+    if (!drop) return
     const body: Record<string, unknown> = {
       meeting_id:  meetingId,
       team_id:     myTeamId || null,
-      marker_type: type,
-      x_pct:       Math.round(x * 10) / 10,
-      y_pct:       Math.round(y * 10) / 10,
-      label:       labelInput.trim() || null,
+      marker_type: drop.markerType,
+      x_pct:       Math.round(drop.x * 10) / 10,
+      y_pct:       Math.round(drop.y * 10) / 10,
+      label,
     }
     if (workType) body.work_type = workType
-
     const res = await fetch('/api/map-markers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    setShowLabelFor(null)
-    if (res.ok) {
-      loadMarkers()
-      // 마커 배치 후 콜백 (작업항목 자동 추가)
-      if (onMarkerPlace) {
-        onMarkerPlace(type, labelInput.trim())
-      }
-    }
+    if (res.ok) { loadMarkers(); onPendingDropSaved?.() }
   }
 
-  async function deleteMarker(id: string) {
-    await fetch(`/api/map-markers?id=${id}`, { method: 'DELETE' })
+  async function deleteMarker(marker: MapMarker) {
+    onMarkerDelete?.(marker)
+    await fetch(`/api/map-markers?id=${marker.id}`, { method: 'DELETE' })
     setClickedMarker(null)
-    setMarkers(prev => prev.filter(m => m.id !== id))
+    setMarkers(prev => prev.filter(m => m.id !== marker.id))
     loadMarkers()
   }
 
@@ -190,10 +190,14 @@ export default function MapAnnotator({
     ? markers.filter(m => m.team_id === filterTeamId)
     : markers
 
-  // 클릭한 마커의 업체 작업항목
-  const clickedTeamItems = clickedMarker
-    ? workItems.filter(w => w.team_id === (clickedMarker.team_id ?? ''))
-    : []
+  // 클릭한 마커 — label로 정확히 매칭되는 작업항목 1개만, 없으면 빈 배열
+  const clickedWorkItem = clickedMarker?.label
+    ? workItems.find(w =>
+        w.team_id  === (clickedMarker.team_id ?? '') &&
+        w.work_name === clickedMarker.label
+      ) ?? null
+    : null
+  const clickedTeamItems = clickedWorkItem ? [clickedWorkItem] : []
 
   return (
     <div className="space-y-4">
@@ -375,51 +379,6 @@ export default function MapAnnotator({
         )}
       </div>
 
-      {/* ── 라벨 입력 모달 ────────────────────────────────────── */}
-      {showLabelFor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-            <div className="text-center mb-4">
-              <span className="text-4xl">{MARKER_TYPES[showLabelFor.type]?.icon}</span>
-              <h3 className="font-semibold text-slate-800 mt-2">
-                {MARKER_TYPES[showLabelFor.type]?.label} 배치
-              </h3>
-              {workType && (
-                <p className="text-xs mt-1 font-medium px-2 py-0.5 rounded-full inline-block
-                  ${workType === 'high_risk' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}">
-                  {workType === 'high_risk' ? '고위험 작업 마커' : '일반 작업 마커'}
-                </p>
-              )}
-            </div>
-            <input
-              type="text"
-              autoFocus
-              placeholder="추가 설명 (선택) — 예) 1호 굴착기"
-              value={labelInput}
-              onChange={e => setLabelInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && confirmPlace()}
-              className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm outline-none
-                         focus:ring-2 focus:ring-blue-500 mb-4"
-            />
-            {onMarkerPlace && (
-              <p className="text-xs text-slate-500 mb-3 text-center">
-                💡 마커를 놓으면 작업항목이 자동으로 추가됩니다
-              </p>
-            )}
-            <div className="flex gap-2">
-              <button onClick={() => setShowLabelFor(null)}
-                className="flex-1 py-2.5 border border-slate-200 text-slate-600 text-sm rounded-xl hover:bg-slate-50">
-                취소
-              </button>
-              <button onClick={confirmPlace}
-                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl">
-                지도에 표시
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── 마커 클릭 상세 팝업 ───────────────────────────────── */}
       {clickedMarker && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
@@ -463,37 +422,25 @@ export default function MapAnnotator({
               </div>
             </div>
 
-            {/* 해당 업체 작업항목 */}
+            {/* 이 마커에 연결된 작업항목 */}
             {clickedTeamItems.length > 0 && (
-              <div className="px-6 py-4 max-h-60 overflow-y-auto space-y-2">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                  {clickedMarker.teams?.name ?? '이 업체'}의 작업 현황
-                </p>
+              <div className="px-5 py-4 space-y-2">
                 {clickedTeamItems.map(item => (
-                  <div key={item.id} className={[
-                    'rounded-lg border px-3 py-2.5',
-                    item.work_type === 'high_risk'
-                      ? 'bg-red-50 border-red-100'
-                      : 'bg-blue-50 border-blue-100',
-                  ].join(' ')}>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={[
-                        'text-[10px] font-bold px-1.5 py-0.5 rounded uppercase',
-                        item.work_type === 'high_risk'
-                          ? 'bg-red-500 text-white'
-                          : 'bg-blue-500 text-white',
-                      ].join(' ')}>
-                        {item.work_type === 'high_risk' ? '고위험' : '일반'}
-                      </span>
-                      <p className="text-sm font-medium text-gray-900">{item.work_name}</p>
+                  <div key={item.id} className="rounded-xl px-4 py-3"
+                    style={{
+                      background: item.work_type === 'high_risk' ? 'rgba(254,242,242,0.8)' : 'rgba(239,246,255,0.8)',
+                      border: item.work_type === 'high_risk' ? '1px solid rgba(252,165,165,0.4)' : '1px solid rgba(147,197,253,0.4)',
+                    }}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${item.work_type === 'high_risk' ? 'bg-red-400' : 'bg-blue-400'}`} />
+                      <p className="text-sm font-semibold text-neutral-800 tracking-tight">{item.work_name}</p>
                     </div>
-                    {(item.location || item.worker_count > 0) && (
-                      <p className="text-xs text-gray-500">
-                        {[item.location, item.worker_count > 0 ? `${item.worker_count}명` : ''].filter(Boolean).join(' · ')}
-                      </p>
-                    )}
+                    <div className="flex flex-wrap gap-2.5 text-[11px] text-neutral-500 pl-3.5">
+                      {item.location && <span>{item.location}</span>}
+                      {item.worker_count > 0 && <span>{item.worker_count}명</span>}
+                    </div>
                     {item.description && (
-                      <p className="text-xs text-gray-400 mt-0.5">{item.description}</p>
+                      <p className="text-[11px] text-neutral-400 mt-1 pl-3.5">{item.description}</p>
                     )}
                   </div>
                 ))}
@@ -501,8 +448,8 @@ export default function MapAnnotator({
             )}
 
             {clickedTeamItems.length === 0 && (
-              <div className="px-6 py-4 text-center text-gray-400 text-sm">
-                등록된 작업 항목이 없습니다
+              <div className="px-5 py-4 text-center text-neutral-400 text-xs">
+                연결된 작업 항목이 없습니다
               </div>
             )}
 
@@ -514,7 +461,7 @@ export default function MapAnnotator({
               return isOwn && !readOnly ? (
                 <div className="px-6 pb-5 pt-2">
                   <button
-                    onClick={() => deleteMarker(clickedMarker.id)}
+                    onClick={() => deleteMarker(clickedMarker)}
                     className="w-full py-2.5 bg-red-50 hover:bg-red-100 border border-red-200
                                text-red-600 text-sm font-medium rounded-xl transition-colors"
                   >

@@ -7,7 +7,8 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import MapAnnotator, { MARKER_TYPES } from '@/app/components/MapAnnotator'
+import MapAnnotator, { MARKER_TYPES, MapMarker } from '@/app/components/MapAnnotator'
+import { toast } from '@/app/components/Toast'
 
 // ── 타입 ────────────────────────────────────────────────────
 interface Team    { id: string; name: string; department?: string }
@@ -31,8 +32,9 @@ type Tab       = 'high_risk' | 'general' | 'material' | 'submit'
 type UploadStep = 'idle' | 'uploading' | 'saving' | 'done' | 'error'
 
 // ── 상수 ────────────────────────────────────────────────────
-const MAX_FILE_MB    = 50
+const MAX_FILE_MB    = 10
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024
+const DRAFT_KEY      = (teamId: string) => `dabs_draft_${teamId}`
 
 const EQUIPMENT_LIST = [
   '굴착기', '소형굴착기', '로더', '불도저', '모터그레이더',
@@ -75,6 +77,11 @@ export default function SubmissionPage() {
   const [myGeneralCount,  setMyGeneralCount]  = useState<number>(0)
   const myMarkerCount = myHighRiskCount + myGeneralCount
 
+  // 마커 드롭 대기 상태 (마커 배치 후 폼 자동 열기)
+  type PendingDrop = { markerType: string; x: number; y: number }
+  const [pendingHighRiskMarker, setPendingHighRiskMarker] = useState<PendingDrop | null>(null)
+  const [pendingGeneralMarker,  setPendingGeneralMarker]  = useState<PendingDrop | null>(null)
+
   // ── 자료제출 폼 상태 ─────────────────────────────────────
   const [personnel, setPersonnel] = useState({
     elderly: '', superElderly: '', foreign: '', female: '', diseased: '', total: '',
@@ -93,9 +100,10 @@ export default function SubmissionPage() {
   const [prevLoading, setPrevLoading] = useState(false)
   const [prevDate,    setPrevDate]    = useState<string | null>(null)
   const [prevLoaded,  setPrevLoaded]  = useState(false)
+  const [draftSaved,  setDraftSaved]  = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // ── 초기 데이터 로드 ──────────────────────────────────────
+  // ── 초기 데이터 로드 + 임시저장 복원 ─────────────────────
   useEffect(() => {
     async function load() {
       const res  = await fetch(`/api/submit-info?teamId=${teamId}`)
@@ -109,6 +117,18 @@ export default function SubmissionPage() {
         setMeeting(data.meeting)
       }
       setLoading(false)
+
+      // localStorage 임시저장 복원
+      try {
+        const raw = localStorage.getItem(DRAFT_KEY(teamId))
+        if (raw) {
+          const draft = JSON.parse(raw)
+          if (draft.personnel)  setPersonnel(draft.personnel)
+          if (draft.workProcess) setWorkProcess(draft.workProcess)
+          if (draft.equipRows)  setEquipRows(draft.equipRows)
+          toast.info('임시 저장된 내용을 불러왔습니다')
+        }
+      } catch {}
     }
     async function loadTeams() {
       try {
@@ -119,7 +139,21 @@ export default function SubmissionPage() {
     }
     load()
     loadTeams()
-  }, [teamId])
+  }, [teamId]) // eslint-disable-line
+
+  // ── localStorage 자동저장 (500ms 디바운스) ───────────────
+  useEffect(() => {
+    setDraftSaved(false)
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(DRAFT_KEY(teamId), JSON.stringify({ personnel, workProcess, equipRows }))
+        setDraftSaved(true)
+        // 2초 후 인디케이터 숨김
+        setTimeout(() => setDraftSaved(false), 2000)
+      } catch {}
+    }, 500)
+    return () => clearTimeout(t)
+  }, [personnel, workProcess, equipRows, teamId])
 
   // 공지사항 로드 (로그인 후 팝업)
   useEffect(() => {
@@ -187,7 +221,7 @@ export default function SubmissionPage() {
     try {
       const res  = await fetch(`/api/previous-submission?teamId=${teamId}`)
       const data = await res.json()
-      if (!data.previous) { alert('이전에 제출한 내용이 없습니다.'); return }
+      if (!data.previous) { toast.info('이전에 제출한 내용이 없습니다.'); setPrevLoading(false); return }
       const prev = data.previous
       const d = prev.personnel_detail
       setPersonnel({
@@ -210,7 +244,8 @@ export default function SubmissionPage() {
       const meetings = prev.meetings as { date?: string } | null
       setPrevDate(meetings?.date ?? prev.submitted_at?.split('T')[0] ?? null)
       setPrevLoaded(true)
-    } catch { alert('이전 내용을 불러오는 중 오류가 발생했습니다.') }
+      toast.success('이전 제출 내용을 불러왔습니다.')
+    } catch { toast.error('이전 내용을 불러오는 중 오류가 발생했습니다.') }
     setPrevLoading(false)
   }
 
@@ -279,26 +314,41 @@ export default function SubmissionPage() {
 
       const { signedUrl } = JSON.parse(result)
       setDownloadUrl(signedUrl ?? ''); setProgress(100); setStep('done')
+      // 임시저장 삭제
+      try { localStorage.removeItem(DRAFT_KEY(teamId)) } catch {}
+      toast.success('자료가 성공적으로 제출되었습니다!')
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : '오류가 발생했습니다.')
+      const msg = err instanceof Error ? err.message : '오류가 발생했습니다.'
+      setErrorMsg(msg)
       setStep('error')
+      toast.error(`제출 실패: ${msg}`)
     }
   }
 
   // ── 작업항목 핸들러 ───────────────────────────────────────
   async function addWorkItem(workType: 'high_risk' | 'general', data: Partial<WorkItem>) {
     if (!meeting) return
-    await fetch('/api/work-items', {
+    const res = await fetch('/api/work-items', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ meeting_id: meeting.id, work_type: workType, team_id: teamId, ...data }),
     })
-    reloadWorkItems(meeting.id)
+    if (res.ok) {
+      reloadWorkItems(meeting.id)
+      toast.success('작업항목이 추가되었습니다.')
+    } else {
+      toast.error('작업항목 추가에 실패했습니다.')
+    }
   }
 
   async function deleteWorkItem(id: string) {
-    await fetch(`/api/work-items?id=${id}`, { method: 'DELETE' })
-    setWorkItems(prev => prev.filter(i => i.id !== id))
+    const res = await fetch(`/api/work-items?id=${id}`, { method: 'DELETE' })
+    if (res.ok) {
+      setWorkItems(prev => prev.filter(i => i.id !== id))
+      toast.success('작업항목이 삭제되었습니다.')
+    } else {
+      toast.error('작업항목 삭제에 실패했습니다.')
+    }
   }
 
   // ── 자재 예약 핸들러 ─────────────────────────────────────
@@ -310,9 +360,10 @@ export default function SubmissionPage() {
     })
     if (!res.ok) {
       const err = await res.json()
-      alert(err.error || '예약 실패')
+      toast.error(err.error || '자재 예약에 실패했습니다.')
       return
     }
+    toast.success('자재 하역 시간이 예약되었습니다.')
     if (meeting) reloadSlots(meeting.id)
   }
 
@@ -320,17 +371,47 @@ export default function SubmissionPage() {
     await fetch(`/api/material-slots?reservationId=${reservationId}`, { method: 'DELETE' })
   }
 
-  // ── 마커 배치 콜백 (작업항목 자동 추가) ──────────────────
-  function handleHighRiskMarkerPlace(markerType: string, markerLabel: string) {
-    const markerName = MARKER_TYPES[markerType]?.label ?? markerType
-    const workName   = markerLabel ? `${markerName} - ${markerLabel}` : markerName
-    addWorkItem('high_risk', { work_name: workName, worker_count: 0 })
+  // ── 마커 저장 헬퍼 ────────────────────────────────────────
+  async function saveMarker(
+    markerType: string, x: number, y: number,
+    workType: 'high_risk' | 'general', label: string,
+  ) {
+    if (!meeting) return
+    await fetch('/api/map-markers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        meeting_id:  meeting.id,
+        team_id:     teamId,
+        marker_type: markerType,
+        x_pct:       Math.round(x * 10) / 10,
+        y_pct:       Math.round(y * 10) / 10,
+        label,
+        work_type:   workType,
+      }),
+    })
   }
 
-  function handleGeneralMarkerPlace(markerType: string, markerLabel: string) {
-    const markerName = MARKER_TYPES[markerType]?.label ?? markerType
-    const workName   = markerLabel ? `${markerName} - ${markerLabel}` : markerName
-    addWorkItem('general', { work_name: workName, worker_count: 0 })
+  // ── 마커 드롭 핸들러 ─────────────────────────────────────
+  function handleHighRiskMarkerDrop(markerType: string, x: number, y: number) {
+    setPendingHighRiskMarker({ markerType, x, y })
+  }
+  function handleGeneralMarkerDrop(markerType: string, x: number, y: number) {
+    setPendingGeneralMarker({ markerType, x, y })
+  }
+
+  // ── 마커 삭제 → 연결된 작업항목도 삭제 ───────────────────
+  function handleHighRiskMarkerDelete(marker: MapMarker) {
+    const linked = workItems.find(
+      w => w.team_id === teamId && w.work_type === 'high_risk' && w.work_name === marker.label,
+    )
+    if (linked) deleteWorkItem(linked.id)
+  }
+  function handleGeneralMarkerDelete(marker: MapMarker) {
+    const linked = workItems.find(
+      w => w.team_id === teamId && w.work_type === 'general' && w.work_name === marker.label,
+    )
+    if (linked) deleteWorkItem(linked.id)
   }
 
   const isClosed = meeting?.status === 'closed'
@@ -374,33 +455,29 @@ export default function SubmissionPage() {
       )}
 
       {/* ── 헤더 ───────────────────────────────────────────── */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-20">
-        <div className="max-w-screen-2xl mx-auto px-4 py-4 flex items-center justify-between gap-3">
+      <header className="bg-white/90 backdrop-blur-sm sticky top-0 z-20"
+        style={{ borderBottom: '1px solid rgba(0,0,0,0.07)' }}>
+        <div className="max-w-screen-2xl mx-auto px-4 flex items-center justify-between gap-3"
+          style={{ height: '3.25rem' }}>
           <div className="min-w-0 flex-1">
-            <h1 className="font-semibold text-gray-900 leading-tight truncate">{team.name}</h1>
+            <h1 className="text-sm font-semibold text-neutral-900 leading-tight truncate tracking-tight">{team.name}</h1>
             {meeting
-              ? <p className="text-xs text-gray-500 truncate">{meeting.title} · {meeting.date}</p>
-              : <p className="text-xs text-gray-500">DABs 자료 취합 시스템</p>
+              ? <p className="text-[11px] text-neutral-400 truncate">{meeting.title} · {meeting.date}</p>
+              : <p className="text-[11px] text-neutral-400">DABs 자료 취합 시스템</p>
             }
           </div>
           {isClosed && (
-            <span className="shrink-0 px-2.5 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-lg">
-              마감됨
-            </span>
+            <span className="badge shrink-0 bg-neutral-100 text-neutral-500">마감됨</span>
           )}
           {hasMap && !isClosed && (
-            <span className="shrink-0 flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="shrink-0 flex items-center gap-1.5 text-[11px] text-emerald-600 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-live-pulse" />
               실시간 공유 중
             </span>
           )}
-          {/* 역할 전환 버튼 */}
-          <a
-            href="/"
-            className="shrink-0 flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600
-                       px-3 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <a href="/"
+            className="btn btn-ghost btn-sm shrink-0 gap-1.5">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round"
                 d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
             </svg>
@@ -410,7 +487,7 @@ export default function SubmissionPage() {
       </header>
 
       {/* ── 메인 레이아웃 ──────────────────────────────────── */}
-      <main className="max-w-screen-2xl mx-auto px-4 py-6">
+      <main className="max-w-screen-2xl mx-auto px-4 py-5">
         {!meeting && noMeeting ? (
           <div className="text-center py-20">
             <p className="text-gray-500">오늘 예정된 회의가 없습니다.</p>
@@ -432,7 +509,8 @@ export default function SubmissionPage() {
                   readOnly={false}
                   workType="high_risk"
                   onMarkerCountChange={count => setMyHighRiskCount(count)}
-                  onMarkerPlace={handleHighRiskMarkerPlace}
+                  onMarkerDrop={handleHighRiskMarkerDrop}
+                  onMarkerDelete={handleHighRiskMarkerDelete}
                   workItems={workItems}
                 />
               </div>
@@ -449,7 +527,8 @@ export default function SubmissionPage() {
                   readOnly={false}
                   workType="general"
                   onMarkerCountChange={count => setMyGeneralCount(count)}
-                  onMarkerPlace={handleGeneralMarkerPlace}
+                  onMarkerDrop={handleGeneralMarkerDrop}
+                  onMarkerDelete={handleGeneralMarkerDelete}
                   workItems={workItems}
                 />
               </div>
@@ -458,37 +537,25 @@ export default function SubmissionPage() {
             {/* ── 오른쪽: 탭 + 폼 ─────────────────────────── */}
             <div>
               {/* 탭 네비게이션 */}
-              <div className="bg-white border-b border-gray-200 flex overflow-x-auto px-4">
+              <div className="bg-white/90 flex overflow-x-auto px-4"
+                style={{ borderBottom: '1px solid rgba(0,0,0,0.07)' }}>
                 {([
-                  {
-                    key: 'high_risk',
-                    label: '고위험작업',
-                    badge: myHighRiskCount > 0 ? `지적도 ${myHighRiskCount}` : null,
-                    color: 'red',
-                  },
-                  {
-                    key: 'general',
-                    label: '일반작업',
-                    badge: myGeneralCount > 0 ? `지적도 ${myGeneralCount}` : null,
-                    color: 'blue',
-                  },
-                  { key: 'material', label: '자재하역', badge: null, color: null },
-                  { key: 'submit',   label: '자료제출', badge: null, color: null },
+                  { key: 'high_risk', label: '고위험작업', badge: myHighRiskCount > 0 ? `${myHighRiskCount}` : null, color: 'red' },
+                  { key: 'general',   label: '일반작업',   badge: myGeneralCount > 0  ? `${myGeneralCount}`  : null, color: 'blue' },
+                  { key: 'material',  label: '자재하역',   badge: null, color: null },
+                  { key: 'submit',    label: '자료제출',   badge: null, color: null },
                 ] as { key: Tab; label: string; badge: string | null; color: string | null }[]).map(t => (
-                  <button
-                    key={t.key}
-                    onClick={() => setActiveTab(t.key)}
+                  <button key={t.key} onClick={() => setActiveTab(t.key)}
                     className={[
-                      'px-4 py-3 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors flex items-center gap-1.5',
+                      'flex items-center gap-1.5 px-4 py-3 text-xs font-medium whitespace-nowrap border-b-2 -mb-px transition-all duration-150',
                       activeTab === t.key
-                        ? 'border-gray-900 text-gray-900 font-medium'
-                        : 'border-transparent text-gray-500 hover:text-gray-700',
-                    ].join(' ')}
-                  >
+                        ? 'border-neutral-900 text-neutral-900'
+                        : 'border-transparent text-neutral-400 hover:text-neutral-700',
+                    ].join(' ')}>
                     {t.label}
                     {t.badge && (
                       <span className={[
-                        'text-[10px] font-bold px-1.5 py-0.5 rounded-full',
+                        'badge text-[9px] px-1',
                         t.color === 'red' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700',
                       ].join(' ')}>
                         {t.badge}
@@ -498,8 +565,9 @@ export default function SubmissionPage() {
                 ))}
               </div>
 
-              {/* 탭 콘텐츠 — hidden 클래스로 마운트 상태 유지 (폼 입력 보존) */}
-              <div className="bg-white border border-gray-200 border-t-0 rounded-b-xl p-5 min-h-[400px]">
+              {/* 탭 콘텐츠 — hidden으로 마운트 유지 */}
+              <div className="bg-white p-4 min-h-[400px]"
+                style={{ border: '1px solid rgba(0,0,0,0.07)', borderTop: 'none', borderRadius: '0 0 0.75rem 0.75rem' }}>
 
                 {/* ── 고위험작업 ─────────────────────────────── */}
                 <div className={activeTab !== 'high_risk' ? 'hidden' : ''}>
@@ -514,7 +582,8 @@ export default function SubmissionPage() {
                         readOnly={false}
                         workType="high_risk"
                         onMarkerCountChange={count => setMyHighRiskCount(count)}
-                        onMarkerPlace={handleHighRiskMarkerPlace}
+                        onMarkerDrop={handleHighRiskMarkerDrop}
+                        onMarkerDelete={handleHighRiskMarkerDelete}
                         workItems={workItems}
                       />
                     </div>
@@ -536,8 +605,16 @@ export default function SubmissionPage() {
                     items={workItems.filter(i => i.work_type === 'high_risk')}
                     isLoading={workLoading}
                     myTeamId={teamId} myTeamName={team.name}
-                    onAdd={data => addWorkItem('high_risk', data)}
+                    onAdd={async (data) => {
+                      await addWorkItem('high_risk', data)
+                      if (pendingHighRiskMarker && data.work_name) {
+                        await saveMarker(pendingHighRiskMarker.markerType, pendingHighRiskMarker.x, pendingHighRiskMarker.y, 'high_risk', data.work_name as string)
+                        setPendingHighRiskMarker(null)
+                      }
+                    }}
                     onDelete={deleteWorkItem}
+                    pendingMarkerType={pendingHighRiskMarker?.markerType ?? null}
+                    onCancelPendingMarker={() => setPendingHighRiskMarker(null)}
                   />
                 </div>
 
@@ -554,7 +631,8 @@ export default function SubmissionPage() {
                         readOnly={false}
                         workType="general"
                         onMarkerCountChange={count => setMyGeneralCount(count)}
-                        onMarkerPlace={handleGeneralMarkerPlace}
+                        onMarkerDrop={handleGeneralMarkerDrop}
+                        onMarkerDelete={handleGeneralMarkerDelete}
                         workItems={workItems}
                       />
                     </div>
@@ -576,8 +654,16 @@ export default function SubmissionPage() {
                     items={workItems.filter(i => i.work_type === 'general')}
                     isLoading={workLoading}
                     myTeamId={teamId} myTeamName={team.name}
-                    onAdd={data => addWorkItem('general', data)}
+                    onAdd={async (data) => {
+                      await addWorkItem('general', data)
+                      if (pendingGeneralMarker && data.work_name) {
+                        await saveMarker(pendingGeneralMarker.markerType, pendingGeneralMarker.x, pendingGeneralMarker.y, 'general', data.work_name as string)
+                        setPendingGeneralMarker(null)
+                      }
+                    }}
                     onDelete={deleteWorkItem}
+                    pendingMarkerType={pendingGeneralMarker?.markerType ?? null}
+                    onCancelPendingMarker={() => setPendingGeneralMarker(null)}
                   />
                 </div>
 
@@ -608,6 +694,7 @@ export default function SubmissionPage() {
                     step={step} progress={progress}
                     errorMsg={errorMsg} downloadUrl={downloadUrl}
                     prevLoading={prevLoading} prevDate={prevDate} prevLoaded={prevLoaded}
+                    draftSaved={draftSaved}
                     fileInputRef={fileInputRef}
                     onLoadPrevious={handleLoadPrevious}
                     onDrop={handleDrop}
@@ -637,7 +724,7 @@ function SubmitTab({
   personnel, setPersonnel, workProcess, setWorkProcess,
   equipRows, setEquipRows, file, setFile,
   dragOver, setDragOver, errors, step, progress, errorMsg, downloadUrl,
-  prevLoading, prevDate, prevLoaded, fileInputRef,
+  prevLoading, prevDate, prevLoaded, draftSaved, fileInputRef,
   onLoadPrevious, onDrop, onFileChange, onSubmit, onGoToHighRisk, onGoToGeneral,
 }: {
   meeting: Meeting | null; isClosed: boolean; hasMap: boolean; myMarkerCount: number
@@ -651,6 +738,7 @@ function SubmitTab({
   errors: Record<string, string>
   step: UploadStep; progress: number; errorMsg: string; downloadUrl: string
   prevLoading: boolean; prevDate: string | null; prevLoaded: boolean
+  draftSaved: boolean
   fileInputRef: React.RefObject<HTMLInputElement | null>
   onLoadPrevious: () => void; onDrop: (e: React.DragEvent) => void
   onFileChange: (f: File) => void; onSubmit: (e: React.FormEvent) => void
@@ -664,12 +752,16 @@ function SubmitTab({
   )
 
   if (step === 'done') return (
-    <div className="text-center py-12">
-      <h2 className="text-lg font-semibold text-gray-900 mb-2">제출 완료</h2>
-      <p className="text-gray-500 text-sm mb-6">자료가 성공적으로 업로드되었습니다.</p>
+    <div className="text-center py-12 animate-slide-up-fade">
+      <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-4">
+        <svg className="w-6 h-6 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+        </svg>
+      </div>
+      <h2 className="text-base font-semibold text-neutral-900 mb-1 tracking-tight">제출 완료</h2>
+      <p className="text-xs text-neutral-400 mb-5">자료가 성공적으로 업로드되었습니다.</p>
       {downloadUrl && (
-        <a href={downloadUrl} target="_blank" rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors">
+        <a href={downloadUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary">
           제출 파일 확인
         </a>
       )}
@@ -721,16 +813,17 @@ function SubmitTab({
       )}
 
       {/* 이전 내용 불러오기 */}
-      <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
+      <div className="flex items-center justify-between bg-neutral-50 rounded-lg px-3.5 py-3"
+        style={{ border: '1px solid rgba(0,0,0,0.08)' }}>
         <div>
-          <p className="text-sm font-medium text-gray-900">이전 제출 내용 불러오기</p>
+          <p className="text-xs font-medium text-neutral-800">이전 제출 내용 불러오기</p>
           {prevLoaded && prevDate && (
-            <p className="text-xs text-gray-500">{prevDate} 제출 내용을 불러왔습니다.</p>
+            <p className="text-[11px] text-neutral-400 mt-0.5">{prevDate} 제출 내용</p>
           )}
         </div>
         <button type="button" onClick={onLoadPrevious} disabled={prevLoading || isClosed}
-          className="px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors">
-          {prevLoading ? '불러오는 중...' : '불러오기'}
+          className="btn btn-primary btn-sm">
+          {prevLoading ? '불러오는 중…' : '불러오기'}
         </button>
       </div>
 
@@ -871,30 +964,46 @@ function SubmitTab({
 
       {/* 업로드 진행 */}
       {isUploading && (
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <div className="flex justify-between text-sm mb-3">
-            <span className="text-gray-600">{step === 'saving' ? '저장 중...' : '업로드 중...'}</span>
-            <span className="font-medium text-gray-900">{progress}%</span>
+        <div className="surface p-4">
+          <div className="flex justify-between text-xs mb-2.5">
+            <span className="text-neutral-600 font-medium">{step === 'saving' ? '저장 중…' : '업로드 중…'}</span>
+            <span className="text-neutral-900 font-semibold tabular-nums">{progress}%</span>
           </div>
-          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-            <div className="h-full bg-gray-900 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
+          <div className="h-1 bg-neutral-100 rounded-full overflow-hidden">
+            <div className="h-full bg-neutral-900 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
           </div>
         </div>
       )}
 
       {step === 'error' && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
+        <div className="bg-red-50 border border-red-100 rounded-lg px-4 py-3 text-xs text-red-700">
           {errorMsg}
+        </div>
+      )}
+
+      {/* 임시저장 인디케이터 */}
+      {draftSaved && !isClosed && (
+        <div className="flex items-center justify-end gap-1.5 text-xs text-gray-400">
+          <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          임시저장됨
         </div>
       )}
 
       {!isClosed ? (
         <button type="submit" disabled={isUploading}
-          className="w-full py-2.5 rounded-lg bg-gray-900 hover:bg-gray-800 text-white font-medium text-sm transition-colors disabled:opacity-50">
-          {isUploading ? '제출 중...' : '자료 제출하기'}
+          className="btn btn-primary btn-lg w-full">
+          {isUploading ? (
+            <span className="flex items-center justify-center gap-2">
+              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
+                style={{ animation: 'spin 0.8s linear infinite' }} />
+              {step === 'saving' ? '저장 중…' : '제출 중…'}
+            </span>
+          ) : '자료 제출하기'}
         </button>
       ) : (
-        <div className="text-center py-4 text-gray-500 text-sm">회의가 마감되었습니다.</div>
+        <div className="text-center py-4 text-neutral-400 text-xs">회의가 마감되었습니다.</div>
       )}
     </form>
   )
@@ -903,12 +1012,15 @@ function SubmitTab({
 // ── 작업 항목 탭 (고위험 / 일반 공용) ─────────────────────────
 function WorkItemTab({
   workType, label, color, isClosed, items, isLoading, myTeamId, myTeamName, onAdd, onDelete,
+  pendingMarkerType, onCancelPendingMarker,
 }: {
   workType: 'high_risk' | 'general'; label: string; color: 'red' | 'blue'
   isClosed: boolean; items: WorkItem[]; isLoading: boolean
   myTeamId: string; myTeamName: string
   onAdd: (data: Partial<WorkItem>) => Promise<void>
   onDelete: (id: string) => Promise<void>
+  pendingMarkerType?: string | null       // 마커 드롭 시 자동으로 폼 열기
+  onCancelPendingMarker?: () => void      // 폼 취소 시 pending 해제
 }) {
   const [showForm,    setShowForm]    = useState(false)
   const [workName,    setWorkName]    = useState('')
@@ -918,9 +1030,20 @@ function WorkItemTab({
   const [saving,      setSaving]      = useState(false)
   const composingRef = useRef(false)
 
+  // 마커가 드롭되면 자동으로 폼 열기
+  useEffect(() => {
+    if (pendingMarkerType) {
+      setWorkName('')
+      setLocation('')
+      setWorkerCount('')
+      setDescription('')
+      setShowForm(true)
+    }
+  }, [pendingMarkerType])
+
   const colorCls = color === 'red'
-    ? { badge: 'text-red-700 text-xs font-medium', btn: 'bg-gray-900 hover:bg-gray-800', border: 'border-gray-200' }
-    : { badge: 'text-gray-700 text-xs font-medium', btn: 'bg-gray-900 hover:bg-gray-800', border: 'border-gray-200' }
+    ? { dot: 'bg-red-400', badge: 'bg-red-50 text-red-700', btn: 'btn-primary', border: 'rgba(0,0,0,0.08)' }
+    : { dot: 'bg-blue-400', badge: 'bg-blue-50 text-blue-700', btn: 'btn-primary', border: 'rgba(0,0,0,0.08)' }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
@@ -931,7 +1054,14 @@ function WorkItemTab({
     setShowForm(false); setSaving(false)
   }
 
+  function handleCancel() {
+    setShowForm(false)
+    onCancelPendingMarker?.()
+  }
+
   if (isLoading) return <LoadingSpinner />
+
+  const pendingLabel = pendingMarkerType ? MARKER_TYPES[pendingMarkerType]?.label : null
 
   return (
     <div className="space-y-4">
@@ -941,28 +1071,39 @@ function WorkItemTab({
           <p className="text-xs text-gray-500 mt-0.5">모든 협력업체가 함께 등록 · 실시간 공유</p>
         </div>
         {!isClosed && (
-          <button onClick={() => setShowForm(true)}
-            className={`px-4 py-2 ${colorCls.btn} text-white text-sm font-medium rounded-lg transition-colors`}>
-            작업 추가
+          <button onClick={() => setShowForm(true)} className={`btn ${colorCls.btn} btn-sm`}>
+            + 작업 추가
           </button>
         )}
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
-          <h3 className="font-medium text-gray-900 mb-4">새 {label} 등록</h3>
-          <form onSubmit={handleAdd} className="space-y-3">
+        <div className="surface p-4 animate-slide-up-fade">
+          <div className="flex items-center gap-2 mb-3">
+            {pendingLabel && (
+              <span className="text-lg">{MARKER_TYPES[pendingMarkerType!]?.icon}</span>
+            )}
+            <h3 className="text-xs font-semibold text-neutral-700 uppercase tracking-wider">
+              {pendingLabel ? `${pendingLabel} 작업 등록` : `새 ${label} 등록`}
+            </h3>
+            {pendingLabel && (
+              <span className={`badge ml-auto ${color === 'red' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
+                마커와 함께 등록
+              </span>
+            )}
+          </div>
+          <form onSubmit={handleAdd} className="space-y-2.5">
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">작업명 *</label>
+              <label className="block text-[10px] font-medium text-neutral-400 uppercase tracking-wider">작업명 *</label>
               <input type="text" placeholder="예) 철근 배근 작업" value={workName}
                 onCompositionStart={() => { composingRef.current = true }}
                 onCompositionEnd={e => { composingRef.current = false; setWorkName((e.target as HTMLInputElement).value) }}
                 onChange={e => { if (!composingRef.current) setWorkName(e.target.value) }}
                 className={inputCls} />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2.5">
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">위치/구간</label>
+                <label className="block text-[10px] font-medium text-neutral-400 uppercase tracking-wider">위치/구간</label>
                 <input type="text" placeholder="예) A동 3층" value={location}
                   onCompositionStart={() => { composingRef.current = true }}
                   onCompositionEnd={e => { composingRef.current = false; setLocation((e.target as HTMLInputElement).value) }}
@@ -970,27 +1111,24 @@ function WorkItemTab({
                   className={inputCls} />
               </div>
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">투입 인원</label>
+                <label className="block text-[10px] font-medium text-neutral-400 uppercase tracking-wider">투입 인원</label>
                 <input type="number" min="0" placeholder="명" value={workerCount}
                   onChange={e => setWorkerCount(e.target.value)} className={inputCls} />
               </div>
             </div>
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">상세 내용</label>
+              <label className="block text-[10px] font-medium text-neutral-400 uppercase tracking-wider">상세 내용</label>
               <textarea rows={2} placeholder="작업 상세 내용" value={description}
                 onCompositionStart={() => { composingRef.current = true }}
                 onCompositionEnd={e => { composingRef.current = false; setDescription((e.target as HTMLTextAreaElement).value) }}
                 onChange={e => { if (!composingRef.current) setDescription(e.target.value) }}
-                className={inputCls + ' resize-none w-full'} />
+                className={`${inputCls} resize-none w-full`}
+                style={{ height: 'auto', padding: '0.4rem 0.625rem' }} />
             </div>
-            <div className="flex gap-2">
-              <button type="button" onClick={() => setShowForm(false)}
-                className="flex-1 py-2 border border-gray-200 text-gray-600 text-sm font-medium rounded-lg hover:bg-gray-50">
-                취소
-              </button>
-              <button type="submit" disabled={saving}
-                className={`flex-1 py-2 ${colorCls.btn} text-white text-sm font-medium rounded-lg transition-colors`}>
-                {saving ? '저장 중...' : '등록'}
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={handleCancel} className="btn btn-secondary flex-1">취소</button>
+              <button type="submit" disabled={saving} className={`btn ${colorCls.btn} flex-1`}>
+                {saving ? '저장 중…' : '등록'}
               </button>
             </div>
           </form>
@@ -998,34 +1136,34 @@ function WorkItemTab({
       )}
 
       {items.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
-          <p className="text-sm">등록된 {label}이 없습니다.</p>
-          <p className="text-xs mt-1 text-gray-400">다른 업체가 등록하면 여기에 실시간으로 표시됩니다.</p>
+        <div className="text-center py-10">
+          <p className="text-xs text-neutral-400">등록된 {label}이 없습니다.</p>
+          <p className="text-[11px] text-neutral-300 mt-1">다른 업체가 등록하면 실시간으로 표시됩니다.</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {items.map(item => (
-            <div key={item.id} className={`rounded-lg border p-4 ${colorCls.border} bg-white group`}>
+            <div key={item.id} className="rounded-lg bg-white group transition-colors duration-150 hover:bg-neutral-50/60"
+              style={{ border: `1px solid ${colorCls.border}`, padding: '0.75rem 1rem' }}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-2 flex-wrap">
-                    <h3 className="font-medium text-gray-900">{item.work_name}</h3>
-                    <span className={`text-xs px-2 py-1 rounded font-medium text-gray-700 bg-gray-100 ${colorCls.badge}`}>
-                      {item.teams?.name ?? '미지정'}
-                    </span>
+                  <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                    <span className={`w-1.5 h-1.5 rounded-full ${colorCls.dot} shrink-0`} />
+                    <h3 className="text-xs font-semibold text-neutral-800 tracking-tight">{item.work_name}</h3>
+                    <span className={`badge ${colorCls.badge}`}>{item.teams?.name ?? '미지정'}</span>
                   </div>
-                  <div className="flex flex-wrap gap-3 text-xs text-gray-600">
+                  <div className="flex flex-wrap gap-2.5 text-[11px] text-neutral-500">
                     {item.location && <span>{item.location}</span>}
                     {item.worker_count > 0 && <span>{item.worker_count}명</span>}
                   </div>
-                  {item.description && (
-                    <p className="text-xs text-gray-600 mt-2">{item.description}</p>
-                  )}
+                  {item.description && <p className="text-[11px] text-neutral-400 mt-1">{item.description}</p>}
                 </div>
                 {item.team_id === myTeamId && !isClosed && (
                   <button onClick={() => onDelete(item.id)}
-                    className="text-gray-400 hover:text-red-500 transition-colors text-sm p-1 opacity-0 group-hover:opacity-100">
-                    ✕
+                    className="text-neutral-300 hover:text-red-400 transition-colors duration-150 p-1 opacity-0 group-hover:opacity-100">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
                   </button>
                 )}
               </div>
@@ -1066,7 +1204,7 @@ function MaterialTab({
   }, {})
 
   async function handleReserve(slotId: string) {
-    if (!desc.trim()) { alert('자재 내용을 입력해주세요'); return }
+    if (!desc.trim()) { toast.error('자재 내용을 입력해주세요'); return }
     setSubmitting(true)
     await onReserve(slotId, desc, qty, vehicle)
     setOpenSlotId(null); setDesc(''); setQty(''); setVehicle('')
@@ -1076,12 +1214,12 @@ function MaterialTab({
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="font-semibold text-gray-900">자재 하역/운반 시간 예약</h2>
-        <p className="text-xs text-gray-500 mt-0.5">GATE를 선택한 후 시간대를 신청하세요 · 시간대당 최대 5개 업체</p>
+        <h2 className="text-sm font-semibold text-neutral-800 tracking-tight">자재 하역/운반 시간 예약</h2>
+        <p className="text-xs text-neutral-400 mt-0.5">GATE를 선택한 후 시간대를 신청하세요 · 시간대당 최대 5개 업체</p>
       </div>
 
       {!selectedGate ? (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-2.5">
           {gates.map(gate => {
             const gSlots   = slots.filter(s => s.gate === gate)
             const totalRes = gSlots.reduce((acc, s) => acc + s.material_reservations.length, 0)
@@ -1090,22 +1228,20 @@ function MaterialTab({
               <button
                 key={gate}
                 onClick={() => setSelectedGate(gate)}
-                className={[
-                  'flex flex-col items-center gap-3 p-5 rounded-xl border-2 transition-all text-left',
-                  myRes
-                    ? 'border-emerald-400 bg-emerald-50'
-                    : 'border-gray-200 bg-white hover:border-gray-400 hover:bg-gray-50',
-                ].join(' ')}
+                className="surface flex flex-col gap-2 p-4 text-left transition-all duration-150 hover:bg-neutral-50"
+                style={myRes ? { borderColor: 'rgba(52,211,153,0.5)', background: 'rgba(236,253,245,0.6)' } : {}}
               >
-                <div className="text-3xl">🚛</div>
-                <div>
-                  <p className="font-bold text-gray-900 text-center">{gate}</p>
-                  <p className="text-xs text-gray-500 text-center mt-0.5">{totalRes}건 예약됨</p>
-                  {myRes && (
-                    <p className="text-xs text-emerald-600 font-medium text-center mt-1">✓ 내 예약 있음</p>
-                  )}
+                <div className="flex items-center justify-between">
+                  <svg className="w-5 h-5 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
+                  </svg>
+                  {myRes && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
                 </div>
-                <span className="text-xs text-gray-400">탭하여 선택 →</span>
+                <div>
+                  <p className="text-xs font-semibold text-neutral-800 tracking-tight">{gate}</p>
+                  <p className="text-[11px] text-neutral-400 mt-0.5">{totalRes}건 예약됨</p>
+                  {myRes && <p className="text-[11px] text-emerald-600 font-medium mt-1">내 예약 있음</p>}
+                </div>
               </button>
             )
           })}
@@ -1114,19 +1250,22 @@ function MaterialTab({
         <div className="space-y-3">
           <button
             onClick={() => { setSelectedGate(null); setOpenSlotId(null) }}
-            className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 transition-colors"
+            className="btn btn-ghost btn-sm"
           >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
             </svg>
             GATE 선택으로 돌아가기
           </button>
 
-          <div className="bg-gray-900 text-white rounded-xl px-4 py-3 flex items-center gap-3">
-            <span className="text-xl">🚛</span>
+          <div className="surface px-4 py-3 flex items-center gap-3"
+            style={{ background: '#18181b', borderColor: 'transparent' }}>
+            <svg className="w-4 h-4 text-neutral-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
+            </svg>
             <div>
-              <p className="font-bold">{selectedGate}</p>
-              <p className="text-xs text-gray-300">시간대를 선택하여 예약하세요</p>
+              <p className="text-xs font-semibold text-white tracking-tight">{selectedGate}</p>
+              <p className="text-[11px] text-neutral-400 mt-0.5">시간대를 선택하여 예약하세요</p>
             </div>
           </div>
 
@@ -1139,77 +1278,83 @@ function MaterialTab({
               const isOpen = openSlotId === slot.id
 
               return (
-                <div key={slot.id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                  <div className="flex items-center justify-between px-4 py-3">
+                <div key={slot.id} className="surface overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-2.5">
                     <div className="flex items-center gap-3">
-                      <span className="text-sm font-medium text-gray-900">{slot.slot_time}</span>
-                      <div className="flex gap-1">
+                      <span className="text-xs font-semibold text-neutral-800 tracking-tight">{slot.slot_time}</span>
+                      <div className="flex gap-0.5">
                         {Array.from({ length: slot.max_teams }).map((_, i) => (
-                          <div key={i} className={['w-2 h-2 rounded-full', i < count ? 'bg-emerald-500' : 'bg-gray-200'].join(' ')} />
+                          <div key={i} className={['w-1.5 h-1.5 rounded-full', i < count ? 'bg-emerald-400' : 'bg-neutral-200'].join(' ')} />
                         ))}
                       </div>
-                      <span className="text-xs text-gray-500">{count}/{slot.max_teams}</span>
+                      <span className="text-[11px] text-neutral-400">{count}/{slot.max_teams}</span>
                     </div>
                     {isFull ? (
-                      <span className="text-xs font-medium px-2.5 py-1 bg-gray-100 text-gray-600 rounded">마감</span>
+                      <span className="badge bg-neutral-100 text-neutral-500">마감</span>
                     ) : myRes ? (
                       <button onClick={() => onCancel(myRes.id)}
-                        className="text-xs font-medium text-red-600 hover:text-red-700 transition-colors">예약취소</button>
+                        className="text-[11px] font-medium text-red-500 hover:text-red-600 transition-colors duration-150">예약취소</button>
                     ) : !isClosed ? (
                       <button onClick={() => setOpenSlotId(isOpen ? null : slot.id)}
-                        className="text-xs font-medium px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white rounded transition-colors">
-                        {isOpen ? '취소' : '신청'}
+                        className={`btn btn-sm ${isOpen ? 'btn-secondary' : 'btn-primary'}`}>
+                        {isOpen ? '닫기' : '신청'}
                       </button>
                     ) : null}
                   </div>
 
                   {isOpen && !myRes && !isFull && (
-                    <div className="border-t border-gray-200 px-4 py-4 bg-gray-50 space-y-3">
-                      <div className="space-y-1">
-                        <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">자재 내용 *</label>
+                    <div className="space-y-3 px-4 py-4"
+                      style={{ borderTop: '1px solid rgba(0,0,0,0.06)', background: '#fafafa' }}>
+                      <div className="space-y-1.5">
+                        <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-widest">자재 내용 <span className="text-red-400">*</span></label>
                         <input type="text" placeholder="예) 철근 20톤" value={desc}
                           onCompositionStart={() => { matComposingRef.current = true }}
                           onCompositionEnd={e => { matComposingRef.current = false; setDesc((e.target as HTMLInputElement).value) }}
                           onChange={e => { if (!matComposingRef.current) setDesc(e.target.value) }}
                           className={inputCls} />
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">수량/규격</label>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div className="space-y-1.5">
+                          <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-widest">수량/규격</label>
                           <input type="text" placeholder="예) 20톤" value={qty}
                             onCompositionStart={() => { matComposingRef.current = true }}
                             onCompositionEnd={e => { matComposingRef.current = false; setQty((e.target as HTMLInputElement).value) }}
                             onChange={e => { if (!matComposingRef.current) setQty(e.target.value) }}
                             className={inputCls} />
                         </div>
-                        <div className="space-y-1">
-                          <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">차량 종류</label>
-                          <select value={vehicle} onChange={e => setVehicle(e.target.value)} className={inputCls}>
+                        <div className="space-y-1.5">
+                          <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-widest">차량 종류</label>
+                          <select value={vehicle} onChange={e => setVehicle(e.target.value)} className={`${inputCls} select`}>
                             <option value="">선택</option>
                             {VEHICLE_LIST.map(v => <option key={v} value={v}>{v}</option>)}
                           </select>
                         </div>
                       </div>
                       <button onClick={() => handleReserve(slot.id)} disabled={submitting}
-                        className="w-full py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                        {submitting ? '신청 중...' : '예약 신청'}
+                        className="btn btn-primary btn-lg w-full">
+                        {submitting
+                          ? <><span className="w-3.5 h-3.5 border-[2px] border-white/30 border-t-white rounded-full"
+                              style={{ animation: 'spin 0.7s linear infinite' }} />신청 중...</>
+                          : '예약 신청'}
                       </button>
                     </div>
                   )}
 
                   {reservations.length > 0 && (
-                    <div className="border-t border-gray-200 divide-y divide-gray-100">
-                      {reservations.map(r => (
+                    <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+                      {reservations.map((r, idx) => (
                         <div key={r.id} className={[
-                          'flex items-center gap-3 px-4 py-2.5 text-xs',
-                          r.team_id === myTeamId ? 'bg-emerald-50' : 'bg-white',
+                          'flex items-center gap-2.5 px-4 py-2 text-[11px]',
+                          idx > 0 ? 'border-t border-neutral-100/80' : '',
+                          r.team_id === myTeamId ? 'bg-emerald-50/60' : '',
                         ].join(' ')}>
-                          <span className="font-medium text-gray-900">{r.teams?.name ?? '업체'}</span>
-                          {r.material_description && <span className="text-gray-600">{r.material_description}</span>}
-                          {r.quantity && <span className="text-gray-500">· {r.quantity}</span>}
-                          {r.vehicle_type && <span className="text-gray-500">· {r.vehicle_type}</span>}
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${r.team_id === myTeamId ? 'bg-emerald-400' : 'bg-neutral-300'}`} />
+                          <span className="font-semibold text-neutral-700">{r.teams?.name ?? '업체'}</span>
+                          {r.material_description && <span className="text-neutral-500">{r.material_description}</span>}
+                          {r.quantity && <span className="text-neutral-400">· {r.quantity}</span>}
+                          {r.vehicle_type && <span className="text-neutral-400">· {r.vehicle_type}</span>}
                           {r.team_id === myTeamId && (
-                            <span className="ml-auto text-emerald-600 font-medium">내 예약</span>
+                            <span className="ml-auto badge bg-emerald-50 text-emerald-700">내 예약</span>
                           )}
                         </div>
                       ))}
@@ -1228,42 +1373,40 @@ function MaterialTab({
 // ── 공통 컴포넌트 ─────────────────────────────────────────────
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-      <div className="px-5 py-3 border-b border-gray-200">
-        <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+    <div className="surface overflow-hidden">
+      <div className="px-4 py-3 border-b border-neutral-100">
+        <h2 className="text-xs font-semibold text-neutral-700 tracking-tight uppercase">{title}</h2>
       </div>
-      <div className="p-5">{children}</div>
+      <div className="p-4">{children}</div>
     </div>
   )
 }
 
 function LoadingSpinner() {
   return (
-    <div className="flex justify-center py-20">
-      <div className="w-8 h-8 border-4 border-gray-900 border-t-transparent rounded-full animate-spin" />
+    <div className="flex justify-center py-16">
+      <div className="w-7 h-7 border-[2.5px] border-neutral-200 border-t-neutral-700 rounded-full"
+        style={{ animation: 'spin 0.8s linear infinite' }} />
     </div>
   )
 }
 
 function FullPageSpinner() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="w-8 h-8 border-4 border-gray-900 border-t-transparent rounded-full animate-spin" />
+    <div className="min-h-screen flex items-center justify-center bg-neutral-50">
+      <div className="w-7 h-7 border-[2.5px] border-neutral-200 border-t-neutral-700 rounded-full"
+        style={{ animation: 'spin 0.8s linear infinite' }} />
     </div>
   )
 }
 
 function ErrorPage({ message }: { message: string }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <p className="text-gray-500">{message}</p>
-      </div>
+    <div className="min-h-screen flex items-center justify-center bg-neutral-50">
+      <p className="text-sm text-neutral-500">{message}</p>
     </div>
   )
 }
 
-const inputCls =
-  'w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 ' +
-  'outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900 ' +
-  'placeholder:text-gray-400 transition-colors disabled:opacity-50 disabled:bg-gray-50'
+// inputCls delegates to .input in globals.css (h-9 slim, hairline border)
+const inputCls = 'input'

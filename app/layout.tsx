@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
+import { Toaster } from "@/app/components/Toast";
 
 const geist = Geist({
   variable: "--font-geist",
@@ -17,8 +18,9 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ko" className={`${geist.variable} h-full`}>
-      <body className="min-h-full font-[family-name:var(--font-geist)] antialiased bg-white text-gray-900">
+      <body className="min-h-full font-[family-name:var(--font-geist)] antialiased">
         {children}
+        <Toaster />
       </body>
     </html>
   );
