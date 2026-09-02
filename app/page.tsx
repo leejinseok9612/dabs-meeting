@@ -61,27 +61,21 @@ export default function RootPage() {
 function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnType<typeof createClient> }) {
   const router = useRouter()
 
-  // 팀 조회 상태
-  const [teamLoading,   setTeamLoading]   = useState(true)
-  const [myTeam,        setMyTeam]        = useState<{ id: string; name: string } | null>(null)
-  const [allTeams,      setAllTeams]      = useState<{ id: string; name: string }[]>([])
-  const [selectedId,    setSelectedId]    = useState('')
-  const [claiming,      setClaiming]      = useState(false)
-  const [claimError,    setClaimError]    = useState('')
-  const [loggingOut,    setLoggingOut]    = useState(false)
+  const [teamLoading, setTeamLoading] = useState(true)
+  const [myTeam,      setMyTeam]      = useState<{ id: string; name: string } | null>(null)
+  const [allTeams,    setAllTeams]    = useState<{ id: string; name: string }[]>([])
+  const [selectedId,  setSelectedId]  = useState('')
+  const [claiming,    setClaiming]    = useState(false)
+  const [claimError,  setClaimError]  = useState('')
+  const [loggingOut,  setLoggingOut]  = useState(false)
+  // 업체 배정은 있지만 "다른 업체 선택" 모드
+  const [reassigning, setReassigning] = useState(false)
 
-  // 내 업체 & 전체 업체 목록 로드
+  // 내 업체 & 전체 업체 목록 로드 (자동 리다이렉트 없이 선택 화면 표시)
   const loadTeam = useCallback(async () => {
-    // ① 이번 세션에 관리자 PIN 인증을 한 적 있으면 → 대시보드로 바로 이동
-    if (sessionStorage.getItem('admin_verified') === 'true') {
-      router.replace('/dashboard')
-      return
-    }
-
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setTeamLoading(false); return }
 
-    // ② 이미 업체가 배정돼 있으면 → 업체 페이지로 바로 이동
     const { data: assigned } = await supabase
       .from('team_assignments')
       .select('team_id, teams(id, name)')
@@ -89,24 +83,20 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
       .maybeSingle()
 
     if (assigned?.teams) {
-      const t = assigned.teams as unknown as { id: string; name: string }
-      setMyTeam(t)
-      router.replace(`/submit/${t.id}`)
-      return
+      setMyTeam(assigned.teams as unknown as { id: string; name: string })
     }
 
-    // ③ 둘 다 아니면 → 업체 선택 화면 표시
     const { data: teams } = await supabase
       .from('teams')
       .select('id, name')
       .order('name')
     setAllTeams(teams ?? [])
     setTeamLoading(false)
-  }, [supabase, router])
+  }, [supabase])
 
   useEffect(() => { loadTeam() }, [loadTeam])
 
-  // 업체 등록
+  // 업체 등록 또는 재배정
   async function handleClaim() {
     if (!selectedId) return
     setClaiming(true)
@@ -115,13 +105,18 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setClaimError('로그인 정보를 찾을 수 없습니다.'); setClaiming(false); return }
 
+    if (reassigning) {
+      // 기존 배정 삭제 후 새로 등록
+      await supabase.from('team_assignments').delete().eq('user_id', user.id)
+    }
+
     const { error } = await supabase
       .from('team_assignments')
       .insert({ user_id: user.id, team_id: selectedId })
 
     if (error) {
       setClaimError(error.code === '23505'
-        ? '이미 등록된 업체입니다. 관리자에게 문의하세요.'
+        ? '이미 다른 사람이 등록한 업체입니다.'
         : error.message)
       setClaiming(false)
       return
@@ -132,35 +127,88 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
 
   async function handleSignOut() {
     setLoggingOut(true)
+    sessionStorage.removeItem('admin_verified')
     await supabase.auth.signOut()
   }
 
-  // ── 팀 조회 중 ──
   if (teamLoading) {
     return (
       <AuthShell>
         <div className="flex flex-col items-center py-8 gap-3">
           <div className="w-8 h-8 border-4 border-gray-900 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-gray-500">업체 정보를 불러오는 중...</p>
+          <p className="text-sm text-gray-500">불러오는 중...</p>
         </div>
       </AuthShell>
     )
   }
 
-  // ── 업체가 이미 배정됨 (리다이렉트 중) ──
-  if (myTeam) {
+  // ── 업체 배정돼 있고 재선택 모드가 아니면 → 입장 선택 화면 ──
+  if (myTeam && !reassigning) {
     return (
       <AuthShell>
-        <div className="flex flex-col items-center py-8 gap-3">
-          <div className="w-8 h-8 border-4 border-gray-900 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-gray-700 font-medium">{myTeam.name}</p>
-          <p className="text-xs text-gray-500">페이지로 이동 중...</p>
+        <div className="space-y-4">
+          {/* 로그인 상태 */}
+          <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+            <p className="text-xs text-gray-600 truncate">{email}</p>
+          </div>
+
+          <p className="text-sm font-semibold text-gray-900">어떻게 입장하시겠습니까?</p>
+
+          {/* 업체 페이지 */}
+          <button
+            onClick={() => router.replace(`/submit/${myTeam.id}`)}
+            className="w-full flex items-center justify-between px-4 py-4
+                       bg-gray-900 hover:bg-gray-800 text-white rounded-xl transition-colors"
+          >
+            <div className="text-left">
+              <p className="text-sm font-semibold">{myTeam.name}</p>
+              <p className="text-xs text-gray-400 mt-0.5">자료 제출 페이지</p>
+            </div>
+            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24"
+              stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+
+          {/* 관리자 대시보드 */}
+          <a
+            href="/dashboard"
+            className="flex items-center justify-between w-full px-4 py-4
+                       bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl
+                       transition-colors"
+          >
+            <div className="text-left">
+              <p className="text-sm font-semibold">관리자 대시보드</p>
+              <p className="text-xs text-gray-400 mt-0.5">PIN 인증 후 입장</p>
+            </div>
+            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24"
+              stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </a>
+
+          <div className="border-t border-gray-100 pt-3 flex items-center justify-between">
+            <button
+              onClick={() => { setReassigning(true); setSelectedId('') }}
+              className="text-xs text-gray-500 hover:text-gray-700 transition-colors"
+            >
+              다른 업체로 전환
+            </button>
+            <button
+              onClick={handleSignOut}
+              disabled={loggingOut}
+              className="text-xs text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50"
+            >
+              {loggingOut ? '로그아웃 중...' : '로그아웃'}
+            </button>
+          </div>
         </div>
       </AuthShell>
     )
   }
 
-  // ── 업체 선택 UI ──
+  // ── 업체 선택 / 재선택 UI ──
   return (
     <AuthShell>
       <div className="space-y-5">
@@ -174,8 +222,10 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
         {/* 업체 선택 */}
         <div className="space-y-3">
           <div>
-            <p className="text-sm font-semibold tracking-tight text-gray-900 mb-0.5">소속 업체를 선택하세요</p>
-            <p className="text-xs text-gray-500">한 번 선택하면 다음부터 자동으로 이동합니다</p>
+            <p className="text-sm font-semibold tracking-tight text-gray-900 mb-0.5">
+              {reassigning ? '전환할 업체를 선택하세요' : '소속 업체를 선택하세요'}
+            </p>
+            <p className="text-xs text-gray-500">선택 후 해당 제출 페이지로 이동합니다</p>
           </div>
 
           <div className="space-y-2">
@@ -194,9 +244,7 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
                   'w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors',
                   selectedId === t.id ? 'border-gray-900 bg-gray-900' : 'border-gray-300',
                 ].join(' ')}>
-                  {selectedId === t.id && (
-                    <span className="w-2 h-2 rounded-full bg-white" />
-                  )}
+                  {selectedId === t.id && <span className="w-2 h-2 rounded-full bg-white" />}
                 </span>
                 <span className={`text-sm font-medium ${selectedId === t.id ? 'text-gray-900' : 'text-gray-700'}`}>
                   {t.name}
@@ -212,7 +260,7 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
           </div>
 
           {claimError && (
-            <p className="text-xs text-red-600 flex items-center gap-1">{claimError}</p>
+            <p className="text-xs text-red-600">{claimError}</p>
           )}
 
           <button
@@ -221,11 +269,11 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
             className="w-full py-3 rounded-lg bg-gray-900 hover:bg-gray-800 text-white
                        font-semibold text-sm transition-colors disabled:opacity-40"
           >
-            {claiming ? '등록 중...' : '내 업체로 등록하고 입장'}
+            {claiming ? '처리 중...' : '입장하기'}
           </button>
         </div>
 
-        {/* 관리자 대시보드 */}
+        {/* 관리자 대시보드 + 로그아웃 */}
         <div className="border-t border-gray-200 pt-4 space-y-2">
           <a
             href="/dashboard"
@@ -240,14 +288,23 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
             </svg>
           </a>
 
-          <button
-            onClick={handleSignOut}
-            disabled={loggingOut}
-            className="w-full py-2 rounded-lg text-gray-500 hover:text-red-600
-                       text-xs transition-colors disabled:opacity-50"
-          >
-            {loggingOut ? '로그아웃 중...' : '로그아웃'}
-          </button>
+          <div className="flex items-center justify-between pt-1">
+            {reassigning && (
+              <button
+                onClick={() => setReassigning(false)}
+                className="text-xs text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                ← 돌아가기
+              </button>
+            )}
+            <button
+              onClick={handleSignOut}
+              disabled={loggingOut}
+              className="ml-auto text-xs text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50"
+            >
+              {loggingOut ? '로그아웃 중...' : '로그아웃'}
+            </button>
+          </div>
         </div>
       </div>
     </AuthShell>
