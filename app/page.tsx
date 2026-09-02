@@ -18,38 +18,33 @@ export default function RootPage() {
   const [userEmail, setUserEmail] = useState('')
 
   // ── 세션 확인 ──────────────────────────────────────────────
+  // onAuthStateChange의 INITIAL_SESSION 이벤트로 통합 처리
+  // (checkSession + onAuthStateChange 이중 호출 → 무한 로딩 방지)
   useEffect(() => {
-    async function checkSession() {
-      try {
-        const timeout = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), 5000)
-        )
-        const { data: { session } } = await Promise.race([
-          supabase.auth.getSession(),
-          timeout
-        ])
-        if (!session) { setState('unauthenticated'); return }
-        setUserEmail(session.user.email ?? '')
-        setState('loggedIn')
-      } catch {
-        setState('unauthenticated')
-      }
-    }
+    let resolved = false
 
-    // 로그인/로그아웃 상태 변화 구독
+    // 3초 안에 INITIAL_SESSION이 안 오면 로그인 화면으로 강제 전환
+    const fallback = setTimeout(() => {
+      if (!resolved) setState('unauthenticated')
+    }, 3000)
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (session) {
-          setUserEmail(session.user.email ?? '')
-          setState('loggedIn')
-        } else {
-          setState('unauthenticated')
+      (event, session) => {
+        // INITIAL_SESSION: 페이지 로드 시 Supabase가 즉시 발행하는 첫 이벤트
+        if (!resolved || event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
+          resolved = true
+          clearTimeout(fallback)
+          if (session) {
+            setUserEmail(session.user.email ?? '')
+            setState('loggedIn')
+          } else {
+            setState('unauthenticated')
+          }
         }
       }
     )
 
-    checkSession()
-    return () => subscription.unsubscribe()
+    return () => { clearTimeout(fallback); subscription.unsubscribe() }
   }, [supabase])
 
   if (state === 'checking') return <SplashScreen />
