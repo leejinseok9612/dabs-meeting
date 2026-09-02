@@ -1,14 +1,13 @@
 // ============================================================
-// app/submit/[teamId]/page.tsx — DABs 협력업체 통합 제출 페이지 v3
-// 레이아웃: 좌측 지적도(협업 지도) / 우측 탭 입력
-// 실시간: 작업항목·자재슬롯 Supabase Realtime 구독
+// app/submit/[teamId]/page.tsx — DABs 협력업체 통합 제출 페이지 v4
+// 지적도가 고위험/일반작업 탭에 통합되어 마커 배치 시 작업항목 자동 추가
 // ============================================================
 'use client'
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import MapAnnotator from '@/app/components/MapAnnotator'
+import MapAnnotator, { MARKER_TYPES } from '@/app/components/MapAnnotator'
 
 // ── 타입 ────────────────────────────────────────────────────
 interface Team    { id: string; name: string; department?: string }
@@ -28,7 +27,7 @@ interface MaterialSlot {
   material_reservations: MaterialReservation[]
 }
 
-type Tab       = 'map' | 'high_risk' | 'general' | 'material' | 'submit'
+type Tab       = 'high_risk' | 'general' | 'material' | 'submit'
 type UploadStep = 'idle' | 'uploading' | 'saving' | 'done' | 'error'
 
 // ── 상수 ────────────────────────────────────────────────────
@@ -56,7 +55,7 @@ export default function SubmissionPage() {
   const [meeting,   setMeeting]   = useState<Meeting | null>(null)
   const [loading,   setLoading]   = useState(true)
   const [noMeeting, setNoMeeting] = useState(false)
-  const [activeTab, setActiveTab] = useState<Tab>('map')
+  const [activeTab, setActiveTab] = useState<Tab>('high_risk')
 
   // 공지사항
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
@@ -71,19 +70,10 @@ export default function SubmissionPage() {
   const [slots,        setSlots]        = useState<MaterialSlot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
 
-  // 내 지도 마커 수 (제출 필수 조건)
-  const [myMarkerCount, setMyMarkerCount] = useState<number>(0)
-
-  const loadMyMarkers = useCallback((meetingId: string) => {
-    fetch(`/api/map-markers?meetingId=${meetingId}`)
-      .then(r => r.json())
-      .then((data: { team_id: string | null }[]) => {
-        if (Array.isArray(data)) {
-          setMyMarkerCount(data.filter(m => m.team_id === teamId).length)
-        }
-      })
-      .catch(() => {})
-  }, [teamId])
+  // 지도 마커 수 (고위험 / 일반 분리)
+  const [myHighRiskCount, setMyHighRiskCount] = useState<number>(0)
+  const [myGeneralCount,  setMyGeneralCount]  = useState<number>(0)
+  const myMarkerCount = myHighRiskCount + myGeneralCount
 
   // ── 자료제출 폼 상태 ─────────────────────────────────────
   const [personnel, setPersonnel] = useState({
@@ -117,9 +107,6 @@ export default function SubmissionPage() {
         setNoMeeting(true)
       } else {
         setMeeting(data.meeting)
-        loadMyMarkers(data.meeting.id)
-        // 지적도가 있으면 맨 처음에 지도 탭 표시
-        setActiveTab(data.meeting.map_file_url ? 'map' : 'high_risk')
       }
       setLoading(false)
     }
@@ -160,7 +147,6 @@ export default function SubmissionPage() {
     setWorkLoading(true)
     reloadWorkItems(meeting.id)
 
-    // Realtime 구독 — 작업항목 변경 시 자동 갱신
     const channel = supabase
       .channel(`work_items:${meeting.id}`)
       .on('postgres_changes', {
@@ -185,7 +171,6 @@ export default function SubmissionPage() {
     setSlotsLoading(true)
     reloadSlots(meeting.id)
 
-    // Realtime 구독 — 자재예약 변경 시 자동 갱신
     const channel = supabase
       .channel(`material_slots:${meeting.id}`)
       .on('postgres_changes', {
@@ -195,18 +180,6 @@ export default function SubmissionPage() {
 
     return () => { channel.unsubscribe() }
   }, [meeting, supabase, reloadSlots])
-
-  // 지도 마커 실시간 구독
-  useEffect(() => {
-    if (!meeting) return
-    const ch = supabase
-      .channel(`markers:${meeting.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'map_markers',
-        filter: `meeting_id=eq.${meeting.id}` },
-        () => loadMyMarkers(meeting.id))
-      .subscribe()
-    return () => { ch.unsubscribe() }
-  }, [meeting, supabase, loadMyMarkers])
 
   // ── 자료제출 핸들러 ───────────────────────────────────────
   async function handleLoadPrevious() {
@@ -266,7 +239,7 @@ export default function SubmissionPage() {
       errs.workProcess = '작업공정을 입력해 주세요.'
     // 지적도가 있으면 마커 필수
     if (hasMap && myMarkerCount === 0)
-      errs.markers = '지적도에 장비 또는 작업구역을 1개 이상 표시해 주세요.'
+      errs.markers = '고위험 또는 일반작업 지적도에 장비/작업구역을 1개 이상 표시해 주세요.'
     setErrors(errs); return Object.keys(errs).length === 0
   }
 
@@ -320,7 +293,6 @@ export default function SubmissionPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ meeting_id: meeting.id, work_type: workType, team_id: teamId, ...data }),
     })
-    // Realtime이 자동으로 갱신하지만 즉시성을 위해 reload
     reloadWorkItems(meeting.id)
   }
 
@@ -341,23 +313,35 @@ export default function SubmissionPage() {
       alert(err.error || '예약 실패')
       return
     }
-    // 즉시 갱신 (Realtime 보완)
     if (meeting) reloadSlots(meeting.id)
   }
 
   async function cancelReservation(reservationId: string) {
     await fetch(`/api/material-slots?reservationId=${reservationId}`, { method: 'DELETE' })
-    // Realtime이 자동 갱신
+  }
+
+  // ── 마커 배치 콜백 (작업항목 자동 추가) ──────────────────
+  function handleHighRiskMarkerPlace(markerType: string, markerLabel: string) {
+    const markerName = MARKER_TYPES[markerType]?.label ?? markerType
+    const workName   = markerLabel ? `${markerName} - ${markerLabel}` : markerName
+    addWorkItem('high_risk', { work_name: workName, worker_count: 0 })
+  }
+
+  function handleGeneralMarkerPlace(markerType: string, markerLabel: string) {
+    const markerName = MARKER_TYPES[markerType]?.label ?? markerType
+    const workName   = markerLabel ? `${markerName} - ${markerLabel}` : markerName
+    addWorkItem('general', { work_name: workName, worker_count: 0 })
   }
 
   const isClosed = meeting?.status === 'closed'
+  const hasMap   = !!meeting?.map_file_url
 
   // ── 로딩 / 오류 상태 ─────────────────────────────────────
   if (loading) return <FullPageSpinner />
   if (!team)   return <ErrorPage message="업체 정보를 찾을 수 없습니다." />
 
-  // 지도가 있는지 여부
-  const hasMap = !!meeting?.map_file_url
+  // 고위험/일반 탭에서만 2컬럼 레이아웃
+  const showMapColumn = hasMap && (activeTab === 'high_risk' || activeTab === 'general')
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -432,37 +416,65 @@ export default function SubmissionPage() {
             <p className="text-gray-500">오늘 예정된 회의가 없습니다.</p>
           </div>
         ) : (
-          <div className={hasMap
+          <div className={showMapColumn
             ? 'grid grid-cols-1 xl:grid-cols-[3fr_2fr] gap-6 items-start'
             : 'max-w-2xl mx-auto'
           }>
 
-            {/* ── 왼쪽: 협업 지도 ───────────────────────────── */}
-            {hasMap && (
-              <div className="xl:sticky xl:top-[73px]">
+            {/* ── 왼쪽: 고위험 지적도 (XL만) ─────────────── */}
+            {hasMap && activeTab === 'high_risk' && (
+              <div className="hidden xl:block xl:sticky xl:top-[73px]">
                 <MapAnnotator
                   meetingId={meeting!.id}
                   mapUrl={meeting!.map_file_url!}
                   myTeamId={teamId}
                   allTeamIds={allTeams.map(t => t.id)}
                   readOnly={false}
-                  onMarkerCountChange={count => setMyMarkerCount(count)}
+                  workType="high_risk"
+                  onMarkerCountChange={count => setMyHighRiskCount(count)}
+                  onMarkerPlace={handleHighRiskMarkerPlace}
                   workItems={workItems}
                 />
               </div>
             )}
 
-            {/* ── 오른쪽: 탭 + 폼 ───────────────────────────── */}
+            {/* ── 왼쪽: 일반 지적도 (XL만) ───────────────── */}
+            {hasMap && activeTab === 'general' && (
+              <div className="hidden xl:block xl:sticky xl:top-[73px]">
+                <MapAnnotator
+                  meetingId={meeting!.id}
+                  mapUrl={meeting!.map_file_url!}
+                  myTeamId={teamId}
+                  allTeamIds={allTeams.map(t => t.id)}
+                  readOnly={false}
+                  workType="general"
+                  onMarkerCountChange={count => setMyGeneralCount(count)}
+                  onMarkerPlace={handleGeneralMarkerPlace}
+                  workItems={workItems}
+                />
+              </div>
+            )}
+
+            {/* ── 오른쪽: 탭 + 폼 ─────────────────────────── */}
             <div>
               {/* 탭 네비게이션 */}
               <div className="bg-white border-b border-gray-200 flex overflow-x-auto px-4">
                 {([
-                  { key: 'map',       label: '지적도', badge: myMarkerCount > 0 ? `${myMarkerCount}` : null },
-                  { key: 'high_risk', label: '고위험작업' },
-                  { key: 'general',   label: '일반작업' },
-                  { key: 'material',  label: '자재하역' },
-                  { key: 'submit',    label: '자료제출' },
-                ] as { key: Tab; label: string; badge?: string | null }[]).map(t => (
+                  {
+                    key: 'high_risk',
+                    label: '고위험작업',
+                    badge: myHighRiskCount > 0 ? `지적도 ${myHighRiskCount}` : null,
+                    color: 'red',
+                  },
+                  {
+                    key: 'general',
+                    label: '일반작업',
+                    badge: myGeneralCount > 0 ? `지적도 ${myGeneralCount}` : null,
+                    color: 'blue',
+                  },
+                  { key: 'material', label: '자재하역', badge: null, color: null },
+                  { key: 'submit',   label: '자료제출', badge: null, color: null },
+                ] as { key: Tab; label: string; badge: string | null; color: string | null }[]).map(t => (
                   <button
                     key={t.key}
                     onClick={() => setActiveTab(t.key)}
@@ -475,7 +487,10 @@ export default function SubmissionPage() {
                   >
                     {t.label}
                     {t.badge && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                      <span className={[
+                        'text-[10px] font-bold px-1.5 py-0.5 rounded-full',
+                        t.color === 'red' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700',
+                      ].join(' ')}>
                         {t.badge}
                       </span>
                     )}
@@ -486,42 +501,35 @@ export default function SubmissionPage() {
               {/* 탭 콘텐츠 — hidden 클래스로 마운트 상태 유지 (폼 입력 보존) */}
               <div className="bg-white border border-gray-200 border-t-0 rounded-b-xl p-5 min-h-[400px]">
 
-                {/* ── 지적도 (모바일에서만 표시, xl은 왼쪽 컬럼으로 항상 표시) ── */}
-                <div className={activeTab !== 'map' ? 'hidden' : ''}>
-                  {hasMap ? (
-                    <>
-                      <div className="xl:hidden">
-                        <MapAnnotator
-                          meetingId={meeting!.id}
-                          mapUrl={meeting!.map_file_url!}
-                          myTeamId={teamId}
-                          allTeamIds={allTeams.map(t => t.id)}
-                          readOnly={false}
-                          onMarkerCountChange={count => setMyMarkerCount(count)}
-                          workItems={workItems}
-                        />
-                      </div>
-                      <div className="hidden xl:flex flex-col items-center justify-center py-16 gap-3 text-gray-400">
-                        <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round"
-                            d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z" />
-                        </svg>
-                        <p className="text-sm font-medium">왼쪽 지적도에서 장비를 드래그&드랍하세요</p>
-                        {myMarkerCount > 0
-                          ? <p className="text-xs text-emerald-600 font-medium">✓ {myMarkerCount}개 마커 등록됨</p>
-                          : <p className="text-xs text-amber-500">아직 마커가 없습니다. 자료제출 전에 추가해 주세요.</p>
-                        }
-                      </div>
-                    </>
-                  ) : (
-                    <div className="text-center py-16 text-gray-400 text-sm">
-                      관리자가 아직 지적도를 등록하지 않았습니다.
-                    </div>
-                  )}
-                </div>
-
                 {/* ── 고위험작업 ─────────────────────────────── */}
                 <div className={activeTab !== 'high_risk' ? 'hidden' : ''}>
+                  {/* 모바일: 고위험 지적도 (XL에서는 왼쪽 컬럼으로) */}
+                  {hasMap && (
+                    <div className="xl:hidden mb-5">
+                      <MapAnnotator
+                        meetingId={meeting!.id}
+                        mapUrl={meeting!.map_file_url!}
+                        myTeamId={teamId}
+                        allTeamIds={allTeams.map(t => t.id)}
+                        readOnly={false}
+                        workType="high_risk"
+                        onMarkerCountChange={count => setMyHighRiskCount(count)}
+                        onMarkerPlace={handleHighRiskMarkerPlace}
+                        workItems={workItems}
+                      />
+                    </div>
+                  )}
+                  {/* XL: 지적도 안내 메시지 (지도는 왼쪽) */}
+                  {hasMap && (
+                    <div className="hidden xl:flex items-center gap-2 mb-4 px-3 py-2 bg-red-50 rounded-lg border border-red-100">
+                      <span className="text-red-400">🗺️</span>
+                      <p className="text-xs text-red-600">
+                        {myHighRiskCount > 0
+                          ? `✓ 고위험 지적도에 ${myHighRiskCount}개 마커 등록됨 — 왼쪽에서 추가 가능`
+                          : '왼쪽 고위험 지적도에 장비/작업구역을 드래그하세요'}
+                      </p>
+                    </div>
+                  )}
                   <WorkItemTab
                     workType="high_risk" label="고위험작업" color="red"
                     isClosed={isClosed}
@@ -535,6 +543,33 @@ export default function SubmissionPage() {
 
                 {/* ── 일반작업 ───────────────────────────────── */}
                 <div className={activeTab !== 'general' ? 'hidden' : ''}>
+                  {/* 모바일: 일반 지적도 */}
+                  {hasMap && (
+                    <div className="xl:hidden mb-5">
+                      <MapAnnotator
+                        meetingId={meeting!.id}
+                        mapUrl={meeting!.map_file_url!}
+                        myTeamId={teamId}
+                        allTeamIds={allTeams.map(t => t.id)}
+                        readOnly={false}
+                        workType="general"
+                        onMarkerCountChange={count => setMyGeneralCount(count)}
+                        onMarkerPlace={handleGeneralMarkerPlace}
+                        workItems={workItems}
+                      />
+                    </div>
+                  )}
+                  {/* XL: 지적도 안내 메시지 */}
+                  {hasMap && (
+                    <div className="hidden xl:flex items-center gap-2 mb-4 px-3 py-2 bg-blue-50 rounded-lg border border-blue-100">
+                      <span className="text-blue-400">🗺️</span>
+                      <p className="text-xs text-blue-600">
+                        {myGeneralCount > 0
+                          ? `✓ 일반 지적도에 ${myGeneralCount}개 마커 등록됨 — 왼쪽에서 추가 가능`
+                          : '왼쪽 일반 지적도에 장비/작업구역을 드래그하세요'}
+                      </p>
+                    </div>
+                  )}
                   <WorkItemTab
                     workType="general" label="일반작업" color="blue"
                     isClosed={isClosed}
@@ -563,6 +598,7 @@ export default function SubmissionPage() {
                   <SubmitTab
                     meeting={meeting} isClosed={isClosed}
                     hasMap={hasMap} myMarkerCount={myMarkerCount}
+                    myHighRiskCount={myHighRiskCount} myGeneralCount={myGeneralCount}
                     personnel={personnel} setPersonnel={setPersonnel}
                     workProcess={workProcess} setWorkProcess={setWorkProcess}
                     equipRows={equipRows} setEquipRows={setEquipRows}
@@ -577,7 +613,8 @@ export default function SubmissionPage() {
                     onDrop={handleDrop}
                     onFileChange={f => validateAndSetFile(f)}
                     onSubmit={handleSubmit}
-                    onGoToMap={() => setActiveTab('map')}
+                    onGoToHighRisk={() => setActiveTab('high_risk')}
+                    onGoToGeneral={() => setActiveTab('general')}
                   />
                 </div>
               </div>
@@ -596,14 +633,15 @@ export default function SubmissionPage() {
 
 // ── 자료제출 탭 ───────────────────────────────────────────────
 function SubmitTab({
-  meeting, isClosed, hasMap, myMarkerCount,
+  meeting, isClosed, hasMap, myMarkerCount, myHighRiskCount, myGeneralCount,
   personnel, setPersonnel, workProcess, setWorkProcess,
   equipRows, setEquipRows, file, setFile,
   dragOver, setDragOver, errors, step, progress, errorMsg, downloadUrl,
   prevLoading, prevDate, prevLoaded, fileInputRef,
-  onLoadPrevious, onDrop, onFileChange, onSubmit, onGoToMap,
+  onLoadPrevious, onDrop, onFileChange, onSubmit, onGoToHighRisk, onGoToGeneral,
 }: {
   meeting: Meeting | null; isClosed: boolean; hasMap: boolean; myMarkerCount: number
+  myHighRiskCount: number; myGeneralCount: number
   personnel: Record<string, string>; setPersonnel: React.Dispatch<React.SetStateAction<{elderly:string;superElderly:string;foreign:string;female:string;diseased:string;total:string}>>
   workProcess: string; setWorkProcess: (v: string) => void
   equipRows: {type: string; count: string; isCustom: boolean}[]
@@ -616,9 +654,8 @@ function SubmitTab({
   fileInputRef: React.RefObject<HTMLInputElement | null>
   onLoadPrevious: () => void; onDrop: (e: React.DragEvent) => void
   onFileChange: (f: File) => void; onSubmit: (e: React.FormEvent) => void
-  onGoToMap: () => void
+  onGoToHighRisk: () => void; onGoToGeneral: () => void
 }) {
-  // 한글 IME 조합 추적 (equipment 직접입력)
   const equipComposingRef = useRef(false)
   if (!meeting) return (
     <div className="text-center py-20">
@@ -644,33 +681,43 @@ function SubmitTab({
   return (
     <form onSubmit={onSubmit} className="space-y-5">
 
-      {/* 지적도 마커 상태 배너 */}
+      {/* 지적도 마커 상태 (있을 경우) */}
       {hasMap && (
-        <button type="button" onClick={onGoToMap}
-          className={[
-            'w-full flex items-center justify-between px-4 py-3 rounded-lg border text-left transition-colors',
-            myMarkerCount > 0
-              ? 'bg-emerald-50 border-emerald-200'
-              : 'bg-amber-50 border-amber-200',
-          ].join(' ')}>
-          <div>
-            <p className={`text-sm font-medium ${myMarkerCount > 0 ? 'text-emerald-800' : 'text-amber-800'}`}>
-              {myMarkerCount > 0
-                ? `✓ 지적도 마커 ${myMarkerCount}개 등록됨`
-                : '⚠ 지적도에 장비/작업구역을 먼저 표시해 주세요'}
+        <div className="space-y-2">
+          {/* 고위험 지적도 상태 */}
+          <button type="button" onClick={onGoToHighRisk}
+            className={[
+              'w-full flex items-center justify-between px-4 py-2.5 rounded-lg border text-left transition-colors',
+              myHighRiskCount > 0 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200',
+            ].join(' ')}>
+            <p className={`text-sm font-medium ${myHighRiskCount > 0 ? 'text-red-800' : 'text-amber-800'}`}>
+              {myHighRiskCount > 0
+                ? `✓ 고위험 지적도 마커 ${myHighRiskCount}개`
+                : '⚠ 고위험 지적도 마커 없음'}
             </p>
-            <p className={`text-xs mt-0.5 ${myMarkerCount > 0 ? 'text-emerald-600' : 'text-amber-600'}`}>
-              {myMarkerCount > 0 ? '지도 탭에서 수정 가능합니다' : '지도 탭으로 이동 →'}
+            <span className={`text-xs ${myHighRiskCount > 0 ? 'text-red-400' : 'text-amber-500'}`}>
+              탭으로 이동 →
+            </span>
+          </button>
+          {/* 일반 지적도 상태 */}
+          <button type="button" onClick={onGoToGeneral}
+            className={[
+              'w-full flex items-center justify-between px-4 py-2.5 rounded-lg border text-left transition-colors',
+              myGeneralCount > 0 ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-200',
+            ].join(' ')}>
+            <p className={`text-sm font-medium ${myGeneralCount > 0 ? 'text-blue-800' : 'text-amber-800'}`}>
+              {myGeneralCount > 0
+                ? `✓ 일반 지적도 마커 ${myGeneralCount}개`
+                : '⚠ 일반 지적도 마커 없음'}
             </p>
-          </div>
-          <svg className={`w-4 h-4 ${myMarkerCount > 0 ? 'text-emerald-400' : 'text-amber-400'}`}
-            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
+            <span className={`text-xs ${myGeneralCount > 0 ? 'text-blue-400' : 'text-amber-500'}`}>
+              탭으로 이동 →
+            </span>
+          </button>
+        </div>
       )}
       {errors.markers && (
-        <p className="text-xs text-red-500 -mt-3">{errors.markers}</p>
+        <p className="text-xs text-red-500">{errors.markers}</p>
       )}
 
       {/* 이전 내용 불러오기 */}
@@ -1009,11 +1056,9 @@ function MaterialTab({
 
   if (isLoading) return <LoadingSpinner />
 
-  // GATE 목록 (중복 제거, 정렬)
-  const gates = [...new Set(slots.map(s => s.gate))].sort()
+  const gates    = [...new Set(slots.map(s => s.gate))].sort()
   const gateSlots = selectedGate ? slots.filter(s => s.gate === selectedGate) : []
 
-  // GATE별 내 예약 정보
   const myResByGate = gates.reduce<Record<string, MaterialReservation | undefined>>((acc, gate) => {
     const gSlots = slots.filter(s => s.gate === gate)
     acc[gate] = gSlots.flatMap(s => s.material_reservations).find(r => r.team_id === myTeamId)
@@ -1035,13 +1080,12 @@ function MaterialTab({
         <p className="text-xs text-gray-500 mt-0.5">GATE를 선택한 후 시간대를 신청하세요 · 시간대당 최대 5개 업체</p>
       </div>
 
-      {/* ── GATE 선택 화면 ── */}
       {!selectedGate ? (
         <div className="grid grid-cols-2 gap-3">
           {gates.map(gate => {
-            const gSlots     = slots.filter(s => s.gate === gate)
-            const totalRes   = gSlots.reduce((acc, s) => acc + s.material_reservations.length, 0)
-            const myRes      = myResByGate[gate]
+            const gSlots   = slots.filter(s => s.gate === gate)
+            const totalRes = gSlots.reduce((acc, s) => acc + s.material_reservations.length, 0)
+            const myRes    = myResByGate[gate]
             return (
               <button
                 key={gate}
@@ -1067,7 +1111,6 @@ function MaterialTab({
           })}
         </div>
       ) : (
-        /* ── 선택된 GATE의 시간대 목록 ── */
         <div className="space-y-3">
           <button
             onClick={() => { setSelectedGate(null); setOpenSlotId(null) }}

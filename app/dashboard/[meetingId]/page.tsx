@@ -95,6 +95,9 @@ export default function DashboardPage() {
   const [mapError,     setMapError]     = useState<string | null>(null)
   const mapInputRef = useRef<HTMLInputElement>(null)
 
+  // 지적도 아코디언 상태 (고위험 / 일반 중 하나만 열림)
+  const [openMapSection, setOpenMapSection] = useState<'high_risk' | 'general' | null>(null)
+
   // 전체 팀 목록 (MapAnnotator 범례용)
   const [allTeams, setAllTeams] = useState<{id:string;name:string}[]>([])
 
@@ -367,12 +370,12 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* ── 지적도/공사현황도 ────────────────────────────── */}
+        {/* ── 지적도/공사현황도 업로드 섹션 ──────────────────── */}
         <section className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="font-semibold text-gray-900">지적도 / 공사현황도</h2>
-              <p className="text-xs text-gray-500 mt-0.5">업체들이 표시한 장비·작업구역이 실시간으로 반영됩니다</p>
+              <p className="text-xs text-gray-500 mt-0.5">업체들이 고위험·일반 지적도에 마커를 표시합니다</p>
             </div>
             <div className="flex items-center gap-2">
               {mapUploading && (
@@ -395,36 +398,98 @@ export default function DashboardPage() {
             </div>
           )}
           {mapUrl ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{mapName}</p>
-                  <p className="text-xs text-gray-500">업체별 색상으로 마커가 구분됩니다 — 마커에 마우스를 올리면 업체명이 표시됩니다</p>
-                </div>
-                <a href={mapUrl} target="_blank" rel="noopener noreferrer"
-                  className="text-sm text-blue-600 hover:text-blue-800 underline underline-offset-2 whitespace-nowrap">
-                  원본보기
-                </a>
+            <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">{mapName}</p>
+                <p className="text-xs text-gray-500">아래 고위험/일반 지적도 섹션에서 업체 마커를 확인하세요</p>
               </div>
-              {/* 지도 — 읽기 전용 (업체 마커 확인용, 클릭 시 작업항목 팝업) */}
-              <MapAnnotator
-                meetingId={meetingId}
-                mapUrl={mapUrl}
-                myTeamId=""
-                allTeamIds={allTeams.map(t => t.id)}
-                readOnly={true}
-                workItems={workItems as unknown as WorkItemInfo[]}
-              />
+              <a href={mapUrl} target="_blank" rel="noopener noreferrer"
+                className="text-sm text-blue-600 hover:text-blue-800 underline underline-offset-2 whitespace-nowrap">
+                원본보기
+              </a>
             </div>
           ) : (
             <div className="border-2 border-dashed border-gray-200 rounded-xl py-8 text-center text-gray-400">
               <p className="text-sm mb-2">지적도 없음</p>
-              <p className="text-sm text-gray-400">첨부된 파일이 없습니다</p>
               <p className="text-xs mt-1 text-gray-400">JPG, PNG 이미지 파일을 업로드하세요</p>
               <p className="text-xs mt-0.5 text-gray-300">업체들이 이 이미지 위에 드래그&드랍으로 장비를 표시합니다</p>
             </div>
           )}
         </section>
+
+        {/* ── 고위험 지적도 아코디언 ──────────────────────────── */}
+        {mapUrl && (
+          <section className="bg-white rounded-xl border border-red-100 overflow-hidden">
+            <button
+              className="w-full flex items-center justify-between px-6 py-4 hover:bg-red-50 transition-colors"
+              onClick={() => setOpenMapSection(prev => prev === 'high_risk' ? null : 'high_risk')}
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-base">🔴</span>
+                <div className="text-left">
+                  <h2 className="font-semibold text-gray-900">고위험 지적도</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">고위험 작업 마커 현황</p>
+                </div>
+              </div>
+              <svg
+                className={['w-5 h-5 text-gray-400 transition-transform', openMapSection === 'high_risk' ? 'rotate-180' : ''].join(' ')}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {openMapSection === 'high_risk' && (
+              <div className="border-t border-red-100 p-4">
+                <MapAnnotator
+                  meetingId={meetingId}
+                  mapUrl={mapUrl}
+                  myTeamId=""
+                  allTeamIds={allTeams.map(t => t.id)}
+                  readOnly={true}
+                  workType="high_risk"
+                  workItems={workItems as unknown as WorkItemInfo[]}
+                />
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* ── 일반 지적도 아코디언 ────────────────────────────── */}
+        {mapUrl && (
+          <section className="bg-white rounded-xl border border-blue-100 overflow-hidden">
+            <button
+              className="w-full flex items-center justify-between px-6 py-4 hover:bg-blue-50 transition-colors"
+              onClick={() => setOpenMapSection(prev => prev === 'general' ? null : 'general')}
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-base">🔵</span>
+                <div className="text-left">
+                  <h2 className="font-semibold text-gray-900">일반 지적도</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">일반 작업 마커 현황</p>
+                </div>
+              </div>
+              <svg
+                className={['w-5 h-5 text-gray-400 transition-transform', openMapSection === 'general' ? 'rotate-180' : ''].join(' ')}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {openMapSection === 'general' && (
+              <div className="border-t border-blue-100 p-4">
+                <MapAnnotator
+                  meetingId={meetingId}
+                  mapUrl={mapUrl}
+                  myTeamId=""
+                  allTeamIds={allTeams.map(t => t.id)}
+                  readOnly={true}
+                  workType="general"
+                  workItems={workItems as unknown as WorkItemInfo[]}
+                />
+              </div>
+            )}
+          </section>
+        )}
 
         {/* ── 작업 현황 / 자재 하역 3섹션 (항상 펼쳐진 상태) ── */}
         {(

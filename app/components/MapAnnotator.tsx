@@ -33,6 +33,7 @@ export interface MapMarker {
   x_pct: number
   y_pct: number
   label?: string
+  work_type?: 'high_risk' | 'general' | null
   teams?: { id: string; name: string }
 }
 
@@ -54,10 +55,13 @@ interface Props {
   readOnly?: boolean        // 관리자 뷰: 편집 불가
   onMarkerCountChange?: (count: number) => void
   workItems?: WorkItemInfo[] // 마커 클릭 팝업용 작업항목
+  workType?: 'high_risk' | 'general'  // 마커 타입 필터 (없으면 전체)
+  onMarkerPlace?: (markerType: string, label: string) => void  // 마커 배치 콜백
 }
 
 export default function MapAnnotator({
   meetingId, mapUrl, myTeamId, allTeamIds, readOnly = false, onMarkerCountChange, workItems = [],
+  workType, onMarkerPlace,
 }: Props) {
   const [markers,      setMarkers]      = useState<MapMarker[]>([])
   const [draggingType, setDraggingType] = useState<string | null>(null)
@@ -69,34 +73,51 @@ export default function MapAnnotator({
   const mapRef   = useRef<HTMLDivElement>(null)
   const supabase = useMemo(() => createClient(), [])
 
+  // 채널 이름: workType에 따라 고유하게
+  const channelName = `map_${workType ?? 'all'}:${meetingId}`
+
+  // ── 헤더 타이틀 ──────────────────────────────────────────
+  const headerTitle = workType === 'high_risk'
+    ? '🗺️ 고위험작업 지적도'
+    : workType === 'general'
+      ? '🗺️ 일반작업 지적도'
+      : readOnly
+        ? '🗺️ 전체 협업 현황'
+        : '🗺️ 지적도 — 내 장비/작업구역 표시'
+
   // ── 마커 로드 ────────────────────────────────────────────
   const loadMarkers = useCallback(async () => {
     const res  = await fetch(`/api/map-markers?meetingId=${meetingId}`)
     const data = await res.json()
     if (Array.isArray(data)) {
-      setMarkers(data)
+      // workType 필터: workType이 설정된 경우 해당 타입 마커만 표시
+      // (work_type이 null/undefined인 기존 마커는 workType 없을 때만 표시)
+      const filtered = workType
+        ? (data as MapMarker[]).filter(m => m.work_type === workType)
+        : (data as MapMarker[])
+      setMarkers(filtered)
       if (onMarkerCountChange) {
         const myCount = myTeamId
-          ? (data as MapMarker[]).filter(m => m.team_id === myTeamId).length
-          : (data as MapMarker[]).filter(m => !m.team_id).length
+          ? filtered.filter(m => m.team_id === myTeamId).length
+          : filtered.filter(m => !m.team_id).length
         onMarkerCountChange(myCount)
       }
     }
-  }, [meetingId, myTeamId, onMarkerCountChange])
+  }, [meetingId, myTeamId, onMarkerCountChange, workType])
 
   useEffect(() => { loadMarkers() }, [loadMarkers])
 
   // ── Supabase Realtime 구독 ────────────────────────────────
   useEffect(() => {
     const channel = supabase
-      .channel(`map:${meetingId}`)
+      .channel(channelName)
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'map_markers',
         filter: `meeting_id=eq.${meetingId}`,
       }, () => { loadMarkers() })
       .subscribe()
     return () => { channel.unsubscribe() }
-  }, [meetingId, supabase, loadMarkers])
+  }, [meetingId, supabase, loadMarkers, channelName])
 
   // ── 드래그&드롭 핸들러 ────────────────────────────────────
   function handleDragStart(type: string) { setDraggingType(type) }
@@ -116,20 +137,29 @@ export default function MapAnnotator({
   async function confirmPlace() {
     if (!showLabelFor) return
     const { type, x, y } = showLabelFor
+    const body: Record<string, unknown> = {
+      meeting_id:  meetingId,
+      team_id:     myTeamId || null,
+      marker_type: type,
+      x_pct:       Math.round(x * 10) / 10,
+      y_pct:       Math.round(y * 10) / 10,
+      label:       labelInput.trim() || null,
+    }
+    if (workType) body.work_type = workType
+
     const res = await fetch('/api/map-markers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        meeting_id:  meetingId,
-        team_id:     myTeamId || null,
-        marker_type: type,
-        x_pct:       Math.round(x * 10) / 10,
-        y_pct:       Math.round(y * 10) / 10,
-        label:       labelInput.trim() || null,
-      }),
+      body: JSON.stringify(body),
     })
     setShowLabelFor(null)
-    if (res.ok) loadMarkers()
+    if (res.ok) {
+      loadMarkers()
+      // 마커 배치 후 콜백 (작업항목 자동 추가)
+      if (onMarkerPlace) {
+        onMarkerPlace(type, labelInput.trim())
+      }
+    }
   }
 
   async function deleteMarker(id: string) {
@@ -172,6 +202,12 @@ export default function MapAnnotator({
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <p className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">
             아이콘을 지도 위에 드래그하세요
+            {workType === 'high_risk' && (
+              <span className="ml-2 text-red-500 normal-case font-normal">고위험 작업 장비를 표시합니다</span>
+            )}
+            {workType === 'general' && (
+              <span className="ml-2 text-blue-500 normal-case font-normal">일반 작업 장비를 표시합니다</span>
+            )}
           </p>
           <div className="flex flex-wrap gap-2">
             {Object.entries(MARKER_TYPES).map(([type, { icon, label, bg }]) => (
@@ -193,10 +229,19 @@ export default function MapAnnotator({
       )}
 
       {/* ── 지도 영역 ────────────────────────────────────────── */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-700">
-            {readOnly ? '🗺️ 전체 협업 현황' : '🗺️ 지적도 — 내 장비/작업구역 표시'}
+      <div className={[
+        'bg-white rounded-xl border overflow-hidden',
+        workType === 'high_risk' ? 'border-red-200' : workType === 'general' ? 'border-blue-200' : 'border-slate-200',
+      ].join(' ')}>
+        <div className={[
+          'px-4 py-3 border-b flex items-center justify-between',
+          workType === 'high_risk' ? 'border-red-100 bg-red-50' : workType === 'general' ? 'border-blue-100 bg-blue-50' : 'border-slate-100',
+        ].join(' ')}>
+          <h3 className={[
+            'text-sm font-semibold',
+            workType === 'high_risk' ? 'text-red-700' : workType === 'general' ? 'text-blue-700' : 'text-slate-700',
+          ].join(' ')}>
+            {headerTitle}
           </h3>
           {!readOnly && (
             <p className="text-xs text-slate-400">마커를 클릭하면 상세 정보를 볼 수 있습니다</p>
@@ -339,6 +384,12 @@ export default function MapAnnotator({
               <h3 className="font-semibold text-slate-800 mt-2">
                 {MARKER_TYPES[showLabelFor.type]?.label} 배치
               </h3>
+              {workType && (
+                <p className="text-xs mt-1 font-medium px-2 py-0.5 rounded-full inline-block
+                  ${workType === 'high_risk' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}">
+                  {workType === 'high_risk' ? '고위험 작업 마커' : '일반 작업 마커'}
+                </p>
+              )}
             </div>
             <input
               type="text"
@@ -350,6 +401,11 @@ export default function MapAnnotator({
               className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm outline-none
                          focus:ring-2 focus:ring-blue-500 mb-4"
             />
+            {onMarkerPlace && (
+              <p className="text-xs text-slate-500 mb-3 text-center">
+                💡 마커를 놓으면 작업항목이 자동으로 추가됩니다
+              </p>
+            )}
             <div className="flex gap-2">
               <button onClick={() => setShowLabelFor(null)}
                 className="flex-1 py-2.5 border border-slate-200 text-slate-600 text-sm rounded-xl hover:bg-slate-50">
@@ -391,6 +447,14 @@ export default function MapAnnotator({
                     </p>
                     {clickedMarker.label && (
                       <p className="text-xs text-gray-500 mt-0.5">{clickedMarker.label}</p>
+                    )}
+                    {clickedMarker.work_type && (
+                      <span className={[
+                        'text-[10px] font-bold px-1.5 py-0.5 rounded mt-0.5 inline-block',
+                        clickedMarker.work_type === 'high_risk' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600',
+                      ].join(' ')}>
+                        {clickedMarker.work_type === 'high_risk' ? '고위험 작업' : '일반 작업'}
+                      </span>
                     )}
                   </div>
                 </div>
