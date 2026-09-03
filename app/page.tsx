@@ -1,61 +1,106 @@
 // ============================================================
-// app/page.tsx  —  루트 랜딩 페이지
-// 로그인 + 역할에 따른 라우팅 (관리자 / 업체 담당자)
+// app/page.tsx  —  단일 페이지 앱 루트 (URL은 항상 /)
+// 뷰 상태: login → select → submit | admin-list → admin-detail
 // ============================================================
 'use client'
 
 import { useState, useEffect, useMemo, FormEvent, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { SubmitView }      from '@/app/components/views/SubmitView'
+import { AdminListView }   from '@/app/components/views/AdminListView'
+import { AdminDetailView } from '@/app/components/views/AdminDetailView'
+
+// ── 뷰 타입 ─────────────────────────────────────────────────
+type View =
+  | { name: 'login' }
+  | { name: 'select'; email: string }
+  | { name: 'submit'; teamId: string }
+  | { name: 'admin-list' }
+  | { name: 'admin-detail'; meetingId: string }
 
 type AuthMode = 'login' | 'signup'
-type PageState = 'checking' | 'unauthenticated' | 'loggedIn'
 
-// ── 메인 ────────────────────────────────────────────────────
+// ── 메인 라우터 ──────────────────────────────────────────────
 export default function RootPage() {
   const supabase = useMemo(() => createClient(), [])
-  const [state,     setState]     = useState<PageState>('checking')
-  const [userEmail, setUserEmail] = useState('')
+  const [view, setView] = useState<View>({ name: 'login' })
+  const [checking, setChecking] = useState(true)
 
-  // ── 세션 확인 ──────────────────────────────────────────────
-  // onAuthStateChange의 INITIAL_SESSION 이벤트로 통합 처리
-  // (checkSession + onAuthStateChange 이중 호출 → 무한 로딩 방지)
   useEffect(() => {
     let resolved = false
-
-    // 3초 안에 INITIAL_SESSION이 안 오면 로그인 화면으로 강제 전환
     const fallback = setTimeout(() => {
-      if (!resolved) setState('unauthenticated')
+      if (!resolved) { setChecking(false) }
     }, 3000)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        // INITIAL_SESSION: 페이지 로드 시 Supabase가 즉시 발행하는 첫 이벤트
         if (!resolved || event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
           resolved = true
           clearTimeout(fallback)
+          setChecking(false)
           if (session) {
-            setUserEmail(session.user.email ?? '')
-            setState('loggedIn')
+            setView({ name: 'select', email: session.user.email ?? '' })
           } else {
-            setState('unauthenticated')
+            setView({ name: 'login' })
           }
         }
       }
     )
-
     return () => { clearTimeout(fallback); subscription.unsubscribe() }
   }, [supabase])
 
-  if (state === 'checking') return <SplashScreen />
-  if (state === 'loggedIn') return <LoggedInPanel email={userEmail} supabase={supabase} />
-  return <LoginPanel />
+  if (checking) return <SplashScreen />
+
+  if (view.name === 'login')
+    return <LoginPanel onLoggedIn={(email) => setView({ name: 'select', email })} />
+
+  if (view.name === 'select')
+    return (
+      <SelectPanel
+        email={view.email}
+        onSubmit={(teamId) => setView({ name: 'submit', teamId })}
+        onAdmin={() => setView({ name: 'admin-list' })}
+        onSignOut={() => setView({ name: 'login' })}
+      />
+    )
+
+  if (view.name === 'submit')
+    return (
+      <SubmitView
+        teamId={view.teamId}
+        onBack={() => setView({ name: 'login' })}
+      />
+    )
+
+  if (view.name === 'admin-list')
+    return (
+      <AdminListView
+        onEnterMeeting={(meetingId) => setView({ name: 'admin-detail', meetingId })}
+        onBack={() => setView({ name: 'login' })}
+      />
+    )
+
+  if (view.name === 'admin-detail')
+    return (
+      <AdminDetailView
+        meetingId={view.meetingId}
+        onBack={() => setView({ name: 'admin-list' })}
+      />
+    )
+
+  return null
 }
 
-// ── 로그인 완료 패널 ─────────────────────────────────────────
-function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnType<typeof createClient> }) {
-  const router = useRouter()
-
+// ── 업체 선택 / 역할 선택 패널 ───────────────────────────────
+function SelectPanel({
+  email, onSubmit, onAdmin, onSignOut,
+}: {
+  email: string
+  onSubmit: (teamId: string) => void
+  onAdmin: () => void
+  onSignOut: () => void
+}) {
+  const supabase = useMemo(() => createClient(), [])
   const [teamLoading, setTeamLoading] = useState(true)
   const [myTeam,      setMyTeam]      = useState<{ id: string; name: string } | null>(null)
   const [allTeams,    setAllTeams]    = useState<{ id: string; name: string }[]>([])
@@ -63,10 +108,8 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
   const [claiming,    setClaiming]    = useState(false)
   const [claimError,  setClaimError]  = useState('')
   const [loggingOut,  setLoggingOut]  = useState(false)
-  // 업체 배정은 있지만 "다른 업체 선택" 모드
   const [reassigning, setReassigning] = useState(false)
 
-  // 내 업체 & 전체 업체 목록 로드 (자동 리다이렉트 없이 선택 화면 표시)
   const loadTeam = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setTeamLoading(false); return }
@@ -81,27 +124,21 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
       setMyTeam(assigned.teams as unknown as { id: string; name: string })
     }
 
-    const { data: teams } = await supabase
-      .from('teams')
-      .select('id, name')
-      .order('name')
+    const { data: teams } = await supabase.from('teams').select('id, name').order('name')
     setAllTeams(teams ?? [])
     setTeamLoading(false)
   }, [supabase])
 
   useEffect(() => { loadTeam() }, [loadTeam])
 
-  // 업체 등록 또는 재배정
   async function handleClaim() {
     if (!selectedId) return
-    setClaiming(true)
-    setClaimError('')
+    setClaiming(true); setClaimError('')
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setClaimError('로그인 정보를 찾을 수 없습니다.'); setClaiming(false); return }
 
     if (reassigning) {
-      // 기존 배정 삭제 후 새로 등록
       await supabase.from('team_assignments').delete().eq('user_id', user.id)
     }
 
@@ -110,20 +147,17 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
       .insert({ user_id: user.id, team_id: selectedId })
 
     if (error) {
-      setClaimError(error.code === '23505'
-        ? '이미 다른 사람이 등록한 업체입니다.'
-        : error.message)
-      setClaiming(false)
-      return
+      setClaimError(error.code === '23505' ? '이미 다른 사람이 등록한 업체입니다.' : error.message)
+      setClaiming(false); return
     }
-
-    router.replace(`/submit/${selectedId}`)
+    onSubmit(selectedId)
   }
 
   async function handleSignOut() {
     setLoggingOut(true)
     sessionStorage.removeItem('admin_verified')
     await supabase.auth.signOut()
+    onSignOut()
   }
 
   if (teamLoading) {
@@ -137,12 +171,11 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
     )
   }
 
-  // ── 업체 배정돼 있고 재선택 모드가 아니면 → 입장 선택 화면 ──
+  // 업체 배정돼 있고 재선택 모드 아닐 때 → 입장 선택 화면
   if (myTeam && !reassigning) {
     return (
       <AuthShell>
         <div className="space-y-4">
-          {/* 로그인 상태 */}
           <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5">
             <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
             <p className="text-xs text-gray-600 truncate">{email}</p>
@@ -150,9 +183,8 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
 
           <p className="text-sm font-semibold text-gray-900">어떻게 입장하시겠습니까?</p>
 
-          {/* 업체 페이지 */}
           <button
-            onClick={() => router.replace(`/submit/${myTeam.id}`)}
+            onClick={() => onSubmit(myTeam.id)}
             className="w-full flex items-center justify-between px-4 py-4
                        bg-gray-900 hover:bg-gray-800 text-white rounded-xl transition-colors"
           >
@@ -160,28 +192,20 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
               <p className="text-sm font-semibold">{myTeam.name}</p>
               <p className="text-xs text-gray-400 mt-0.5">자료 제출 페이지</p>
             </div>
-            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24"
-              stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
+            <ChevronIcon />
           </button>
 
-          {/* 관리자 대시보드 */}
-          <a
-            href="/dashboard"
+          <button
+            onClick={onAdmin}
             className="flex items-center justify-between w-full px-4 py-4
-                       bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl
-                       transition-colors"
+                       bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl transition-colors"
           >
             <div className="text-left">
               <p className="text-sm font-semibold">관리자 대시보드</p>
               <p className="text-xs text-gray-400 mt-0.5">PIN 인증 후 입장</p>
             </div>
-            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24"
-              stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-          </a>
+            <ChevronIcon />
+          </button>
 
           <div className="border-t border-gray-100 pt-3 flex items-center justify-between">
             <button
@@ -203,18 +227,15 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
     )
   }
 
-  // ── 업체 선택 / 재선택 UI ──
+  // 업체 선택 / 재선택 UI
   return (
     <AuthShell>
       <div className="space-y-5">
-
-        {/* 로그인 상태 */}
         <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5">
           <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
           <p className="text-xs text-gray-600 truncate">{email}</p>
         </div>
 
-        {/* 업체 선택 */}
         <div className="space-y-3">
           <div>
             <p className="text-sm font-semibold tracking-tight text-gray-900 mb-0.5">
@@ -254,9 +275,7 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
             )}
           </div>
 
-          {claimError && (
-            <p className="text-xs text-red-600">{claimError}</p>
-          )}
+          {claimError && <p className="text-xs text-red-600">{claimError}</p>}
 
           <button
             onClick={handleClaim}
@@ -268,20 +287,16 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
           </button>
         </div>
 
-        {/* 관리자 대시보드 + 로그아웃 */}
         <div className="border-t border-gray-200 pt-4 space-y-2">
-          <a
-            href="/dashboard"
+          <button
+            onClick={onAdmin}
             className="flex items-center justify-between w-full px-4 py-3
                        bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg
                        transition-all group text-sm"
           >
             <span className="font-semibold">관리자 대시보드</span>
-            <svg className="w-4 h-4 text-gray-400 group-hover:text-gray-600"
-              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-          </a>
+            <ChevronIcon />
+          </button>
 
           <div className="flex items-center justify-between pt-1">
             {reassigning && (
@@ -307,48 +322,41 @@ function LoggedInPanel({ email, supabase }: { email: string; supabase: ReturnTyp
 }
 
 // ── 로그인 패널 ──────────────────────────────────────────────
-function LoginPanel() {
+function LoginPanel({ onLoggedIn }: { onLoggedIn: (email: string) => void }) {
   const supabase = useMemo(() => createClient(), [])
   const [mode,     setMode]     = useState<AuthMode>('login')
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState('')
-  const [sent,     setSent]     = useState(false)  // 매직링크 전송 여부
+  const [sent,     setSent]     = useState(false)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    setLoading(true)
-    setError('')
+    setLoading(true); setError('')
 
-    const { error: authError } =
+    const { data, error: authError } =
       mode === 'login'
         ? await supabase.auth.signInWithPassword({ email, password })
         : await supabase.auth.signUp({ email, password })
 
-    if (authError) {
-      setError(authError.message)
-      setLoading(false)
-      return
-    }
-    if (mode === 'signup') setSent(true)
+    if (authError) { setError(authError.message); setLoading(false); return }
+    if (mode === 'signup') { setSent(true); setLoading(false); return }
+    if (data.session) onLoggedIn(data.session.user.email ?? email)
     setLoading(false)
   }
 
   async function handleMagicLink() {
     if (!email) { setError('이메일을 먼저 입력해 주세요.'); return }
-    setLoading(true)
-    setError('')
+    setLoading(true); setError('')
     const { error: authError } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+      options: { emailRedirectTo: `${window.location.origin}/` },
     })
     if (authError) { setError(authError.message); setLoading(false); return }
-    setSent(true)
-    setLoading(false)
+    setSent(true); setLoading(false)
   }
 
-  // 매직링크 전송 완료 화면
   if (sent) {
     return (
       <AuthShell>
@@ -372,7 +380,6 @@ function LoginPanel() {
 
   return (
     <AuthShell>
-      {/* 탭: 로그인 / 회원가입 (언더라인 스타일) */}
       <div className="flex gap-8 border-b border-gray-200 mb-6">
         {(['login', 'signup'] as AuthMode[]).map(m => (
           <button
@@ -381,28 +388,20 @@ function LoginPanel() {
             onClick={() => { setMode(m); setError('') }}
             className={[
               'text-sm font-semibold pb-3 transition-colors relative',
-              mode === m
-                ? 'text-gray-900'
-                : 'text-gray-500 hover:text-gray-700',
+              mode === m ? 'text-gray-900' : 'text-gray-500 hover:text-gray-700',
             ].join(' ')}
           >
             {m === 'login' ? '로그인' : '계정 만들기'}
-            {mode === m && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gray-900" />
-            )}
+            {mode === m && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gray-900" />}
           </button>
         ))}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* 이메일 */}
         <div className="space-y-1.5">
           <label className="block text-xs text-gray-500 uppercase tracking-wide font-medium">이메일</label>
           <input
-            type="email"
-            required
-            value={email}
-            onChange={e => setEmail(e.target.value)}
+            type="email" required value={email} onChange={e => setEmail(e.target.value)}
             placeholder="you@example.com"
             className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm
                        outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900
@@ -410,15 +409,10 @@ function LoginPanel() {
           />
         </div>
 
-        {/* 비밀번호 */}
         <div className="space-y-1.5">
           <label className="block text-xs text-gray-500 uppercase tracking-wide font-medium">비밀번호</label>
           <input
-            type="password"
-            required
-            minLength={6}
-            value={password}
-            onChange={e => setPassword(e.target.value)}
+            type="password" required minLength={6} value={password} onChange={e => setPassword(e.target.value)}
             placeholder="6자 이상"
             className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm
                        outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900
@@ -426,17 +420,10 @@ function LoginPanel() {
           />
         </div>
 
-        {/* 에러 메시지 */}
-        {error && (
-          <p className="text-xs text-red-600">
-            {error}
-          </p>
-        )}
+        {error && <p className="text-xs text-red-600">{error}</p>}
 
-        {/* 제출 버튼 */}
         <button
-          type="submit"
-          disabled={loading}
+          type="submit" disabled={loading}
           className="w-full py-3 rounded-lg bg-gray-900 hover:bg-gray-800 text-white
                      font-semibold text-sm transition-colors disabled:opacity-50"
         >
@@ -444,7 +431,6 @@ function LoginPanel() {
         </button>
       </form>
 
-      {/* 구분선 */}
       <div className="relative my-5">
         <div className="absolute inset-0 flex items-center">
           <div className="w-full border-t border-gray-200" />
@@ -454,14 +440,10 @@ function LoginPanel() {
         </div>
       </div>
 
-      {/* 매직링크 로그인 */}
       <button
-        type="button"
-        onClick={handleMagicLink}
-        disabled={loading}
+        type="button" onClick={handleMagicLink} disabled={loading}
         className="w-full py-3 rounded-lg border border-gray-200 hover:bg-gray-50
-                   text-gray-600 font-medium text-sm
-                   transition-colors"
+                   text-gray-600 font-medium text-sm transition-colors"
       >
         이메일 링크로 로그인
       </button>
@@ -469,22 +451,17 @@ function LoginPanel() {
   )
 }
 
-// ── 공통 레이아웃 래퍼 ───────────────────────────────────────
+// ── 공통 UI ──────────────────────────────────────────────────
 function AuthShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="min-h-screen bg-gray-50
-                     flex flex-col items-center justify-center px-4">
-      {/* 로고/타이틀 */}
+    <main className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4">
       <div className="mb-8 text-center">
-        <div className="inline-flex items-center justify-center w-8 h-8 rounded-lg
-                        bg-gray-900 mb-4">
+        <div className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-gray-900 mb-4">
           <span className="text-sm font-bold tracking-tight text-white">DABs</span>
         </div>
         <h1 className="text-2xl font-semibold tracking-tight text-gray-900">회의 자료 취합</h1>
         <p className="text-gray-500 text-sm mt-1">DABs 제출 및 관리 시스템</p>
       </div>
-
-      {/* 카드 */}
       <div className="w-full max-w-sm bg-white border border-gray-200 rounded-xl shadow-sm p-8">
         {children}
       </div>
@@ -492,7 +469,6 @@ function AuthShell({ children }: { children: React.ReactNode }) {
   )
 }
 
-// ── 스플래시 (세션 확인 중) ──────────────────────────────────
 function SplashScreen() {
   return (
     <main className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -504,21 +480,10 @@ function SplashScreen() {
   )
 }
 
-// ============================================================
-// app/(auth)/callback/route.ts  —  Auth 콜백 핸들러
-// ============================================================
-//
-// import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-// import { cookies } from 'next/headers'
-// import { NextResponse } from 'next/server'
-// import type { NextRequest } from 'next/server'
-//
-// export async function GET(req: NextRequest) {
-//   const { searchParams, origin } = new URL(req.url)
-//   const code = searchParams.get('code')
-//   if (code) {
-//     const supabase = createRouteHandlerClient({ cookies })
-//     await supabase.auth.exchangeCodeForSession(code)
-//   }
-//   return NextResponse.redirect(origin)
-// }
+function ChevronIcon() {
+  return (
+    <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+    </svg>
+  )
+}

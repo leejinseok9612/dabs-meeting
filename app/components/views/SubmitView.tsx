@@ -1,11 +1,11 @@
 // ============================================================
-// app/submit/[teamId]/page.tsx — DABs 협력업체 통합 제출 페이지 v4
+// app/components/views/SubmitView.tsx
 // 지적도가 고위험/일반작업 탭에 통합되어 마커 배치 시 작업항목 자동 추가
 // ============================================================
 'use client'
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { useParams } from 'next/navigation'
+
 import { createClient } from '@/lib/supabase/client'
 import MapAnnotator, { MARKER_TYPES, MapMarker } from '@/app/components/MapAnnotator'
 import { toast } from '@/app/components/Toast'
@@ -46,9 +46,7 @@ const DIRECT_INPUT_VALUE = '__직접입력__'
 const VEHICLE_LIST = ['덤프트럭', '트레일러', '카고트럭', '지게차', '크레인차', '탱크로리', '기타']
 
 // ── 메인 컴포넌트 ─────────────────────────────────────────
-export default function SubmissionPage() {
-  const params   = useParams()
-  const teamId   = params.teamId as string
+export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => void }) {
   const supabase = useMemo(() => createClient(), [])
 
   // 공통
@@ -1410,3 +1408,5 @@ function ErrorPage({ message }: { message: string }) {
 
 // inputCls delegates to .input in globals.css (h-9 slim, hairline border)
 const inputCls = 'input'
+
+

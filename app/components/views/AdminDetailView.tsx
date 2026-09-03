@@ -1,12 +1,11 @@
 // ============================================================
-// app/dashboard/[meetingId]/page.tsx
+// app/components/views/AdminDetailView.tsx
 // DABs 관리자 실시간 모니터링 대시보드 — Attio/Linear 디자인
 // ============================================================
 'use client'
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { createClient }   from '@/lib/supabase/client'
-import { useParams, useRouter } from 'next/navigation'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import PinGate            from '@/app/components/PinGate'
 import MapAnnotator       from '@/app/components/MapAnnotator'
@@ -58,10 +57,7 @@ interface MaterialSlot {
 const SUB_SELECT = 'id,meeting_id,team_id,status,personnel_count,personnel_detail,equipment,work_process,file_name,submitted_at,admin_notes,reviewed_status,reviewed_at,teams(id,name,department)'
 
 // ── 메인 컴포넌트 ──────────────────────────────────────────────
-export default function DashboardPage() {
-  const params    = useParams()
-  const meetingId = params.meetingId as string
-  const router    = useRouter()
+export function AdminDetailView({ meetingId, onBack }: { meetingId: string; onBack: () => void }) {
   const supabase  = useMemo(() => createClient(), [])
   const channelRef = useRef<RealtimeChannel | null>(null)
 
@@ -103,7 +99,7 @@ export default function DashboardPage() {
       supabase.from('meetings').select('id,title,date,status,map_file_url,map_file_name').eq('id', meetingId).single(),
       supabase.from('submissions').select(SUB_SELECT).eq('meeting_id', meetingId),
     ])
-    if (!mtg) { router.push('/dashboard'); return }
+    if (!mtg) { onBack(); return }
     setMeeting(mtg as unknown as Meeting)
     const mtgAny = mtg as unknown as { map_file_url?: string; map_file_name?: string }
     let mapFileUrl  = mtgAny.map_file_url  ?? null
@@ -121,7 +117,7 @@ export default function DashboardPage() {
     setMapUrl(mapFileUrl); setMapName(mapFileName)
     setSubmissions((subs ?? []) as unknown as SubmissionRow[])
     setLastUpdated(new Date()); setPageLoading(false)
-  }, [meetingId, supabase, router])
+  }, [meetingId, supabase])
 
   useEffect(() => {
     if (pinVerified) {
@@ -198,7 +194,7 @@ export default function DashboardPage() {
         <div className="max-w-5xl mx-auto px-5 h-13 flex items-center justify-between gap-4"
           style={{ height: '3.25rem' }}>
           <div className="flex items-center gap-3">
-            <button onClick={() => router.push('/dashboard')}
+            <button onClick={() => onBack()}
               className="btn btn-ghost btn-sm gap-1.5">
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
@@ -889,3 +885,5 @@ function PdfSmallIcon() {
     </svg>
   )
 }
+
+

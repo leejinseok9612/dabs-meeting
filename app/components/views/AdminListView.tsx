@@ -1,11 +1,10 @@
 // ============================================================
-// app/dashboard/page.tsx  —  관리자 회의 목록 + 생성 화면
+// app/components/views/AdminListView.tsx — 관리자 회의 목록 + 생성 화면
 // ============================================================
 'use client'
 
 import { useState, useEffect, useMemo, FormEvent } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
 import PinGate from '@/app/components/PinGate'
 
 // ── 타입 ────────────────────────────────────────────────────
@@ -36,9 +35,8 @@ function thisMonthStart() {
 }
 
 // ── 메인 ────────────────────────────────────────────────────
-export default function AdminMeetingsPage() {
+export function AdminListView({ onEnterMeeting, onBack }: { onEnterMeeting: (id: string) => void; onBack: () => void }) {
   const supabase = useMemo(() => createClient(), [])
-  const router   = useRouter()
 
   // PIN 인증
   const [pinVerified, setPinVerified] = useState(false)
@@ -194,7 +192,7 @@ export default function AdminMeetingsPage() {
 
     // 목록 갱신 + 폼 닫기 + 바로 해당 대시보드로 이동
     setShowForm(false)
-    router.push(`/dashboard/${newMeeting.id}`)
+    onEnterMeeting(newMeeting.id)
   }
 
   // ── 회의 상태 토글 (open ↔ closed) ───────────────────────
@@ -270,7 +268,7 @@ export default function AdminMeetingsPage() {
   // ── 나가기 (PIN 세션 초기화) ──────────────────────────────
   function handleSignOut() {
     sessionStorage.removeItem('admin_verified')
-    router.replace('/')
+    onBack()
   }
 
   // PIN 인증 화면
@@ -327,7 +325,7 @@ export default function AdminMeetingsPage() {
                   meeting={m}
                   highlight
                   onToggle={() => toggleStatus(m)}
-                  onClick={() => router.push(`/dashboard/${m.id}`)}
+                  onClick={() => onEnterMeeting(m.id)}
                 />
               ))}
             </div>
@@ -345,7 +343,7 @@ export default function AdminMeetingsPage() {
                   meeting={m}
                   highlight={false}
                   onToggle={() => toggleStatus(m)}
-                  onClick={() => router.push(`/dashboard/${m.id}`)}
+                  onClick={() => onEnterMeeting(m.id)}
                 />
               ))}
             </div>
