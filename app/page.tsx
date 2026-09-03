@@ -20,12 +20,40 @@ type View =
 
 type AuthMode = 'login' | 'signup'
 
+// ── 뷰 상태 localStorage 저장/복원 ───────────────────────────
+const DABS_VIEW_KEY = 'dabs_view'
+
+function saveView(v: View) {
+  try {
+    // login / select는 저장 안 함 (인증 후 항상 재확인)
+    if (v.name === 'submit' || v.name === 'admin-list' || v.name === 'admin-detail') {
+      localStorage.setItem(DABS_VIEW_KEY, JSON.stringify(v))
+    } else {
+      localStorage.removeItem(DABS_VIEW_KEY)
+    }
+  } catch {}
+}
+
+function loadSavedView(): View | null {
+  try {
+    const raw = localStorage.getItem(DABS_VIEW_KEY)
+    if (raw) return JSON.parse(raw) as View
+  } catch {}
+  return null
+}
+
 // ── 메인 라우터 ──────────────────────────────────────────────
 export default function RootPage() {
   const supabase = useMemo(() => createClient(), [])
   const [view, setView] = useState<View>({ name: 'login' })
   const [userEmail, setUserEmail] = useState('')
   const [checking, setChecking] = useState(true)
+
+  // setView + localStorage 동기화
+  const navigate = useCallback((v: View) => {
+    setView(v)
+    saveView(v)
+  }, [])
 
   useEffect(() => {
     let resolved = false
@@ -34,25 +62,19 @@ export default function RootPage() {
     }, 3000)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (!resolved || event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
           resolved = true
           clearTimeout(fallback)
           if (session) {
             const email = session.user.email ?? ''
             setUserEmail(email)
-            // 팀 배정 확인 → 있으면 바로 제출 화면으로, 없으면 선택 화면
-            const { data: assigned } = await supabase
-              .from('team_assignments')
-              .select('team_id')
-              .eq('user_id', session.user.id)
-              .maybeSingle()
-            if (assigned?.team_id) {
-              setView({ name: 'submit', teamId: assigned.team_id })
-            } else {
-              setView({ name: 'select', email })
-            }
+            // 저장된 뷰 복원 (있으면 바로 복원, 없으면 선택 화면)
+            const saved = loadSavedView()
+            setView(saved ?? { name: 'select', email })
           } else {
+            // 로그아웃 → 저장된 뷰 삭제
+            localStorage.removeItem(DABS_VIEW_KEY)
             setView({ name: 'login' })
           }
           setChecking(false)
@@ -65,15 +87,15 @@ export default function RootPage() {
   if (checking) return <SplashScreen />
 
   if (view.name === 'login')
-    return <LoginPanel onLoggedIn={(email) => setView({ name: 'select', email })} />
+    return <LoginPanel onLoggedIn={(email) => navigate({ name: 'select', email })} />
 
   if (view.name === 'select')
     return (
       <SelectPanel
         email={view.email}
-        onSubmit={(teamId) => setView({ name: 'submit', teamId })}
-        onAdmin={() => setView({ name: 'admin-list' })}
-        onSignOut={() => setView({ name: 'login' })}
+        onSubmit={(teamId) => navigate({ name: 'submit', teamId })}
+        onAdmin={() => navigate({ name: 'admin-list' })}
+        onSignOut={() => navigate({ name: 'login' })}
       />
     )
 
@@ -81,15 +103,15 @@ export default function RootPage() {
     return (
       <SubmitView
         teamId={view.teamId}
-        onBack={() => setView({ name: 'select', email: userEmail })}
+        onBack={() => navigate({ name: 'select', email: userEmail })}
       />
     )
 
   if (view.name === 'admin-list')
     return (
       <AdminListView
-        onEnterMeeting={(meetingId) => setView({ name: 'admin-detail', meetingId })}
-        onBack={() => setView({ name: 'login' })}
+        onEnterMeeting={(meetingId) => navigate({ name: 'admin-detail', meetingId })}
+        onBack={() => navigate({ name: 'login' })}
       />
     )
 
@@ -97,7 +119,7 @@ export default function RootPage() {
     return (
       <AdminDetailView
         meetingId={view.meetingId}
-        onBack={() => setView({ name: 'admin-list' })}
+        onBack={() => navigate({ name: 'admin-list' })}
       />
     )
 
