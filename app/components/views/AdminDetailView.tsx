@@ -168,18 +168,43 @@ export function AdminDetailView({ meetingId, onBack }: { meetingId: string; onBa
   }, [meetingId, supabase, loadSlots])
 
   // ── 지적도 업로드 ─────────────────────────────────────────
-  // ── 관리자 작업항목 수정/삭제 ────────────────────────────
+  // ── 관리자 작업항목 수정/삭제 (지적도 마커 동기화 포함) ──
   async function deleteWorkItem(id: string) {
+    const item = workItems.find(w => w.id === id)
+    // 작업항목 삭제
     await fetch(`/api/work-items?id=${id}`, { method: 'DELETE' })
+    // 연결된 지적도 마커도 삭제
+    if (item) {
+      await fetch(
+        `/api/map-markers?meetingId=${meetingId}&teamId=${item.team_id}&label=${encodeURIComponent(item.work_name)}&workType=${item.work_type}`,
+        { method: 'DELETE' }
+      )
+    }
     loadWorkItems()
   }
 
   async function updateWorkItem(id: string, updates: { work_name?: string; location?: string; worker_count?: number; description?: string }) {
+    const item = workItems.find(w => w.id === id)
+    // 작업항목 수정
     await fetch('/api/work-items', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, ...updates }),
     })
+    // 작업명이 바뀌면 연결된 지적도 마커 라벨도 동기화
+    if (item && updates.work_name && updates.work_name !== item.work_name) {
+      await fetch('/api/map-markers', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meetingId,
+          teamId:   item.team_id,
+          oldLabel: item.work_name,
+          newLabel: updates.work_name,
+          workType: item.work_type,
+        }),
+      })
+    }
     loadWorkItems()
   }
 
