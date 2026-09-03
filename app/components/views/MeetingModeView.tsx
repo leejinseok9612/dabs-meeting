@@ -5,10 +5,28 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import MapAnnotator from '@/app/components/MapAnnotator'
-import type { WorkItemInfo } from '@/app/components/MapAnnotator'
 
-// ── 타입 ─────────────────────────────────────────────────────
+// ── 팀 색상 (MapAnnotator 와 동일) ────────────────────────
+const TEAM_COLORS = ['#3B82F6','#F97316','#22C55E','#8B5CF6','#EF4444','#EC4899']
+
+// ── 마커 아이콘 매핑 ─────────────────────────────────────
+const MARKER_ICONS: Record<string, string> = {
+  excavator: '🚜', small_exc: '🔧', crane: '🏗️', dump_truck: '🚛',
+  pump_car: '🚰', roller: '🛞', pile_driver: '⚙️', loader: '🔄',
+  forklift: '🏋️', work_zone: '⚠️', personnel: '👷', material: '📦',
+}
+
+// ── 타입 ─────────────────────────────────────────────────
+interface MapMarkerData {
+  id: string
+  team_id: string | null
+  marker_type: string
+  x_pct: number
+  y_pct: number
+  label?: string
+  work_type?: string | null
+  teams?: { id: string; name: string }
+}
 interface WorkItem {
   id: string; work_type: 'high_risk' | 'general'; team_id: string
   work_name: string; location?: string; worker_count: number; description?: string
@@ -34,7 +52,7 @@ interface WeatherData {
   isMock: boolean; error?: string
 }
 
-// ── 슬라이드 정의 ─────────────────────────────────────────────
+// ── 슬라이드 정의 ─────────────────────────────────────────
 type SlideType = 'high_risk' | 'work_general' | 'material'
 const SLIDES: { type: SlideType; label: string; icon: string }[] = [
   { type: 'high_risk',    label: '고위험 현황',     icon: '⚠️' },
@@ -42,20 +60,20 @@ const SLIDES: { type: SlideType; label: string; icon: string }[] = [
   { type: 'material',     label: '자재 하역/운반',  icon: '🚛' },
 ]
 
-// ── 메모 로컬스토리지 키 ─────────────────────────────────────
+// ── 메모 로컬스토리지 키 ─────────────────────────────────
 const noteKey = (meetingId: string, slideIdx: number) =>
   `dabs_note_${meetingId}_${slideIdx}`
 
-// ── 날씨 아이콘 (PTY 기반 — 초단기실황엔 SKY 없음) ───────────
+// ── 날씨 아이콘 (PTY 기반 — 초단기실황엔 SKY 없음) ──────
 function weatherIcon(pty: number | null): string {
   if (!pty || pty === 0) return '🌤'
   if (pty === 3) return '❄️'
   return '🌧'
 }
 
-// ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────
 // WeatherWidget
-// ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────
 function WeatherWidget() {
   const [weather, setWeather] = useState<WeatherData | null>(null)
 
@@ -69,56 +87,322 @@ function WeatherWidget() {
   if (!weather) {
     return (
       <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10">
-        <div className="w-16 h-3 rounded animate-pulse bg-white/20" />
+        <div className="w-20 h-4 rounded animate-pulse bg-white/20" />
       </div>
     )
   }
 
   const windLevel = weather.windWarning ? 'red' : weather.windCaution ? 'amber' : 'normal'
-  const label = weather.ptyLabel || (weather.tmp !== null ? '' : '날씨')
 
   return (
-    <div className="flex items-center gap-2.5">
-      {/* 날씨 + 기온 */}
-      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 backdrop-blur-sm">
-        <span className="text-base leading-none">{weatherIcon(weather.pty)}</span>
-        <div className="flex items-baseline gap-1">
-          {label && <span className="text-[11px] font-medium text-white/80">{label}</span>}
-          {weather.tmp !== null && (
-            <span className="text-sm font-semibold text-white">{weather.tmp.toFixed(1)}°C</span>
-          )}
-        </div>
-        {weather.isMock && <span className="text-[9px] text-white/30">mock</span>}
+    <div className="flex items-center gap-2">
+      {/* 기온 */}
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 backdrop-blur-sm">
+        <span className="text-lg leading-none">{weatherIcon(weather.pty)}</span>
+        {weather.tmp !== null ? (
+          <span className="text-base font-bold text-white tabular-nums">{weather.tmp.toFixed(1)}°C</span>
+        ) : (
+          <span className="text-sm text-white/40">—°C</span>
+        )}
+        {weather.isMock && <span className="text-[9px] text-white/30 ml-1">mock</span>}
       </div>
 
       {/* 풍속 */}
-      {weather.wsd !== null && (
-        <div className={[
-          'flex items-center gap-1.5 px-3 py-1.5 rounded-lg backdrop-blur-sm',
-          windLevel === 'red'   ? 'bg-red-500/80 animate-pulse' :
-          windLevel === 'amber' ? 'bg-amber-500/80'             :
-          'bg-white/10',
-        ].join(' ')}>
-          <span className="text-sm leading-none">💨</span>
-          <div className="flex flex-col">
-            <span className="text-[11px] font-semibold text-white leading-tight">
-              {weather.wsd.toFixed(1)} m/s
+      <div className={[
+        'flex items-center gap-2 px-3 py-1.5 rounded-lg backdrop-blur-sm',
+        windLevel === 'red'   ? 'bg-red-500/80 animate-pulse' :
+        windLevel === 'amber' ? 'bg-amber-500/80'             :
+        'bg-white/10',
+      ].join(' ')}>
+        <span className="text-base leading-none">💨</span>
+        <div className="flex flex-col leading-tight">
+          {weather.wsd !== null ? (
+            <span className="text-base font-bold text-white tabular-nums">{weather.wsd.toFixed(1)} m/s</span>
+          ) : (
+            <span className="text-sm text-white/40">— m/s</span>
+          )}
+          {windLevel !== 'normal' && (
+            <span className="text-[10px] font-medium text-white/90">
+              {windLevel === 'red' ? '⚠ 작업중단 기준!' : '⚠ 주의'}
             </span>
-            {windLevel !== 'normal' && (
-              <span className="text-[10px] font-medium text-white/90 leading-tight">
-                {windLevel === 'red' ? '⚠ 작업중단 기준!' : '⚠ 주의 기준'}
-              </span>
-            )}
-          </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }
 
-// ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────
+// MeetingMapViewer — 줌/팬 가능한 지적도 뷰어
+// ────────────────────────────────────────────────────────
+function MeetingMapViewer({
+  meetingId, mapUrl, allTeamIds,
+}: {
+  meetingId: string
+  mapUrl: string
+  allTeamIds: string[]
+}) {
+  const [markers,      setMarkers]      = useState<MapMarkerData[]>([])
+  const [filterTeamId, setFilterTeamId] = useState<string | null>(null)
+  const [scale,        setScale]        = useState(1)
+  const [offset,       setOffset]       = useState({ x: 0, y: 0 })
+  const [isDragging,   setIsDragging]   = useState(false)
+  const [naturalSize,  setNaturalSize]  = useState<{ w: number; h: number } | null>(null)
+
+  const containerRef = useRef<HTMLDivElement>(null)
+  const lastPointer  = useRef<{ x: number; y: number } | null>(null)
+
+  // ── 마커 로드 ─────────────────────────────────────────
+  useEffect(() => {
+    fetch(`/api/map-markers?meetingId=${meetingId}`)
+      .then(r => r.json())
+      .then((data: unknown) => {
+        if (Array.isArray(data)) {
+          setMarkers((data as MapMarkerData[]).filter(m => m.work_type === 'high_risk'))
+        }
+      })
+      .catch(() => {})
+  }, [meetingId])
+
+  // ── 이미지 로드 → 화면 맞춤 scale 계산 ──────────────
+  const handleImgLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget
+    const natW = img.naturalWidth
+    const natH = img.naturalHeight
+    setNaturalSize({ w: natW, h: natH })
+
+    if (!containerRef.current) return
+    const { clientWidth: cW, clientHeight: cH } = containerRef.current
+    // 가용 영역에 꽉 차되 잘리지 않는 최대 배율 (업스케일 허용: 화면이 이미지보다 클 때)
+    const fitScale = Math.min(cW / natW, cH / natH)
+    setScale(fitScale)
+    setOffset({ x: 0, y: 0 })
+  }, [])
+
+  // ── 줌 ────────────────────────────────────────────────
+  const zoom = useCallback((delta: number) => {
+    setScale(s => Math.min(8, Math.max(0.1, s + delta)))
+  }, [])
+
+  const resetView = useCallback(() => {
+    if (!naturalSize || !containerRef.current) return
+    const { clientWidth: cW, clientHeight: cH } = containerRef.current
+    setScale(Math.min(cW / naturalSize.w, cH / naturalSize.h))
+    setOffset({ x: 0, y: 0 })
+  }, [naturalSize])
+
+  // ── 마우스 휠 줌 ──────────────────────────────────────
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.stopPropagation()
+    zoom(e.deltaY < 0 ? 0.08 : -0.08)
+  }, [zoom])
+
+  // ── 팬 (드래그) ───────────────────────────────────────
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // 버튼 영역 클릭 무시
+    if ((e.target as HTMLElement).closest('button')) return
+    setIsDragging(true)
+    lastPointer.current = { x: e.clientX, y: e.clientY }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging || !lastPointer.current) return
+    const dx = e.clientX - lastPointer.current.x
+    const dy = e.clientY - lastPointer.current.y
+    lastPointer.current = { x: e.clientX, y: e.clientY }
+    setOffset(o => ({ x: o.x + dx, y: o.y + dy }))
+  }
+  const handlePointerUp = () => {
+    setIsDragging(false)
+    lastPointer.current = null
+  }
+
+  // ── 팀 범례 ─────────────────────────────────────────
+  const teamLegend = useMemo(() => {
+    return allTeamIds
+      .map((tid, idx) => {
+        const teamMarkers = markers.filter(m => m.team_id === tid)
+        if (teamMarkers.length === 0) return null
+        const name = teamMarkers[0].teams?.name ?? tid
+        return { id: tid, name, count: teamMarkers.length, color: TEAM_COLORS[idx % TEAM_COLORS.length] }
+      })
+      .filter(Boolean) as { id: string; name: string; count: number; color: string }[]
+  }, [allTeamIds, markers])
+
+  // 팀 컬러 룩업
+  const teamColorMap = useMemo(() => {
+    const m: Record<string, string> = {}
+    allTeamIds.forEach((tid, idx) => { m[tid] = TEAM_COLORS[idx % TEAM_COLORS.length] })
+    return m
+  }, [allTeamIds])
+
+  const visibleMarkers = filterTeamId
+    ? markers.filter(m => m.team_id === filterTeamId)
+    : markers
+
+  return (
+    <div className="flex flex-col h-full rounded-xl overflow-hidden border border-red-200 bg-white">
+
+      {/* 헤더: 타이틀 + 팀 필터 */}
+      <div className="shrink-0 px-3 py-2 bg-red-50 border-b border-red-200 flex items-center gap-2 flex-wrap">
+        <span className="text-xs font-semibold text-red-700">🗺️ 고위험작업 지적도</span>
+
+        {teamLegend.length > 0 && (
+          <div className="flex gap-1 ml-auto flex-wrap">
+            <button
+              onClick={() => setFilterTeamId(null)}
+              className={[
+                'text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors',
+                filterTeamId === null
+                  ? 'bg-slate-800 text-white'
+                  : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400',
+              ].join(' ')}
+            >
+              전체 ({markers.length})
+            </button>
+            {teamLegend.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setFilterTeamId(prev => prev === t.id ? null : t.id)}
+                className="text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors flex items-center gap-1"
+                style={filterTeamId === t.id
+                  ? { backgroundColor: t.color, color: 'white', border: `1px solid ${t.color}` }
+                  : { backgroundColor: 'white', border: '1px solid #e2e8f0', color: '#475569' }
+                }
+              >
+                <span className="w-1.5 h-1.5 rounded-full inline-block shrink-0" style={{ background: t.color }} />
+                {t.name} ({t.count})
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 지도 캔버스 */}
+      <div
+        ref={containerRef}
+        className="flex-1 relative overflow-hidden bg-slate-100"
+        style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
+        onWheel={handleWheel}
+      >
+
+        {/* 줌 컨트롤 버튼 */}
+        <div className="absolute top-3 right-3 z-20 flex flex-col gap-1">
+          <button
+            onPointerDown={e => e.stopPropagation()}
+            onClick={() => zoom(0.2)}
+            className="w-8 h-8 rounded-lg bg-white/95 shadow-md text-slate-700 font-bold text-xl hover:bg-white flex items-center justify-center leading-none select-none"
+            title="확대"
+          >+</button>
+          <button
+            onPointerDown={e => e.stopPropagation()}
+            onClick={resetView}
+            className="w-8 h-8 rounded-lg bg-white/95 shadow-md text-slate-600 text-sm hover:bg-white flex items-center justify-center select-none"
+            title="화면 맞춤"
+          >⟲</button>
+          <button
+            onPointerDown={e => e.stopPropagation()}
+            onClick={() => zoom(-0.2)}
+            className="w-8 h-8 rounded-lg bg-white/95 shadow-md text-slate-700 font-bold text-xl hover:bg-white flex items-center justify-center leading-none select-none"
+            title="축소"
+          >−</button>
+        </div>
+
+        {/* 배율 표시 */}
+        <div className="absolute bottom-2 right-3 z-20 text-[10px] text-slate-400 bg-white/80 px-1.5 py-0.5 rounded pointer-events-none">
+          {Math.round(scale * 100)}%
+        </div>
+
+        {/* 조작 힌트 */}
+        <div className="absolute bottom-2 left-3 z-20 text-[10px] text-slate-400 bg-white/80 px-1.5 py-0.5 rounded pointer-events-none">
+          드래그: 이동 · 스크롤: 줌
+        </div>
+
+        {/* 이미지 + 마커 (변환 레이어) */}
+        {naturalSize ? (
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transformOrigin: 'center center',
+              transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(${scale})`,
+            }}
+          >
+            <div
+              className="relative"
+              style={{ width: naturalSize.w, height: naturalSize.h }}
+            >
+              <img
+                src={mapUrl}
+                alt="지적도"
+                style={{ width: naturalSize.w, height: naturalSize.h, display: 'block', pointerEvents: 'none' }}
+                draggable={false}
+              />
+              {/* 마커 오버레이 */}
+              {visibleMarkers.map(marker => {
+                const color = marker.team_id ? (teamColorMap[marker.team_id] ?? '#6B7280') : '#6B7280'
+                return (
+                  <div
+                    key={marker.id}
+                    className="absolute z-10"
+                    style={{
+                      left: `${marker.x_pct}%`,
+                      top: `${marker.y_pct}%`,
+                      transform: 'translate(-50%, -50%)',
+                    }}
+                  >
+                    <div className="flex flex-col items-center">
+                      <div
+                        className="w-9 h-9 rounded-full flex items-center justify-center text-xl shadow-lg border-2 border-white"
+                        style={{ background: color }}
+                        title={`${marker.teams?.name ?? ''}${marker.label ? ' · ' + marker.label : ''}`}
+                      >
+                        {MARKER_ICONS[marker.marker_type] ?? '📍'}
+                      </div>
+                      {marker.label && (
+                        <span
+                          className="text-[10px] font-semibold text-white px-1 py-0.5 rounded mt-0.5 max-w-[80px] truncate"
+                          style={{ background: 'rgba(0,0,0,0.6)' }}
+                        >
+                          {marker.label}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ) : (
+          /* 이미지 크기 측정용 (숨김) */
+          <img
+            src={mapUrl}
+            alt=""
+            onLoad={handleImgLoad}
+            style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', top: 0, left: 0 }}
+            draggable={false}
+          />
+        )}
+
+        {/* 로딩 중 스피너 */}
+        {!naturalSize && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-6 h-6 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────
 // HighRiskSlide — 지적도(좌) + 고위험작업 목록(우) 분할 뷰
-// ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────
 function HighRiskSlide({
   meetingId, mapUrl, workItems, allTeamIds,
 }: {
@@ -131,17 +415,13 @@ function HighRiskSlide({
 
   return (
     <div className="h-full flex gap-4">
-      {/* 왼쪽: 지적도 */}
+      {/* 왼쪽: 줌/팬 지적도 */}
       {mapUrl ? (
-        <div className="flex-1 rounded-xl overflow-hidden bg-neutral-800 min-w-0">
-          <MapAnnotator
+        <div className="flex-1 min-w-0">
+          <MeetingMapViewer
             meetingId={meetingId}
             mapUrl={mapUrl}
-            myTeamId=""
             allTeamIds={allTeamIds}
-            readOnly={true}
-            workType="high_risk"
-            workItems={workItems as unknown as WorkItemInfo[]}
           />
         </div>
       ) : (
@@ -192,9 +472,9 @@ function HighRiskSlide({
   )
 }
 
-// ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────
 // WorkItemSlide — 일반작업 목록
-// ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────
 function WorkItemSlide({ items }: { items: WorkItem[] }) {
   if (items.length === 0) {
     return (
@@ -254,9 +534,9 @@ function WorkItemSlide({ items }: { items: WorkItem[] }) {
   )
 }
 
-// ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────
 // MaterialSlide — 자재 하역/운반 목록
-// ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────
 function MaterialSlide({ slots }: { slots: MaterialSlot[] }) {
   const allReservations = slots.flatMap(slot =>
     (slot.material_reservations ?? []).map(r => ({ ...r, slot_time: slot.slot_time, gate: slot.gate }))
@@ -271,12 +551,10 @@ function MaterialSlide({ slots }: { slots: MaterialSlot[] }) {
     )
   }
 
-  // GATE별 그룹
   const gates = [...new Set(allReservations.map(r => r.gate))].sort()
 
   return (
     <div className="h-full overflow-y-auto scrollbar-hide">
-      {/* 테이블 헤더 */}
       <div className="grid grid-cols-[80px_80px_1fr_1fr_120px] gap-0 mb-2 px-4">
         {['GATE', '시간대', '업체명', '자재 내용', '차량'].map(h => (
           <div key={h} className="text-[10px] font-semibold text-white/30 uppercase tracking-widest py-2">{h}</div>
@@ -326,9 +604,9 @@ function MaterialSlide({ slots }: { slots: MaterialSlot[] }) {
   )
 }
 
-// ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────
 // NotePanel — 슬라이드별 오버레이 메모 패널
-// ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────
 function NotePanel({
   meetingId, slideIdx, onClose,
 }: {
@@ -386,9 +664,9 @@ function NotePanel({
   )
 }
 
-// ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────
 // MeetingModeView — 메인 컴포넌트
-// ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────
 export function MeetingModeView({
   meetingId, onClose,
 }: {
@@ -407,7 +685,7 @@ export function MeetingModeView({
 
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // ── 데이터 로드 ───────────────────────────────────────────
+  // ── 데이터 로드 ──────────────────────────────────────
   useEffect(() => {
     Promise.all([
       fetch(`/api/meeting-info?meetingId=${meetingId}`).then(r => r.json()).catch(() => null),
@@ -418,12 +696,12 @@ export function MeetingModeView({
       if (mtgData?.meeting) setMeeting(mtgData.meeting)
       if (Array.isArray(wiData)) setWorkItems(wiData)
       if (Array.isArray(slotsData)) setSlots(slotsData)
-      if (Array.isArray(teamsData)) setAllTeamIds(teamsData.map((t: {id:string}) => t.id))
+      if (Array.isArray(teamsData)) setAllTeamIds(teamsData.map((t: { id: string }) => t.id))
       setLoading(false)
     })
   }, [meetingId])
 
-  // ── 키보드 네비게이션 ─────────────────────────────────────
+  // ── 키보드 네비게이션 ────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
@@ -444,7 +722,7 @@ export function MeetingModeView({
     return () => window.removeEventListener('keydown', handler)
   }, [showNote, isFullscreen, onClose]) // eslint-disable-line
 
-  // ── 전체화면 ─────────────────────────────────────────────
+  // ── 전체화면 ─────────────────────────────────────────
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) containerRef.current?.requestFullscreen?.()
     else document.exitFullscreen?.()
@@ -459,7 +737,6 @@ export function MeetingModeView({
   const generalItems = useMemo(() => workItems.filter(w => w.work_type === 'general'), [workItems])
   const mapUrl = meeting?.map_file_url ?? null
 
-  // 자재 총 건수
   const materialCount = slots.reduce((acc, s) => acc + (s.material_reservations?.length ?? 0), 0)
 
   if (loading) {
@@ -480,7 +757,7 @@ export function MeetingModeView({
       className="fixed inset-0 bg-neutral-950 flex flex-col z-50 select-none"
       style={{ fontFamily: 'var(--font-geist-sans, system-ui)' }}>
 
-      {/* ── 헤더 ───────────────────────────────────────────── */}
+      {/* ── 헤더 ──────────────────────────────────────── */}
       <header className="shrink-0 flex items-center justify-between px-5 py-3"
         style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
 
@@ -526,7 +803,7 @@ export function MeetingModeView({
         </div>
       </header>
 
-      {/* ── 슬라이드 본문 ───────────────────────────────────── */}
+      {/* ── 슬라이드 본문 ─────────────────────────────── */}
       <div className="flex-1 relative overflow-hidden">
         <div className={['absolute inset-0 flex flex-col transition-[right] duration-300', showNote ? 'right-72' : 'right-0'].join(' ')}>
 
@@ -583,7 +860,7 @@ export function MeetingModeView({
         )}
       </div>
 
-      {/* ── 하단 탭 바 ──────────────────────────────────────── */}
+      {/* ── 하단 탭 바 ───────────────────────────────── */}
       <footer className="shrink-0 flex items-center gap-2 px-5 py-3"
         style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
         {SLIDES.map((slide, idx) => {
