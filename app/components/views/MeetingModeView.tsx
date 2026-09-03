@@ -137,11 +137,12 @@ function WeatherWidget() {
 // MeetingMapViewer — 줌/팬 가능한 지적도 뷰어
 // ────────────────────────────────────────────────────────
 function MeetingMapViewer({
-  meetingId, mapUrl, allTeamIds,
+  meetingId, mapUrl, allTeamIds, hoveredTeamId,
 }: {
   meetingId: string
   mapUrl: string
   allTeamIds: string[]
+  hoveredTeamId?: string | null
 }) {
   const theme = useTheme()
   const dk = theme === 'dark'
@@ -326,13 +327,32 @@ function MeetingMapViewer({
               />
               {visibleMarkers.map(marker => {
                 const color = marker.team_id ? (teamColorMap[marker.team_id] ?? '#6B7280') : '#6B7280'
+                const isHighlighted = hoveredTeamId != null && marker.team_id === hoveredTeamId
+                const isDimmed      = hoveredTeamId != null && marker.team_id !== hoveredTeamId
                 return (
-                  <div key={marker.id} className="absolute z-10"
-                    style={{ left: `${marker.x_pct}%`, top: `${marker.y_pct}%`, transform: 'translate(-50%, -50%)' }}>
+                  <div key={marker.id} className="absolute"
+                    style={{
+                      left: `${marker.x_pct}%`,
+                      top: `${marker.y_pct}%`,
+                      transform: `translate(-50%, -50%) scale(${isHighlighted ? 1.4 : 1})`,
+                      transition: 'opacity 0.15s ease, transform 0.15s ease',
+                      opacity: isDimmed ? 0.15 : 1,
+                      zIndex: isHighlighted ? 30 : 10,
+                    }}>
+                    {/* 펄스 링 */}
+                    {isHighlighted && (
+                      <div className="absolute rounded-full animate-ping pointer-events-none"
+                        style={{ inset: '-10px', background: 'rgba(250,204,21,0.5)' }} />
+                    )}
                     <div className="flex flex-col items-center">
                       <div
-                        className="w-9 h-9 rounded-full flex items-center justify-center text-xl shadow-lg border-2 border-white"
-                        style={{ background: color }}
+                        className="w-9 h-9 rounded-full flex items-center justify-center text-xl border-2 border-white"
+                        style={{
+                          background: color,
+                          boxShadow: isHighlighted
+                            ? `0 0 16px 4px rgba(250,204,21,0.6), 0 4px 12px rgba(0,0,0,0.3)`
+                            : '0 4px 12px rgba(0,0,0,0.2)',
+                        }}
                         title={`${marker.teams?.name ?? ''}${marker.label ? ' · ' + marker.label : ''}`}
                       >
                         {MARKER_ICONS[marker.marker_type] ?? '📍'}
@@ -373,13 +393,19 @@ function HighRiskSlide({ meetingId, mapUrl, workItems, allTeamIds }: {
   const theme = useTheme()
   const dk = theme === 'dark'
   const highRisk = workItems.filter(w => w.work_type === 'high_risk')
+  const [hoveredTeamId, setHoveredTeamId] = useState<string | null>(null)
 
   return (
     <div className="h-full flex gap-4">
       {/* 지적도 */}
       {mapUrl ? (
         <div className="flex-1 min-w-0">
-          <MeetingMapViewer meetingId={meetingId} mapUrl={mapUrl} allTeamIds={allTeamIds} />
+          <MeetingMapViewer
+            meetingId={meetingId}
+            mapUrl={mapUrl}
+            allTeamIds={allTeamIds}
+            hoveredTeamId={hoveredTeamId}
+          />
         </div>
       ) : (
         <div className={`flex-1 rounded-xl flex items-center justify-center border ${dk ? 'bg-neutral-800/50 border-white/10' : 'bg-gray-100 border-gray-200'}`}>
@@ -395,31 +421,45 @@ function HighRiskSlide({ meetingId, mapUrl, workItems, allTeamIds }: {
             <p className={`text-sm ${dk ? 'text-white/40' : 'text-gray-400'}`}>등록된 고위험작업이 없습니다.</p>
           </div>
         ) : (
-          highRisk.map(item => (
-            <div key={item.id} className={`rounded-xl p-3.5 border ${dk ? 'bg-red-950/50 border-red-800/30' : 'bg-red-50 border-red-200'}`}>
-              <div className="flex items-start justify-between gap-2 mb-1.5">
-                <h4 className={`text-sm font-semibold leading-snug ${dk ? 'text-white' : 'text-gray-900'}`}>{item.work_name}</h4>
-                <div className={`flex gap-2 text-xs shrink-0 text-right ${dk ? 'text-white/40' : 'text-gray-400'}`}>
-                  {item.location && <span>📍 {item.location}</span>}
-                  {item.worker_count > 0 && <span>👷 {item.worker_count}명</span>}
+          highRisk.map(item => {
+            const isHovered = hoveredTeamId === item.team_id
+            return (
+              <div
+                key={item.id}
+                className={`rounded-xl p-3.5 border cursor-default transition-all duration-150 ${dk ? 'bg-red-950/50 border-red-800/30' : 'bg-red-50 border-red-200'}`}
+                style={{
+                  opacity: hoveredTeamId != null && !isHovered ? 0.4 : 1,
+                  boxShadow: isHovered
+                    ? dk ? '0 0 0 2px rgba(250,204,21,0.6), 0 4px 16px rgba(250,204,21,0.2)' : '0 0 0 2px #fbbf24, 0 4px 16px rgba(251,191,36,0.2)'
+                    : undefined,
+                }}
+                onMouseEnter={() => setHoveredTeamId(item.team_id)}
+                onMouseLeave={() => setHoveredTeamId(null)}
+              >
+                <div className="flex items-start justify-between gap-2 mb-1.5">
+                  <h4 className={`text-sm font-semibold leading-snug ${dk ? 'text-white' : 'text-gray-900'}`}>{item.work_name}</h4>
+                  <div className={`flex gap-2 text-xs shrink-0 text-right ${dk ? 'text-white/40' : 'text-gray-400'}`}>
+                    {item.location && <span>📍 {item.location}</span>}
+                    {item.worker_count > 0 && <span>👷 {item.worker_count}명</span>}
+                  </div>
                 </div>
+                <p className={`text-[11px] font-medium mb-1 ${dk ? 'text-red-300/70' : 'text-red-600'}`}>{item.teams?.name}</p>
+                {item.description && <p className={`text-xs mb-1.5 ${dk ? 'text-white/50' : 'text-gray-500'}`}>{item.description}</p>}
+                {item.risk_factors && (
+                  <div className={`flex gap-1.5 rounded-lg px-2.5 py-1.5 mb-1 border ${dk ? 'bg-amber-950/50 border-amber-800/30' : 'bg-amber-50 border-amber-200'}`}>
+                    <span className="text-amber-400 text-xs shrink-0">⚠</span>
+                    <p className={`text-xs ${dk ? 'text-amber-200/80' : 'text-amber-800'}`}>{item.risk_factors}</p>
+                  </div>
+                )}
+                {item.improvement_measures && (
+                  <div className={`flex gap-1.5 rounded-lg px-2.5 py-1.5 border ${dk ? 'bg-emerald-950/50 border-emerald-800/30' : 'bg-emerald-50 border-emerald-200'}`}>
+                    <span className="text-emerald-400 text-xs shrink-0">✅</span>
+                    <p className={`text-xs ${dk ? 'text-emerald-200/80' : 'text-emerald-800'}`}>{item.improvement_measures}</p>
+                  </div>
+                )}
               </div>
-              <p className={`text-[11px] font-medium mb-1 ${dk ? 'text-red-300/70' : 'text-red-600'}`}>{item.teams?.name}</p>
-              {item.description && <p className={`text-xs mb-1.5 ${dk ? 'text-white/50' : 'text-gray-500'}`}>{item.description}</p>}
-              {item.risk_factors && (
-                <div className={`flex gap-1.5 rounded-lg px-2.5 py-1.5 mb-1 border ${dk ? 'bg-amber-950/50 border-amber-800/30' : 'bg-amber-50 border-amber-200'}`}>
-                  <span className="text-amber-400 text-xs shrink-0">⚠</span>
-                  <p className={`text-xs ${dk ? 'text-amber-200/80' : 'text-amber-800'}`}>{item.risk_factors}</p>
-                </div>
-              )}
-              {item.improvement_measures && (
-                <div className={`flex gap-1.5 rounded-lg px-2.5 py-1.5 border ${dk ? 'bg-emerald-950/50 border-emerald-800/30' : 'bg-emerald-50 border-emerald-200'}`}>
-                  <span className="text-emerald-400 text-xs shrink-0">✅</span>
-                  <p className={`text-xs ${dk ? 'text-emerald-200/80' : 'text-emerald-800'}`}>{item.improvement_measures}</p>
-                </div>
-              )}
-            </div>
-          ))
+            )
+          })
         )}
       </div>
     </div>

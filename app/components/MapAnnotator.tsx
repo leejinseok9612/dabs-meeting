@@ -63,11 +63,13 @@ interface Props {
   /** 부모가 드롭 위치를 확정한 뒤 marker label을 넘기면 여기서 저장 */
   pendingDrop?: { markerType: string; x: number; y: number } | null
   onPendingDropSaved?: () => void
+  /** 작업 카드 hover 시 해당 팀 마커 강조 */
+  hoveredTeamId?: string | null
 }
 
 export default function MapAnnotator({
   meetingId, mapUrl, myTeamId, allTeamIds, readOnly = false, onMarkerCountChange, workItems = [],
-  workType, onMarkerDrop, onMarkerDelete, pendingDrop, onPendingDropSaved,
+  workType, onMarkerDrop, onMarkerDelete, pendingDrop, onPendingDropSaved, hoveredTeamId,
 }: Props) {
   const [markers,      setMarkers]      = useState<MapMarker[]>([])
   const [draggingType, setDraggingType] = useState<string | null>(null)
@@ -316,23 +318,45 @@ export default function MapAnnotator({
             const isMyMarker = myTeamId
               ? marker.team_id === myTeamId
               : marker.team_id === null || marker.team_id === undefined
-            const isHovered  = hoverId === marker.id
+            const isHovered    = hoverId === marker.id
+            // 외부 hover (작업 카드에서 전달)
+            const isHighlighted = hoveredTeamId != null && marker.team_id === hoveredTeamId
+            const isDimmed      = hoveredTeamId != null && marker.team_id !== hoveredTeamId
 
             return (
               <div
                 key={marker.id}
-                className="absolute transform -translate-x-1/2 -translate-y-1/2 z-20"
-                style={{ left: `${marker.x_pct}%`, top: `${marker.y_pct}%` }}
+                className="absolute"
+                style={{
+                  left: `${marker.x_pct}%`,
+                  top: `${marker.y_pct}%`,
+                  transform: `translate(-50%, -50%) scale(${isHighlighted ? 1.4 : 1})`,
+                  transition: 'opacity 0.15s ease, transform 0.15s ease',
+                  opacity: isDimmed ? 0.15 : 1,
+                  zIndex: isHighlighted ? 30 : 20,
+                }}
                 onMouseEnter={() => setHoverId(marker.id)}
                 onMouseLeave={() => setHoverId(null)}
                 onClick={() => setClickedMarker(marker)}
               >
+                {/* 펄스 링 (외부 hover 강조) */}
+                {isHighlighted && (
+                  <div
+                    className="absolute rounded-full animate-ping pointer-events-none"
+                    style={{
+                      inset: '-10px',
+                      background: 'rgba(250, 204, 21, 0.5)',
+                    }}
+                  />
+                )}
                 <div className="relative flex flex-col items-center cursor-pointer transition-transform hover:scale-110">
                   <div
                     className="w-10 h-10 rounded-full flex items-center justify-center shadow-lg text-xl border-3 border-white"
                     style={{
                       background: typeInfo?.bg ?? '#fff',
-                      boxShadow: `0 0 0 3px ${teamColor}, 0 4px 12px rgba(0,0,0,0.2)`,
+                      boxShadow: isHighlighted
+                        ? `0 0 0 3px ${teamColor}, 0 0 16px 4px rgba(250,204,21,0.6), 0 4px 12px rgba(0,0,0,0.2)`
+                        : `0 0 0 3px ${teamColor}, 0 4px 12px rgba(0,0,0,0.2)`,
                     }}
                   >
                     {typeInfo?.icon ?? '📍'}

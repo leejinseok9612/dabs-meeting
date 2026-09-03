@@ -80,6 +80,7 @@ export function AdminDetailView({
   const [mapError,     setMapError]     = useState<string | null>(null)
   const [openMapSection,  setOpenMapSection]  = useState<'high_risk' | 'general' | null>(null)
   const [openWorkSection, setOpenWorkSection] = useState<'high_risk' | 'general' | 'material' | null>(null)
+  const [hoveredTeamId,   setHoveredTeamId]   = useState<string | null>(null)
   const [allTeams,     setAllTeams]     = useState<{id:string;name:string}[]>([])
   const [workItems,    setWorkItems]    = useState<WorkItem[]>([])
   const [slots,        setSlots]        = useState<MaterialSlot[]>([])
@@ -392,7 +393,8 @@ export function AdminDetailView({
               <div className="border-t border-neutral-100 p-4 animate-accordion-down">
                 <MapAnnotator meetingId={meetingId} mapUrl={mapUrl} myTeamId=""
                   allTeamIds={allTeams.map(t => t.id)} readOnly={true} workType="high_risk"
-                  workItems={workItems as unknown as WorkItemInfo[]} />
+                  workItems={workItems as unknown as WorkItemInfo[]}
+                  hoveredTeamId={hoveredTeamId} />
               </div>
             )}
           </section>
@@ -434,8 +436,8 @@ export function AdminDetailView({
               </button>
               {open && (
                 <div className="border-t border-neutral-100 animate-accordion-down">
-                  {key === 'high_risk' && <WorkItemSection items={workItems.filter(w => w.work_type === 'high_risk')} color="red" onDelete={deleteWorkItem} onEdit={updateWorkItem} />}
-                  {key === 'general'   && <WorkItemSection items={workItems.filter(w => w.work_type === 'general')} color="blue" onDelete={deleteWorkItem} onEdit={updateWorkItem} />}
+                  {key === 'high_risk' && <WorkItemSection items={workItems.filter(w => w.work_type === 'high_risk')} color="red" onDelete={deleteWorkItem} onEdit={updateWorkItem} onHoverTeam={setHoveredTeamId} />}
+                  {key === 'general'   && <WorkItemSection items={workItems.filter(w => w.work_type === 'general')} color="blue" onDelete={deleteWorkItem} onEdit={updateWorkItem} onHoverTeam={setHoveredTeamId} />}
                   {key === 'material'  && <MaterialSection slots={slots} onDeleteReservation={deleteReservation} />}
                 </div>
               )}
@@ -455,12 +457,13 @@ export function AdminDetailView({
 
 // ── 고위험/일반 작업 현황 ────────────────────────────────────────
 function WorkItemSection({
-  items, color, onDelete, onEdit,
+  items, color, onDelete, onEdit, onHoverTeam,
 }: {
   items: WorkItem[]
   color: 'red' | 'blue'
   onDelete: (id: string) => Promise<void>
   onEdit: (id: string, updates: { work_name?: string; location?: string; worker_count?: number; description?: string; risk_factors?: string; improvement_measures?: string }) => Promise<void>
+  onHoverTeam?: (teamId: string | null) => void
 }) {
   const [filterTeam,    setFilterTeam]    = useState<string | null>(null)
   const [editItem,      setEditItem]      = useState<WorkItem | null>(null)
@@ -539,7 +542,11 @@ function WorkItemSection({
           </thead>
           <tbody>
             {filtered.map((item) => (
-              <tr key={item.id} className="border-b border-neutral-100/70 transition-colors duration-100 hover:bg-neutral-50/80">
+              <tr key={item.id}
+                className="border-b border-neutral-100/70 transition-colors duration-100 hover:bg-neutral-50/80 cursor-default"
+                onMouseEnter={() => onHoverTeam?.(item.team_id)}
+                onMouseLeave={() => onHoverTeam?.(null)}
+              >
                 <td className="px-5 py-2.5 font-medium text-neutral-800 whitespace-nowrap">
                   <div className="flex items-center gap-2">
                     <span className={['w-1.5 h-1.5 rounded-full shrink-0', color === 'red' ? 'bg-red-400' : 'bg-blue-400'].join(' ')} />

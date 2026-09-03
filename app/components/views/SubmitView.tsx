@@ -81,6 +81,9 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
   const [pendingHighRiskMarker, setPendingHighRiskMarker] = useState<PendingDrop | null>(null)
   const [pendingGeneralMarker,  setPendingGeneralMarker]  = useState<PendingDrop | null>(null)
 
+  // 작업 카드 hover → 마커 강조
+  const [hoveredTeamId, setHoveredTeamId] = useState<string | null>(null)
+
   // ── 자료제출 폼 상태 ─────────────────────────────────────
   const [personnel, setPersonnel] = useState({
     elderly: '', superElderly: '', foreign: '', female: '', diseased: '', total: '',
@@ -512,6 +515,7 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                   onMarkerDrop={handleHighRiskMarkerDrop}
                   onMarkerDelete={handleHighRiskMarkerDelete}
                   workItems={workItems}
+                  hoveredTeamId={hoveredTeamId}
                 />
               </div>
             )}
@@ -568,6 +572,7 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                         onMarkerDrop={handleHighRiskMarkerDrop}
                         onMarkerDelete={handleHighRiskMarkerDelete}
                         workItems={workItems}
+                        hoveredTeamId={hoveredTeamId}
                       />
                     </div>
                   )}
@@ -598,6 +603,7 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                     onDelete={deleteWorkItem}
                     pendingMarkerType={pendingHighRiskMarker?.markerType ?? null}
                     onCancelPendingMarker={() => setPendingHighRiskMarker(null)}
+                    onHoverTeam={setHoveredTeamId}
                   />
                 </div>
 
@@ -942,7 +948,7 @@ function SubmitTab({
 // ── 작업 항목 탭 (고위험 / 일반 공용) ─────────────────────────
 function WorkItemTab({
   workType, label, color, isClosed, items, isLoading, myTeamId, myTeamName, onAdd, onDelete,
-  pendingMarkerType, onCancelPendingMarker,
+  pendingMarkerType, onCancelPendingMarker, onHoverTeam,
 }: {
   workType: 'high_risk' | 'general'; label: string; color: 'red' | 'blue'
   isClosed: boolean; items: WorkItem[]; isLoading: boolean
@@ -951,6 +957,7 @@ function WorkItemTab({
   onDelete: (id: string) => Promise<void>
   pendingMarkerType?: string | null       // 마커 드롭 시 자동으로 폼 열기
   onCancelPendingMarker?: () => void      // 폼 취소 시 pending 해제
+  onHoverTeam?: (teamId: string | null) => void
 }) {
   const [showForm,    setShowForm]    = useState(false)
   const [workName,    setWorkName]    = useState('')
@@ -1085,8 +1092,11 @@ function WorkItemTab({
       ) : (
         <div className="space-y-2">
           {items.map(item => (
-            <div key={item.id} className="rounded-lg bg-white group transition-colors duration-150 hover:bg-neutral-50/60"
-              style={{ border: `1px solid ${colorCls.border}`, padding: '0.75rem 1rem' }}>
+            <div key={item.id} className="rounded-lg bg-white group transition-all duration-150 hover:bg-neutral-50/60 cursor-default"
+              style={{ border: `1px solid ${colorCls.border}`, padding: '0.75rem 1rem' }}
+              onMouseEnter={() => onHoverTeam?.(item.team_id)}
+              onMouseLeave={() => onHoverTeam?.(null)}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1.5 flex-wrap">
