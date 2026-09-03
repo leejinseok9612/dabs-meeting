@@ -1,7 +1,7 @@
 // ============================================================
 // app/api/weather/route.ts
-// 기상청 초단기실황 API 프록시
-// 환경변수 KMA_SERVICE_KEY 미설정 시 mock 데이터 반환
+// 기상청 API허브 초단기실황 프록시 (apihub.kma.go.kr)
+// 환경변수 KMA_API_KEY 미설정 시 mock 데이터 반환
 // ============================================================
 import { NextResponse } from 'next/server'
 
@@ -48,9 +48,9 @@ function ptyLabel(pty: number | null): string {
 }
 
 export async function GET() {
-  const serviceKey = process.env.KMA_SERVICE_KEY
+  const apiKey = process.env.KMA_API_KEY
 
-  if (!serviceKey) {
+  if (!apiKey) {
     // API 키 미설정 → mock 데이터
     return NextResponse.json({
       sky: 1, pty: 0, wsd: 3.5, tmp: 24,
@@ -65,10 +65,11 @@ export async function GET() {
   const baseTime = getBaseTime()
 
   try {
+    // 기상청 API허브 — 초단기실황 (getUltraSrtNcst)
     const url = new URL(
-      'https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst'
+      'https://apihub.kma.go.kr/api/typ02/openApi/VilageFcstInfoService_2.0/getUltraSrtNcst'
     )
-    url.searchParams.set('serviceKey', serviceKey)
+    url.searchParams.set('authKey',    apiKey)
     url.searchParams.set('pageNo',     '1')
     url.searchParams.set('numOfRows',  '10')
     url.searchParams.set('dataType',   'JSON')
