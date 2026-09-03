@@ -706,11 +706,15 @@ function MeetingCard({
           onClick={e => e.stopPropagation()}
         >
           <span className={[
-            'text-xs font-medium px-2.5 py-1 rounded-full',
+            'inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full',
             meeting.status === 'open'
-              ? 'text-emerald-600'
-              : 'text-gray-400',
+              ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/70'
+              : 'bg-neutral-100 text-neutral-500',
           ].join(' ')}>
+            <span className={[
+              'w-1.5 h-1.5 rounded-full',
+              meeting.status === 'open' ? 'bg-emerald-400' : 'bg-neutral-400',
+            ].join(' ')} />
             {meeting.status === 'open' ? '접수중' : '마감'}
           </span>
           <button
@@ -739,10 +743,33 @@ function SectionLabel({ label, badge }: {
 
 function PageLoader() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 border-4 border-gray-900 border-t-transparent rounded-full animate-spin" />
-        <p className="text-gray-400 text-sm">불러오는 중...</p>
+    <div className="min-h-screen bg-gray-50">
+      {/* 헤더 skeleton */}
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="skeleton h-6 w-12 rounded-lg" />
+            <div className="skeleton h-5 w-16" />
+          </div>
+          <div className="skeleton h-8 w-28 rounded-lg" />
+        </div>
+      </div>
+      <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+        {/* 섹션 헤더 */}
+        <div className="skeleton h-4 w-28" />
+        {/* 미팅 카드 skeleton 3개 */}
+        {[0,1,2].map(i => (
+          <div key={i} className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+            <div className="flex items-start justify-between">
+              <div className="space-y-2 flex-1">
+                <div className="skeleton h-4 w-48" />
+                <div className="skeleton h-3 w-32" />
+              </div>
+              <div className="skeleton h-6 w-14 rounded-full" />
+            </div>
+            <div className="skeleton h-1.5 w-full rounded-full" />
+          </div>
+        ))}
       </div>
     </div>
   )

@@ -10,6 +10,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import PinGate            from '@/app/components/PinGate'
 import MapAnnotator       from '@/app/components/MapAnnotator'
 import type { WorkItemInfo } from '@/app/components/MapAnnotator'
+import { toast }          from '@/app/components/Toast'
 
 // ── 고정 업체 순서 ─────────────────────────────────────────────
 const COMPANY_ORDER = ['천호엔지니어링', '참마루건설', '지디건설'] as const
@@ -496,6 +497,7 @@ function WorkItemSection({
     if (!editItem) return
     setSaving(true)
     await onEdit(editItem.id, { work_name: editName, location: editLoc, worker_count: editCount, description: editDesc })
+    toast.success('작업항목이 수정됐습니다.')
     setSaving(false)
     setEditItem(null)
   }
@@ -753,6 +755,7 @@ function SubmissionsSection({ sorted, meeting }: { sorted: SubmissionRow[]; meet
     const a = document.createElement('a'); a.href = url
     a.download = `DABs_제출현황_${meeting?.date ?? new Date().toISOString().split('T')[0]}.csv`
     a.click(); URL.revokeObjectURL(url)
+    toast.success('CSV 파일이 다운로드됩니다.')
   }
 
   return (
@@ -989,13 +992,13 @@ function SubmissionRowItem({ row, index, onReview }: { row: SubmissionRow; index
 // ── 배지 컴포넌트 ────────────────────────────────────────────────
 function StatusBadge({ status }: { status: SubmissionRow['status'] }) {
   const cfg = {
-    submitted: { cls: 'bg-neutral-900 text-white', dot: 'bg-white', label: '제출완료' },
-    pending:   { cls: 'bg-neutral-100 text-neutral-500', dot: 'bg-neutral-400', label: '미제출' },
-    rejected:  { cls: 'bg-red-50 text-red-600 ring-1 ring-red-200/60', dot: 'bg-red-400', label: '반려' },
+    submitted: { cls: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/70', dot: 'bg-emerald-400', label: '제출완료' },
+    pending:   { cls: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200/70',   dot: 'bg-amber-400',   label: '미제출'  },
+    rejected:  { cls: 'bg-red-50 text-red-600 ring-1 ring-red-200/60',         dot: 'bg-red-400',     label: '반려'    },
   }[status]
   return (
     <span className={`badge ${cfg.cls}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
       {cfg.label}
     </span>
   )
@@ -1039,14 +1042,61 @@ function StatCard({ label, value, unit, icon, color, extra }: {
   )
 }
 
-// ── PageLoader ───────────────────────────────────────────────────
+// ── PageLoader (Skeleton UI) ─────────────────────────────────────
 function PageLoader() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-50">
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 border-[2.5px] border-neutral-200 border-t-neutral-700 rounded-full"
-          style={{ animation: 'spin 0.8s linear infinite' }} />
-        <p className="text-xs text-neutral-400">로딩 중…</p>
+    <div className="min-h-screen bg-neutral-50">
+      {/* 헤더 skeleton */}
+      <div className="bg-white/90 backdrop-blur-sm sticky top-0 z-20" style={{ borderBottom: '1px solid rgba(0,0,0,0.07)' }}>
+        <div className="max-w-5xl mx-auto px-5 flex items-center gap-4" style={{ height: '3.25rem' }}>
+          <div className="skeleton h-4 w-20" />
+          <div className="w-px h-4 bg-neutral-100" />
+          <div className="skeleton h-3.5 w-36" />
+        </div>
+      </div>
+      <div className="max-w-5xl mx-auto px-5 py-6 space-y-4">
+        {/* StatCard skeleton */}
+        <div className="grid grid-cols-3 gap-3">
+          {[0,1,2].map(i => (
+            <div key={i} className="surface p-4">
+              <div className="flex items-start justify-between mb-3">
+                <div className="skeleton h-3 w-20" />
+                <div className="skeleton h-7 w-7 rounded-lg" />
+              </div>
+              <div className="skeleton h-7 w-24" />
+            </div>
+          ))}
+        </div>
+        {/* 섹션 카드 skeleton */}
+        {[130, 50, 50, 50].map((h, i) => (
+          <div key={i} className="surface p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="skeleton h-4 w-28" />
+              <div className="skeleton h-7 w-20 rounded-md" />
+            </div>
+            <div className="skeleton rounded-lg" style={{ height: h }} />
+          </div>
+        ))}
+        {/* 테이블 skeleton */}
+        <div className="surface overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-neutral-100 flex items-center justify-between">
+            <div className="skeleton h-4 w-32" />
+            <div className="skeleton h-7 w-24 rounded-md" />
+          </div>
+          <table className="w-full">
+            <tbody>
+              {[0,1,2].map(i => (
+                <tr key={i} className="border-b border-neutral-100/70">
+                  {[40,90,60,80,80,80,70,60,60].map((w, j) => (
+                    <td key={j} className="px-4 py-[11px]">
+                      <div className="skeleton h-3.5 rounded" style={{ width: w }} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )

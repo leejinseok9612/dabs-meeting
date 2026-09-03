@@ -82,11 +82,21 @@ textarea:focus:not(:focus-visible) { outline: none; }
 @keyframes spin-smooth {
   to { transform: rotate(360deg); }
 }
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
 
 .animate-slide-up-fade   { animation: slide-up-fade 200ms cubic-bezier(0.16,1,0.3,1) both; }
 .animate-fade-in          { animation: fade-in 150ms ease-out both; }
 .animate-accordion-down   { animation: accordion-down 180ms cubic-bezier(0.16,1,0.3,1) both; }
 .animate-live-pulse       { animation: live-pulse 2s ease-in-out infinite; }
+.skeleton {
+  background: linear-gradient(90deg, #f4f4f5 25%, #ececed 50%, #f4f4f5 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 0.25rem;
+}
 
 /* ─── Component classes (Tailwind v4 @layer components) ─────── */
 @layer components {
@@ -142,10 +152,12 @@ textarea:focus:not(:focus-visible) { outline: none; }
 
   .btn-secondary { background: white; color: #3f3f46; border-color: rgba(0,0,0,0.12); }
   .btn-secondary:hover:not(:disabled) { background: #f4f4f5; border-color: rgba(0,0,0,0.2); }
+  .btn-secondary:active:not(:disabled) { transform: scale(0.98); }
   .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
 
   .btn-ghost { background: transparent; color: #71717a; }
   .btn-ghost:hover:not(:disabled) { background: #f4f4f5; color: #3f3f46; }
+  .btn-ghost:active:not(:disabled) { transform: scale(0.98); }
 
   /* Badge */
   .badge {
