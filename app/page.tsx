@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 import { SubmitView }      from '@/app/components/views/SubmitView'
 import { AdminListView }   from '@/app/components/views/AdminListView'
 import { AdminDetailView } from '@/app/components/views/AdminDetailView'
+import { MeetingModeView } from '@/app/components/views/MeetingModeView'
 
 // ── 뷰 타입 ─────────────────────────────────────────────────
 type View =
@@ -17,6 +18,7 @@ type View =
   | { name: 'submit'; teamId: string }
   | { name: 'admin-list' }
   | { name: 'admin-detail'; meetingId: string }
+  | { name: 'meeting-mode'; meetingId: string }
 
 type AuthMode = 'login' | 'signup'
 
@@ -26,7 +28,7 @@ const DABS_VIEW_KEY = 'dabs_view'
 function saveView(v: View) {
   try {
     // login / select는 저장 안 함 (인증 후 항상 재확인)
-    if (v.name === 'submit' || v.name === 'admin-list' || v.name === 'admin-detail') {
+    if (v.name === 'submit' || v.name === 'admin-list' || v.name === 'admin-detail' || v.name === 'meeting-mode') {
       localStorage.setItem(DABS_VIEW_KEY, JSON.stringify(v))
     } else {
       localStorage.removeItem(DABS_VIEW_KEY)
@@ -141,6 +143,15 @@ export default function RootPage() {
       <AdminDetailView
         meetingId={view.meetingId}
         onBack={() => navigate({ name: 'admin-list' })}
+        onMeetingMode={(meetingId) => navigate({ name: 'meeting-mode', meetingId })}
+      />
+    )
+
+  if (view.name === 'meeting-mode')
+    return (
+      <MeetingModeView
+        meetingId={view.meetingId}
+        onClose={() => navigate({ name: 'admin-detail', meetingId: view.meetingId })}
       />
     )
 

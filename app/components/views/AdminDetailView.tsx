@@ -59,7 +59,13 @@ interface MaterialSlot {
 const SUB_SELECT = 'id,meeting_id,team_id,status,personnel_count,personnel_detail,equipment,work_process,file_name,submitted_at,admin_notes,reviewed_status,reviewed_at,teams(id,name,department)'
 
 // ── 메인 컴포넌트 ──────────────────────────────────────────────
-export function AdminDetailView({ meetingId, onBack }: { meetingId: string; onBack: () => void }) {
+export function AdminDetailView({
+  meetingId, onBack, onMeetingMode,
+}: {
+  meetingId: string
+  onBack: () => void
+  onMeetingMode?: (meetingId: string) => void
+}) {
   const supabase  = useMemo(() => createClient(), [])
   const channelRef = useRef<RealtimeChannel | null>(null)
 
@@ -280,6 +286,17 @@ export function AdminDetailView({ meetingId, onBack }: { meetingId: string; onBa
               ].join(' ')} />
               {meeting?.status === 'open' ? '접수중' : '마감'}
             </span>
+            {onMeetingMode && (
+              <button
+                onClick={() => onMeetingMode(meetingId)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-neutral-900 text-white hover:bg-neutral-700 active:scale-[0.98] transition-all duration-150"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375 19.5h1.5C5.496 19.5 6 18.996 6 18.375m-3.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-1.5A1.125 1.125 0 0118 18.375M20.625 4.5H3.375m17.25 0c.621 0 1.125.504 1.125 1.125M20.625 4.5h-1.5C18.504 4.5 18 5.004 18 5.625m3.75 0v1.5c0 .621-.504 1.125-1.125 1.125M3.375 4.5c-.621 0-1.125.504-1.125 1.125M3.375 4.5h1.5C5.496 4.5 6 5.004 6 5.625m-3.75 0v1.5c0 .621.504 1.125 1.125 1.125m0 0h1.5m-1.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m1.5-3.75C5.496 8.25 6 8.754 6 9.375v1.5m0-5.25v5.25m0-5.25C6 5.004 6.504 4.5 7.125 4.5h9.75c.621 0 1.125.504 1.125 1.125m1.125 2.625h1.5m-1.5 0A1.125 1.125 0 0118 7.125v-1.5m1.5 2.625c.621 0 1.125.504 1.125 1.125v1.5m-7.5-6h6.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125H7.5a1.125 1.125 0 01-1.125-1.125V7.5c0-.621.504-1.125 1.125-1.125h.75" />
+                </svg>
+                회의 모드
+              </button>
+            )}
           </div>
         </div>
       </header>
