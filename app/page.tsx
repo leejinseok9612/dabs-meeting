@@ -24,6 +24,7 @@ type AuthMode = 'login' | 'signup'
 export default function RootPage() {
   const supabase = useMemo(() => createClient(), [])
   const [view, setView] = useState<View>({ name: 'login' })
+  const [userEmail, setUserEmail] = useState('')
   const [checking, setChecking] = useState(true)
 
   useEffect(() => {
@@ -33,16 +34,28 @@ export default function RootPage() {
     }, 3000)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      async (event, session) => {
         if (!resolved || event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
           resolved = true
           clearTimeout(fallback)
-          setChecking(false)
           if (session) {
-            setView({ name: 'select', email: session.user.email ?? '' })
+            const email = session.user.email ?? ''
+            setUserEmail(email)
+            // 팀 배정 확인 → 있으면 바로 제출 화면으로, 없으면 선택 화면
+            const { data: assigned } = await supabase
+              .from('team_assignments')
+              .select('team_id')
+              .eq('user_id', session.user.id)
+              .maybeSingle()
+            if (assigned?.team_id) {
+              setView({ name: 'submit', teamId: assigned.team_id })
+            } else {
+              setView({ name: 'select', email })
+            }
           } else {
             setView({ name: 'login' })
           }
+          setChecking(false)
         }
       }
     )
@@ -68,7 +81,7 @@ export default function RootPage() {
     return (
       <SubmitView
         teamId={view.teamId}
-        onBack={() => setView({ name: 'login' })}
+        onBack={() => setView({ name: 'select', email: userEmail })}
       />
     )
 
