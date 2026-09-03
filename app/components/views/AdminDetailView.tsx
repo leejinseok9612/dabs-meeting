@@ -70,7 +70,8 @@ export function AdminDetailView({ meetingId, onBack }: { meetingId: string; onBa
   const [mapName,      setMapName]      = useState<string | null>(null)
   const [mapUploading, setMapUploading] = useState(false)
   const [mapError,     setMapError]     = useState<string | null>(null)
-  const [openMapSection, setOpenMapSection] = useState<'high_risk' | 'general' | null>(null)
+  const [openMapSection,  setOpenMapSection]  = useState<'high_risk' | 'general' | null>(null)
+  const [openWorkSection, setOpenWorkSection] = useState<'high_risk' | 'general' | 'material' | null>(null)
   const [allTeams,     setAllTeams]     = useState<{id:string;name:string}[]>([])
   const [workItems,    setWorkItems]    = useState<WorkItem[]>([])
   const [slots,        setSlots]        = useState<MaterialSlot[]>([])
@@ -382,30 +383,49 @@ export function AdminDetailView({ meetingId, onBack }: { meetingId: string; onBa
           </section>
         )}
 
-        {/* ── 작업 현황 / 자재 하역 ────────────────────────── */}
+        {/* ── 작업 현황 / 자재 하역 (아코디언) ─────────────── */}
         {([
-          { key: 'high_risk' as const, label: '고위험 작업 현황',
+          { key: 'high_risk' as const, label: '고위험 작업 현황',  dot: 'bg-red-400',
             count: workItems.filter(w => w.work_type === 'high_risk').length },
-          { key: 'general'   as const, label: '일반 작업 현황',
+          { key: 'general'   as const, label: '일반 작업 현황',    dot: 'bg-blue-400',
             count: workItems.filter(w => w.work_type === 'general').length },
-          { key: 'material'  as const, label: '자재 하역/운반',
+          { key: 'material'  as const, label: '자재 하역/운반',     dot: 'bg-amber-400',
             count: slots.reduce((acc, s) => acc + (s.material_reservations?.length ?? 0), 0) },
-        ]).map(({ key, label, count }) => (
-          <section key={key} className="surface overflow-hidden">
-            <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-neutral-100">
-              <h2 className="text-sm font-semibold text-neutral-900 tracking-tight">{label}</h2>
-              <span className={[
-                'badge text-[10px]',
-                count > 0 ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-500',
-              ].join(' ')}>
-                {count}건
-              </span>
-            </div>
-            {key === 'high_risk' && <WorkItemSection items={workItems.filter(w => w.work_type === 'high_risk')} color="red" onDelete={deleteWorkItem} onEdit={updateWorkItem} />}
-            {key === 'general'   && <WorkItemSection items={workItems.filter(w => w.work_type === 'general')} color="blue" onDelete={deleteWorkItem} onEdit={updateWorkItem} />}
-            {key === 'material'  && <MaterialSection slots={slots} onDeleteReservation={deleteReservation} />}
-          </section>
-        ))}
+        ]).map(({ key, label, dot, count }) => {
+          const open = openWorkSection === key
+          return (
+            <section key={key} className="surface overflow-hidden">
+              <button
+                className="w-full flex items-center justify-between px-5 py-3.5 transition-colors duration-150 hover:bg-neutral-50/80"
+                onClick={() => setOpenWorkSection(prev => prev === key ? null : key)}
+              >
+                <div className="flex items-center gap-3">
+                  <span className={`w-2 h-2 rounded-full ${dot}`} />
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-semibold text-neutral-900 tracking-tight">{label}</h2>
+                    <span className={[
+                      'badge text-[10px]',
+                      count > 0 ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-500',
+                    ].join(' ')}>
+                      {count}건
+                    </span>
+                  </div>
+                </div>
+                <svg className={['w-4 h-4 text-neutral-400 transition-transform duration-150', open ? 'rotate-180' : ''].join(' ')}
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {open && (
+                <div className="border-t border-neutral-100 animate-accordion-down">
+                  {key === 'high_risk' && <WorkItemSection items={workItems.filter(w => w.work_type === 'high_risk')} color="red" onDelete={deleteWorkItem} onEdit={updateWorkItem} />}
+                  {key === 'general'   && <WorkItemSection items={workItems.filter(w => w.work_type === 'general')} color="blue" onDelete={deleteWorkItem} onEdit={updateWorkItem} />}
+                  {key === 'material'  && <MaterialSection slots={slots} onDeleteReservation={deleteReservation} />}
+                </div>
+              )}
+            </section>
+          )
+        })}
 
         {/* ── 제출 현황 테이블 ─────────────────────────────── */}
         <SubmissionsSection sorted={sorted} meeting={meeting} />
