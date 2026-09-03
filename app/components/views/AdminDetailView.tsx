@@ -167,6 +167,26 @@ export function AdminDetailView({ meetingId, onBack }: { meetingId: string; onBa
   }, [meetingId, supabase, loadSlots])
 
   // ── 지적도 업로드 ─────────────────────────────────────────
+  // ── 관리자 작업항목 수정/삭제 ────────────────────────────
+  async function deleteWorkItem(id: string) {
+    await fetch(`/api/work-items?id=${id}`, { method: 'DELETE' })
+    loadWorkItems()
+  }
+
+  async function updateWorkItem(id: string, updates: { work_name?: string; location?: string; worker_count?: number; description?: string }) {
+    await fetch('/api/work-items', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, ...updates }),
+    })
+    loadWorkItems()
+  }
+
+  async function deleteReservation(reservationId: string) {
+    await fetch(`/api/material-slots?reservationId=${reservationId}`, { method: 'DELETE' })
+    loadSlots()
+  }
+
   async function handleMapUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f || !meeting) return
@@ -381,9 +401,9 @@ export function AdminDetailView({ meetingId, onBack }: { meetingId: string; onBa
                 {count}건
               </span>
             </div>
-            {key === 'high_risk' && <WorkItemSection items={workItems.filter(w => w.work_type === 'high_risk')} color="red" />}
-            {key === 'general'   && <WorkItemSection items={workItems.filter(w => w.work_type === 'general')} color="blue" />}
-            {key === 'material'  && <MaterialSection slots={slots} />}
+            {key === 'high_risk' && <WorkItemSection items={workItems.filter(w => w.work_type === 'high_risk')} color="red" onDelete={deleteWorkItem} onEdit={updateWorkItem} />}
+            {key === 'general'   && <WorkItemSection items={workItems.filter(w => w.work_type === 'general')} color="blue" onDelete={deleteWorkItem} onEdit={updateWorkItem} />}
+            {key === 'material'  && <MaterialSection slots={slots} onDeleteReservation={deleteReservation} />}
           </section>
         ))}
 
@@ -398,10 +418,49 @@ export function AdminDetailView({ meetingId, onBack }: { meetingId: string; onBa
 // ── 서브 컴포넌트 ──────────────────────────────────────────────
 
 // ── 고위험/일반 작업 현황 ────────────────────────────────────────
-function WorkItemSection({ items, color }: { items: WorkItem[]; color: 'red' | 'blue' }) {
+function WorkItemSection({
+  items, color, onDelete, onEdit,
+}: {
+  items: WorkItem[]
+  color: 'red' | 'blue'
+  onDelete: (id: string) => Promise<void>
+  onEdit: (id: string, updates: { work_name?: string; location?: string; worker_count?: number; description?: string }) => Promise<void>
+}) {
   const [filterTeam, setFilterTeam] = useState<string | null>(null)
-  const teams = [...new Map(items.filter(i => i.teams?.name).map(i => [i.teams!.name, i.teams!])).values()]
+  const [editItem,   setEditItem]   = useState<WorkItem | null>(null)
+  const [deleting,   setDeleting]   = useState<string | null>(null)
+  const [saving,     setSaving]     = useState(false)
+  // 편집 폼 상태
+  const [editName,   setEditName]   = useState('')
+  const [editLoc,    setEditLoc]    = useState('')
+  const [editCount,  setEditCount]  = useState(0)
+  const [editDesc,   setEditDesc]   = useState('')
+
+  const teams   = [...new Map(items.filter(i => i.teams?.name).map(i => [i.teams!.name, i.teams!])).values()]
   const filtered = filterTeam ? items.filter(i => i.teams?.name === filterTeam) : items
+
+  function openEdit(item: WorkItem) {
+    setEditItem(item)
+    setEditName(item.work_name)
+    setEditLoc(item.location ?? '')
+    setEditCount(item.worker_count)
+    setEditDesc(item.description ?? '')
+  }
+
+  async function handleSave() {
+    if (!editItem) return
+    setSaving(true)
+    await onEdit(editItem.id, { work_name: editName, location: editLoc, worker_count: editCount, description: editDesc })
+    setSaving(false)
+    setEditItem(null)
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('이 작업항목을 삭제하시겠습니까?')) return
+    setDeleting(id)
+    await onDelete(id)
+    setDeleting(null)
+  }
 
   if (items.length === 0) {
     return <div className="px-5 py-8 text-center text-xs text-neutral-400">등록된 작업이 없습니다.</div>
@@ -431,10 +490,11 @@ function WorkItemSection({ items, color }: { items: WorkItem[]; color: 'red' | '
               <th className="text-left px-4 py-2.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider">위치</th>
               <th className="text-left px-4 py-2.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider">인원</th>
               <th className="text-left px-4 py-2.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider">내용</th>
+              <th className="px-3 py-2.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider">관리</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((item, i) => (
+            {filtered.map((item) => (
               <tr key={item.id} className="border-b border-neutral-100/70 transition-colors duration-100 hover:bg-neutral-50/80">
                 <td className="px-5 py-2.5 font-medium text-neutral-800 whitespace-nowrap">
                   <div className="flex items-center gap-2">
@@ -446,24 +506,106 @@ function WorkItemSection({ items, color }: { items: WorkItem[]; color: 'red' | '
                 <td className="px-4 py-2.5 text-neutral-500">{item.location || '—'}</td>
                 <td className="px-4 py-2.5 text-neutral-500 whitespace-nowrap">{item.worker_count > 0 ? `${item.worker_count}명` : '—'}</td>
                 <td className="px-4 py-2.5 text-neutral-400 max-w-[200px] truncate">{item.description || '—'}</td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  <div className="flex items-center gap-1 justify-center">
+                    <button onClick={() => openEdit(item)}
+                      title="수정"
+                      className="p-1.5 rounded hover:bg-blue-50 text-neutral-400 hover:text-blue-600 transition-colors">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+                      </svg>
+                    </button>
+                    <button onClick={() => handleDelete(item.id)} disabled={deleting === item.id}
+                      title="삭제"
+                      className="p-1.5 rounded hover:bg-red-50 text-neutral-400 hover:text-red-500 transition-colors disabled:opacity-40">
+                      {deleting === item.id
+                        ? <span className="w-3.5 h-3.5 block border-2 border-neutral-300 border-t-red-400 rounded-full animate-spin" />
+                        : <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                          </svg>
+                      }
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={5} className="px-5 py-6 text-center text-neutral-400">해당 업체의 작업이 없습니다.</td></tr>
+              <tr><td colSpan={6} className="px-5 py-6 text-center text-neutral-400">해당 업체의 작업이 없습니다.</td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {/* ── 작업항목 편집 모달 ── */}
+      {editItem && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center px-4"
+          onClick={e => { if (e.target === e.currentTarget) setEditItem(null) }}>
+          <div className="bg-white rounded-xl border border-neutral-200 shadow-xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-neutral-900">작업항목 수정</h3>
+              <button onClick={() => setEditItem(null)} className="text-neutral-400 hover:text-neutral-700 p-1">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <p className="text-xs text-neutral-500">업체: <span className="font-medium text-neutral-700">{editItem.teams?.name}</span></p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-neutral-600 mb-1">작업명 *</label>
+                <input value={editName} onChange={e => setEditName(e.target.value)}
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-neutral-600 mb-1">위치</label>
+                <input value={editLoc} onChange={e => setEditLoc(e.target.value)}
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-neutral-600 mb-1">투입 인원 (명)</label>
+                <input type="number" min={0} value={editCount} onChange={e => setEditCount(Number(e.target.value))}
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-neutral-600 mb-1">내용/비고</label>
+                <textarea rows={3} value={editDesc} onChange={e => setEditDesc(e.target.value)}
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 resize-none" />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setEditItem(null)}
+                className="flex-1 py-2.5 rounded-lg border border-neutral-200 text-neutral-600 text-sm font-medium hover:bg-neutral-50 transition-colors">
+                취소
+              </button>
+              <button onClick={handleSave} disabled={saving || !editName.trim()}
+                className="flex-1 py-2.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-white text-sm font-medium transition-colors disabled:opacity-50">
+                {saving ? '저장 중...' : '저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 // ── 자재 하역/운반 현황 ─────────────────────────────────────────
-function MaterialSection({ slots }: { slots: MaterialSlot[] }) {
+function MaterialSection({ slots, onDeleteReservation }: {
+  slots: MaterialSlot[]
+  onDeleteReservation: (id: string) => Promise<void>
+}) {
   const gates = [...new Set(slots.map(s => s.gate))].sort()
   const [activeGate, setActiveGate] = useState<string>(gates[0] ?? 'GATE A')
+  const [deleting,   setDeleting]   = useState<string | null>(null)
   const gateSlots = slots.filter(s => s.gate === activeGate)
   const hasAny    = gateSlots.some(s => (s.material_reservations?.length ?? 0) > 0)
+
+  async function handleDelete(id: string) {
+    if (!confirm('이 예약을 삭제하시겠습니까?')) return
+    setDeleting(id)
+    await onDeleteReservation(id)
+    setDeleting(null)
+  }
 
   if (slots.length === 0) {
     return <div className="px-5 py-8 text-center text-xs text-neutral-400">예약된 자재 하역이 없습니다.</div>
@@ -492,7 +634,7 @@ function MaterialSection({ slots }: { slots: MaterialSlot[] }) {
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-neutral-50/80 border-b border-neutral-100">
-                {['시간대','업체명','자재 내용','수량/규격','차량 종류'].map(h => (
+                {['시간대','업체명','자재 내용','수량/규격','차량 종류','관리'].map(h => (
                   <th key={h} className="text-left px-4 py-2.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
@@ -509,6 +651,18 @@ function MaterialSection({ slots }: { slots: MaterialSlot[] }) {
                       {r.vehicle_type
                         ? <span className="badge bg-neutral-100 text-neutral-600">{r.vehicle_type}</span>
                         : <span className="text-neutral-300">—</span>}
+                    </td>
+                    <td className="px-3 py-2">
+                      <button onClick={() => handleDelete(r.id)} disabled={deleting === r.id}
+                        title="예약 삭제"
+                        className="p-1.5 rounded hover:bg-red-50 text-neutral-400 hover:text-red-500 transition-colors disabled:opacity-40">
+                        {deleting === r.id
+                          ? <span className="w-3.5 h-3.5 block border-2 border-neutral-300 border-t-red-400 rounded-full animate-spin" />
+                          : <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                            </svg>
+                        }
+                      </button>
                     </td>
                   </tr>
                 ))
