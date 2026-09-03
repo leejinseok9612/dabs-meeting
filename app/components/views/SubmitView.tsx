@@ -17,6 +17,7 @@ interface Announcement { id: string; title: string; content: string }
 interface WorkItem {
   id: string; work_type: 'high_risk' | 'general'; team_id: string
   work_name: string; location?: string; worker_count: number; description?: string
+  risk_factors?: string; improvement_measures?: string
   teams?: { id: string; name: string }
 }
 interface MaterialReservation {
@@ -1026,16 +1027,16 @@ function WorkItemTab({
   const [location,    setLocation]    = useState('')
   const [workerCount, setWorkerCount] = useState('')
   const [description, setDescription] = useState('')
+  const [riskFactors,       setRiskFactors]       = useState('')
+  const [improveMeasures,   setImproveMeasures]   = useState('')
   const [saving,      setSaving]      = useState(false)
   const composingRef = useRef(false)
 
   // 마커가 드롭되면 자동으로 폼 열기
   useEffect(() => {
     if (pendingMarkerType) {
-      setWorkName('')
-      setLocation('')
-      setWorkerCount('')
-      setDescription('')
+      setWorkName(''); setLocation(''); setWorkerCount('')
+      setDescription(''); setRiskFactors(''); setImproveMeasures('')
       setShowForm(true)
     }
   }, [pendingMarkerType])
@@ -1048,8 +1049,12 @@ function WorkItemTab({
     e.preventDefault()
     if (!workName.trim()) return
     setSaving(true)
-    await onAdd({ work_name: workName, location, worker_count: Number(workerCount) || 0, description })
-    setWorkName(''); setLocation(''); setWorkerCount(''); setDescription('')
+    await onAdd({
+      work_name: workName, location, worker_count: Number(workerCount) || 0,
+      description, risk_factors: riskFactors, improvement_measures: improveMeasures,
+    })
+    setWorkName(''); setLocation(''); setWorkerCount('')
+    setDescription(''); setRiskFactors(''); setImproveMeasures('')
     setShowForm(false); setSaving(false)
   }
 
@@ -1124,6 +1129,25 @@ function WorkItemTab({
                 className={`${inputCls} resize-none w-full`}
                 style={{ height: 'auto', padding: '0.4rem 0.625rem' }} />
             </div>
+            {/* ── 위험요인 & 개선대책 ── */}
+            <div className="space-y-1">
+              <label className="block text-[10px] font-medium text-amber-600 uppercase tracking-wider">⚠ 위험요인</label>
+              <textarea rows={2} placeholder="예) 굴착 작업 중 지반 붕괴 위험" value={riskFactors}
+                onCompositionStart={() => { composingRef.current = true }}
+                onCompositionEnd={e => { composingRef.current = false; setRiskFactors((e.target as HTMLTextAreaElement).value) }}
+                onChange={e => { if (!composingRef.current) setRiskFactors(e.target.value) }}
+                className="w-full border border-amber-200 rounded-md px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-amber-300 resize-none bg-amber-50/40"
+                style={{ height: 'auto' }} />
+            </div>
+            <div className="space-y-1">
+              <label className="block text-[10px] font-medium text-emerald-600 uppercase tracking-wider">✅ 개선대책</label>
+              <textarea rows={2} placeholder="예) 흙막이 설치 및 안전망 설치 확인" value={improveMeasures}
+                onCompositionStart={() => { composingRef.current = true }}
+                onCompositionEnd={e => { composingRef.current = false; setImproveMeasures((e.target as HTMLTextAreaElement).value) }}
+                onChange={e => { if (!composingRef.current) setImproveMeasures(e.target.value) }}
+                className="w-full border border-emerald-200 rounded-md px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-emerald-300 resize-none bg-emerald-50/40"
+                style={{ height: 'auto' }} />
+            </div>
             <div className="flex gap-2 pt-1">
               <button type="button" onClick={handleCancel} className="btn btn-secondary flex-1">취소</button>
               <button type="submit" disabled={saving} className={`btn ${colorCls.btn} flex-1`}>
@@ -1156,6 +1180,18 @@ function WorkItemTab({
                     {item.worker_count > 0 && <span>{item.worker_count}명</span>}
                   </div>
                   {item.description && <p className="text-[11px] text-neutral-400 mt-1">{item.description}</p>}
+                  {item.risk_factors && (
+                    <div className="mt-1.5 flex gap-1.5">
+                      <span className="text-[10px] font-medium text-amber-600 shrink-0 mt-0.5">⚠</span>
+                      <p className="text-[11px] text-amber-700/80">{item.risk_factors}</p>
+                    </div>
+                  )}
+                  {item.improvement_measures && (
+                    <div className="mt-1 flex gap-1.5">
+                      <span className="text-[10px] font-medium text-emerald-600 shrink-0 mt-0.5">✅</span>
+                      <p className="text-[11px] text-emerald-700/80">{item.improvement_measures}</p>
+                    </div>
+                  )}
                 </div>
                 {item.team_id === myTeamId && !isClosed && (
                   <button onClick={() => onDelete(item.id)}

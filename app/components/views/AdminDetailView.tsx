@@ -43,6 +43,7 @@ interface Meeting { id: string; title: string; date: string; status: 'open' | 'c
 interface WorkItem {
   id: string; work_type: 'high_risk' | 'general'; team_id: string
   work_name: string; location?: string; worker_count: number; description?: string
+  risk_factors?: string; improvement_measures?: string
   teams?: { id: string; name: string }
 }
 interface MaterialReservation {
@@ -184,7 +185,7 @@ export function AdminDetailView({ meetingId, onBack }: { meetingId: string; onBa
     loadWorkItems()
   }
 
-  async function updateWorkItem(id: string, updates: { work_name?: string; location?: string; worker_count?: number; description?: string }) {
+  async function updateWorkItem(id: string, updates: { work_name?: string; location?: string; worker_count?: number; description?: string; risk_factors?: string; improvement_measures?: string }) {
     const item = workItems.find(w => w.id === id)
     // 작업항목 수정
     await fetch('/api/work-items', {
@@ -470,17 +471,19 @@ function WorkItemSection({
   items: WorkItem[]
   color: 'red' | 'blue'
   onDelete: (id: string) => Promise<void>
-  onEdit: (id: string, updates: { work_name?: string; location?: string; worker_count?: number; description?: string }) => Promise<void>
+  onEdit: (id: string, updates: { work_name?: string; location?: string; worker_count?: number; description?: string; risk_factors?: string; improvement_measures?: string }) => Promise<void>
 }) {
-  const [filterTeam, setFilterTeam] = useState<string | null>(null)
-  const [editItem,   setEditItem]   = useState<WorkItem | null>(null)
-  const [deleting,   setDeleting]   = useState<string | null>(null)
-  const [saving,     setSaving]     = useState(false)
+  const [filterTeam,    setFilterTeam]    = useState<string | null>(null)
+  const [editItem,      setEditItem]      = useState<WorkItem | null>(null)
+  const [deleting,      setDeleting]      = useState<string | null>(null)
+  const [saving,        setSaving]        = useState(false)
   // 편집 폼 상태
-  const [editName,   setEditName]   = useState('')
-  const [editLoc,    setEditLoc]    = useState('')
-  const [editCount,  setEditCount]  = useState(0)
-  const [editDesc,   setEditDesc]   = useState('')
+  const [editName,      setEditName]      = useState('')
+  const [editLoc,       setEditLoc]       = useState('')
+  const [editCount,     setEditCount]     = useState(0)
+  const [editDesc,      setEditDesc]      = useState('')
+  const [editRisk,      setEditRisk]      = useState('')
+  const [editImprove,   setEditImprove]   = useState('')
 
   const teams   = [...new Map(items.filter(i => i.teams?.name).map(i => [i.teams!.name, i.teams!])).values()]
   const filtered = filterTeam ? items.filter(i => i.teams?.name === filterTeam) : items
@@ -491,12 +494,17 @@ function WorkItemSection({
     setEditLoc(item.location ?? '')
     setEditCount(item.worker_count)
     setEditDesc(item.description ?? '')
+    setEditRisk(item.risk_factors ?? '')
+    setEditImprove(item.improvement_measures ?? '')
   }
 
   async function handleSave() {
     if (!editItem) return
     setSaving(true)
-    await onEdit(editItem.id, { work_name: editName, location: editLoc, worker_count: editCount, description: editDesc })
+    await onEdit(editItem.id, {
+      work_name: editName, location: editLoc, worker_count: editCount,
+      description: editDesc, risk_factors: editRisk, improvement_measures: editImprove,
+    })
     toast.success('작업항목이 수정됐습니다.')
     setSaving(false)
     setEditItem(null)
@@ -615,8 +623,24 @@ function WorkItemSection({
               </div>
               <div>
                 <label className="block text-xs font-medium text-neutral-600 mb-1">내용/비고</label>
-                <textarea rows={3} value={editDesc} onChange={e => setEditDesc(e.target.value)}
+                <textarea rows={2} value={editDesc} onChange={e => setEditDesc(e.target.value)}
                   className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 resize-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-neutral-600 mb-1">
+                  ⚠ 위험요인
+                </label>
+                <textarea rows={2} value={editRisk} onChange={e => setEditRisk(e.target.value)}
+                  placeholder="예) 굴착 작업 중 지반 붕괴 위험"
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400 resize-none bg-amber-50/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-neutral-600 mb-1">
+                  ✅ 개선대책
+                </label>
+                <textarea rows={2} value={editImprove} onChange={e => setEditImprove(e.target.value)}
+                  placeholder="예) 흙막이 설치 및 안전망 설치 확인"
+                  className="w-full border border-emerald-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 resize-none bg-emerald-50/30" />
               </div>
             </div>
             <div className="flex gap-2 pt-1">
@@ -636,16 +660,26 @@ function WorkItemSection({
   )
 }
 
-// ── 자재 하역/운반 현황 ─────────────────────────────────────────
+// ── 자재 하역/운반 현황 (ALL + GATE 탭 필터) ───────────────────
 function MaterialSection({ slots, onDeleteReservation }: {
   slots: MaterialSlot[]
   onDeleteReservation: (id: string) => Promise<void>
 }) {
-  const gates = [...new Set(slots.map(s => s.gate))].sort()
-  const [activeGate, setActiveGate] = useState<string>(gates[0] ?? 'GATE A')
+  const gates   = [...new Set(slots.map(s => s.gate))].sort()
+  const ALL_KEY = '__ALL__'
+  const [activeGate, setActiveGate] = useState<string>(ALL_KEY)
   const [deleting,   setDeleting]   = useState<string | null>(null)
-  const gateSlots = slots.filter(s => s.gate === activeGate)
-  const hasAny    = gateSlots.some(s => (s.material_reservations?.length ?? 0) > 0)
+
+  // ALL이면 전체, 아니면 해당 GATE만
+  const visibleSlots = activeGate === ALL_KEY
+    ? slots
+    : slots.filter(s => s.gate === activeGate)
+
+  const rows = visibleSlots.flatMap(slot =>
+    (slot.material_reservations ?? []).map(r => ({ slot, r }))
+  )
+
+  const totalCount = slots.reduce((a, s) => a + (s.material_reservations?.length ?? 0), 0)
 
   async function handleDelete(id: string) {
     if (!confirm('이 예약을 삭제하시겠습니까?')) return
@@ -657,63 +691,95 @@ function MaterialSection({ slots, onDeleteReservation }: {
   if (slots.length === 0) {
     return <div className="px-5 py-8 text-center text-xs text-neutral-400">예약된 자재 하역이 없습니다.</div>
   }
+
   return (
     <div>
-      <div className="flex border-b border-neutral-100">
+      {/* ── GATE 탭 — ALL 기본 ─────────────────────────── */}
+      <div className="flex border-b border-neutral-100 overflow-x-auto">
+        {/* ALL 탭 */}
+        <button
+          onClick={() => setActiveGate(ALL_KEY)}
+          className={[
+            'flex items-center gap-1.5 px-5 py-2.5 text-xs font-medium border-b-2 -mb-px transition-all duration-150 whitespace-nowrap',
+            activeGate === ALL_KEY
+              ? 'border-neutral-900 text-neutral-900'
+              : 'border-transparent text-neutral-400 hover:text-neutral-600',
+          ].join(' ')}>
+          전체
+          <span className={['badge text-[9px] px-1.5', activeGate === ALL_KEY ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-500'].join(' ')}>
+            {totalCount}
+          </span>
+        </button>
+        {/* 개별 GATE 탭 */}
         {gates.map(gate => {
           const cnt = slots.filter(s => s.gate === gate).reduce((a, s) => a + (s.material_reservations?.length ?? 0), 0)
           return (
             <button key={gate} onClick={() => setActiveGate(gate)}
               className={[
-                'flex items-center gap-1.5 px-5 py-2.5 text-xs font-medium border-b-2 -mb-px transition-all duration-150',
-                activeGate === gate ? 'border-neutral-900 text-neutral-900' : 'border-transparent text-neutral-400 hover:text-neutral-600',
+                'flex items-center gap-1.5 px-5 py-2.5 text-xs font-medium border-b-2 -mb-px transition-all duration-150 whitespace-nowrap',
+                activeGate === gate
+                  ? 'border-neutral-900 text-neutral-900'
+                  : 'border-transparent text-neutral-400 hover:text-neutral-600',
               ].join(' ')}>
               {gate}
-              {cnt > 0 && <span className="badge bg-neutral-900 text-white text-[9px] px-1.5">{cnt}</span>}
+              {cnt > 0 && (
+                <span className={['badge text-[9px] px-1.5', activeGate === gate ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-500'].join(' ')}>
+                  {cnt}
+                </span>
+              )}
             </button>
           )
         })}
       </div>
-      {!hasAny ? (
-        <div className="px-5 py-8 text-center text-xs text-neutral-400">{activeGate}에 예약된 자재 하역이 없습니다.</div>
+
+      {/* ── 테이블 ─────────────────────────────────────── */}
+      {rows.length === 0 ? (
+        <div className="px-5 py-8 text-center text-xs text-neutral-400">
+          {activeGate === ALL_KEY ? '예약된 자재 하역이 없습니다.' : `${activeGate}에 예약된 자재 하역이 없습니다.`}
+        </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-neutral-50/80 border-b border-neutral-100">
-                {['시간대','업체명','자재 내용','수량/규격','차량 종류','관리'].map(h => (
+                {(activeGate === ALL_KEY ? ['GATE','시간대','업체명','자재 내용','수량/규격','차량 종류','관리']
+                                         : ['시간대','업체명','자재 내용','수량/규격','차량 종류','관리']
+                ).map(h => (
                   <th key={h} className="text-left px-4 py-2.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {gateSlots.flatMap(slot =>
-                (slot.material_reservations ?? []).map(r => (
-                  <tr key={r.id} className="border-b border-neutral-100/70 transition-colors duration-100 hover:bg-neutral-50/80">
-                    <td className="px-4 py-2.5 font-medium text-neutral-700 whitespace-nowrap">{slot.slot_time}</td>
-                    <td className="px-4 py-2.5 font-medium text-neutral-700 whitespace-nowrap">{r.teams?.name ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-neutral-600">{r.material_description || '—'}</td>
-                    <td className="px-4 py-2.5 text-neutral-500 whitespace-nowrap">{r.quantity || '—'}</td>
-                    <td className="px-4 py-2.5">
-                      {r.vehicle_type
-                        ? <span className="badge bg-neutral-100 text-neutral-600">{r.vehicle_type}</span>
-                        : <span className="text-neutral-300">—</span>}
+              {rows.map(({ slot, r }) => (
+                <tr key={r.id} className="border-b border-neutral-100/70 transition-colors duration-100 hover:bg-neutral-50/80">
+                  {activeGate === ALL_KEY && (
+                    <td className="px-4 py-2.5 whitespace-nowrap">
+                      <span className="badge bg-neutral-100 text-neutral-600 text-[10px]">{slot.gate}</span>
                     </td>
-                    <td className="px-3 py-2">
-                      <button onClick={() => handleDelete(r.id)} disabled={deleting === r.id}
-                        title="예약 삭제"
-                        className="p-1.5 rounded hover:bg-red-50 text-neutral-400 hover:text-red-500 transition-colors disabled:opacity-40">
-                        {deleting === r.id
-                          ? <span className="w-3.5 h-3.5 block border-2 border-neutral-300 border-t-red-400 rounded-full animate-spin" />
-                          : <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                            </svg>
-                        }
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
+                  )}
+                  <td className="px-4 py-2.5 font-medium text-neutral-700 whitespace-nowrap">{slot.slot_time}</td>
+                  <td className="px-4 py-2.5 font-medium text-neutral-700 whitespace-nowrap">{r.teams?.name ?? '—'}</td>
+                  <td className="px-4 py-2.5 text-neutral-600">{r.material_description || '—'}</td>
+                  <td className="px-4 py-2.5 text-neutral-500 whitespace-nowrap">{r.quantity || '—'}</td>
+                  <td className="px-4 py-2.5">
+                    {r.vehicle_type
+                      ? <span className="badge bg-neutral-100 text-neutral-600">{r.vehicle_type}</span>
+                      : <span className="text-neutral-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2">
+                    <button onClick={() => handleDelete(r.id)} disabled={deleting === r.id}
+                      title="예약 삭제"
+                      className="p-1.5 rounded hover:bg-red-50 text-neutral-400 hover:text-red-500 transition-colors disabled:opacity-40">
+                      {deleting === r.id
+                        ? <span className="w-3.5 h-3.5 block border-2 border-neutral-300 border-t-red-400 rounded-full animate-spin" />
+                        : <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                          </svg>
+                      }
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
