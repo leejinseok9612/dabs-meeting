@@ -62,39 +62,43 @@ export default function RootPage() {
     }, 3000)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (!resolved || event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
           resolved = true
           clearTimeout(fallback)
           if (session) {
             const email = session.user.email ?? ''
             setUserEmail(email)
-            // 1순위: localStorage에 저장된 뷰 복원
+
+            // 1순위: localStorage 복원 → 즉시 표시
             const saved = loadSavedView()
             if (saved) {
               setView(saved)
               setChecking(false)
               return
             }
-            // 2순위: 팀 배정 조회 → 있으면 바로 제출 화면
-            const { data: assigned } = await supabase
+
+            // 2순위: 팀 배정 조회 (백그라운드) — UI는 select 화면으로 즉시 노출
+            setView({ name: 'select', email })
+            setChecking(false)
+            supabase
               .from('team_assignments')
               .select('team_id')
               .eq('user_id', session.user.id)
               .maybeSingle()
-            if (assigned?.team_id) {
-              const v: View = { name: 'submit', teamId: assigned.team_id }
-              setView(v)
-              saveView(v)
-            } else {
-              setView({ name: 'select', email })
-            }
+              .then(({ data: assigned }) => {
+                if (assigned?.team_id) {
+                  const v: View = { name: 'submit', teamId: assigned.team_id }
+                  setView(v)
+                  saveView(v)
+                }
+              })
           } else {
             // 로그아웃 → 저장된 뷰 삭제
             localStorage.removeItem(DABS_VIEW_KEY)
             setView({ name: 'login' })
+            setChecking(false)
           }
-          setChecking(false)
         }
       }
     )
