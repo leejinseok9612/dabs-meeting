@@ -13,23 +13,27 @@ const DEFAULT_NY = 127
 export const WIND_WARNING_MS  = 10 // 적색 경고
 export const WIND_CAUTION_MS  = 7  // 황색 주의
 
-function getBaseTime(): string {
-  const now = new Date()
-  const hours   = now.getHours()
-  const minutes = now.getMinutes()
-  // 매 시 40분 이후에 해당 시간 데이터가 갱신됨 → 그 전엔 전시간 참조
-  const baseHour = minutes < 40 ? Math.max(0, hours - 1) : hours
-  return String(baseHour).padStart(2, '0') + '00'
-}
+/**
+ * KST(UTC+9) 기준으로 base_date / base_time 을 계산합니다.
+ * Vercel 서버는 UTC 환경이므로 반드시 +9h 보정이 필요합니다.
+ */
+function getKSTBaseDateTime(): { baseDate: string; baseTime: string } {
+  // UTC → KST : +9시간
+  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000)
 
-function getBaseDate(offsetDays = 0): string {
-  const now = new Date()
-  now.setDate(now.getDate() + offsetDays)
-  return (
-    `${now.getFullYear()}` +
-    `${String(now.getMonth() + 1).padStart(2, '0')}` +
-    `${String(now.getDate()).padStart(2, '0')}`
-  )
+  const year    = kst.getUTCFullYear()
+  const month   = String(kst.getUTCMonth() + 1).padStart(2, '0')
+  const day     = String(kst.getUTCDate()).padStart(2, '0')
+  const hours   = kst.getUTCHours()
+  const minutes = kst.getUTCMinutes()
+
+  // 매 시 40분 이후에 해당 시간 데이터가 갱신됨 → 그 전엔 전 시간 참조
+  const baseHour = minutes < 40 ? Math.max(0, hours - 1) : hours
+
+  return {
+    baseDate: `${year}${month}${day}`,
+    baseTime: String(baseHour).padStart(2, '0') + '00',
+  }
 }
 
 function skyLabel(sky: number | null): string {
@@ -59,10 +63,9 @@ export async function GET() {
     })
   }
 
-  const nx       = DEFAULT_NX
-  const ny       = DEFAULT_NY
-  const baseDate = getBaseDate()
-  const baseTime = getBaseTime()
+  const nx = DEFAULT_NX
+  const ny = DEFAULT_NY
+  const { baseDate, baseTime } = getKSTBaseDateTime()
 
   try {
     // 기상청 API허브 — 초단기실황 (getUltraSrtNcst)
@@ -79,10 +82,29 @@ export async function GET() {
     url.searchParams.set('ny',         String(ny))
 
     const res  = await fetch(url.toString(), { next: { revalidate: 300 } })
-    const data = await res.json()
+    const text = await res.text()
+
+    let data: Record<string, unknown>
+    try {
+      data = JSON.parse(text)
+    } catch {
+      console.error('[weather] JSON 파싱 실패:', text.slice(0, 200))
+      throw new Error('JSON parse error')
+    }
+
+    // API 오류 코드 확인
+    const resultCode: string = (data as { response?: { header?: { resultCode?: string; resultMsg?: string } } })
+      ?.response?.header?.resultCode ?? ''
+    if (resultCode && resultCode !== '00') {
+      const resultMsg = (data as { response?: { header?: { resultMsg?: string } } })
+        ?.response?.header?.resultMsg ?? ''
+      console.error(`[weather] KMA API 오류 ${resultCode}: ${resultMsg}, baseDate=${baseDate}, baseTime=${baseTime}`)
+      throw new Error(`KMA error ${resultCode}`)
+    }
 
     const items: { category: string; obsrValue: string }[] =
-      data?.response?.body?.items?.item ?? []
+      (data as { response?: { body?: { items?: { item?: unknown[] } } } })
+      ?.response?.body?.items?.item as { category: string; obsrValue: string }[] ?? []
 
     const getValue = (cat: string) => {
       const item = items.find(i => i.category === cat)
@@ -94,6 +116,8 @@ export async function GET() {
     const wsd = getValue('WSD')
     const tmp = getValue('T1H')
 
+    console.log(`[weather] OK baseDate=${baseDate} baseTime=${baseTime} tmp=${tmp} wsd=${wsd} pty=${pty}`)
+
     return NextResponse.json({
       sky, pty, wsd, tmp,
       skyLabel: skyLabel(sky),
@@ -102,11 +126,12 @@ export async function GET() {
       windCaution: wsd !== null && wsd >= WIND_CAUTION_MS && wsd < WIND_WARNING_MS,
       isMock: false,
     })
-  } catch {
+  } catch (err) {
+    console.error('[weather] 오류:', err)
     return NextResponse.json({
       sky: null, pty: null, wsd: null, tmp: null,
       skyLabel: '', ptyLabel: '', windWarning: false, windCaution: false,
-      isMock: true, error: 'API 연결 실패',
+      isMock: true, error: String(err),
     })
   }
 }
