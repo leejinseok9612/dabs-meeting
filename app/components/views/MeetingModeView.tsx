@@ -35,27 +35,22 @@ interface WeatherData {
 }
 
 // ── 슬라이드 정의 ─────────────────────────────────────────────
-type SlideType = 'map_high_risk' | 'work_high_risk' | 'work_general'
+type SlideType = 'high_risk' | 'work_general' | 'material'
 const SLIDES: { type: SlideType; label: string; icon: string }[] = [
-  { type: 'map_high_risk',  label: '고위험 지적도',   icon: '🗺' },
-  { type: 'work_high_risk', label: '고위험작업 내용', icon: '⚠️' },
-  { type: 'work_general',   label: '일반작업 내용',   icon: '📋' },
+  { type: 'high_risk',    label: '고위험 현황',     icon: '⚠️' },
+  { type: 'work_general', label: '일반작업 내용',   icon: '📋' },
+  { type: 'material',     label: '자재 하역/운반',  icon: '🚛' },
 ]
 
 // ── 메모 로컬스토리지 키 ─────────────────────────────────────
 const noteKey = (meetingId: string, slideIdx: number) =>
   `dabs_note_${meetingId}_${slideIdx}`
 
-// ── 날씨 아이콘 ──────────────────────────────────────────────
-function skyIcon(sky: number | null, pty: number | null): string {
-  if (pty && pty > 0) {
-    if (pty === 3) return '❄️'
-    return '🌧'
-  }
-  if (sky === 1) return '☀️'
-  if (sky === 3) return '⛅'
-  if (sky === 4) return '☁️'
-  return '🌤'
+// ── 날씨 아이콘 (PTY 기반 — 초단기실황엔 SKY 없음) ───────────
+function weatherIcon(pty: number | null): string {
+  if (!pty || pty === 0) return '🌤'
+  if (pty === 3) return '❄️'
+  return '🌧'
 }
 
 // ────────────────────────────────────────────────────────────
@@ -74,39 +69,34 @@ function WeatherWidget() {
   if (!weather) {
     return (
       <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10">
-        <div className="w-16 h-3 skeleton opacity-50" />
+        <div className="w-16 h-3 rounded animate-pulse bg-white/20" />
       </div>
     )
   }
 
   const windLevel = weather.windWarning ? 'red' : weather.windCaution ? 'amber' : 'normal'
+  const label = weather.ptyLabel || (weather.tmp !== null ? '' : '날씨')
 
   return (
     <div className="flex items-center gap-2.5">
-      {/* 날씨 */}
+      {/* 날씨 + 기온 */}
       <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 backdrop-blur-sm">
-        <span className="text-base leading-none">{skyIcon(weather.sky, weather.pty)}</span>
-        <div className="flex flex-col">
-          <span className="text-[11px] font-medium text-white/90 leading-tight">
-            {weather.ptyLabel || weather.skyLabel}
-          </span>
+        <span className="text-base leading-none">{weatherIcon(weather.pty)}</span>
+        <div className="flex items-baseline gap-1">
+          {label && <span className="text-[11px] font-medium text-white/80">{label}</span>}
           {weather.tmp !== null && (
-            <span className="text-[10px] text-white/60 leading-tight">
-              {weather.tmp.toFixed(1)}°C
-            </span>
+            <span className="text-sm font-semibold text-white">{weather.tmp.toFixed(1)}°C</span>
           )}
         </div>
-        {weather.isMock && (
-          <span className="text-[9px] text-white/30 ml-0.5">mock</span>
-        )}
+        {weather.isMock && <span className="text-[9px] text-white/30">mock</span>}
       </div>
 
       {/* 풍속 */}
       {weather.wsd !== null && (
         <div className={[
           'flex items-center gap-1.5 px-3 py-1.5 rounded-lg backdrop-blur-sm',
-          windLevel === 'red'    ? 'bg-red-500/80 animate-pulse'  :
-          windLevel === 'amber'  ? 'bg-amber-500/80'              :
+          windLevel === 'red'   ? 'bg-red-500/80 animate-pulse' :
+          windLevel === 'amber' ? 'bg-amber-500/80'             :
           'bg-white/10',
         ].join(' ')}>
           <span className="text-sm leading-none">💨</span>
@@ -116,7 +106,7 @@ function WeatherWidget() {
             </span>
             {windLevel !== 'normal' && (
               <span className="text-[10px] font-medium text-white/90 leading-tight">
-                {windLevel === 'red' ? '⚠ 작업중단 기준!' : '⚠ 주의 기준 초과'}
+                {windLevel === 'red' ? '⚠ 작업중단 기준!' : '⚠ 주의 기준'}
               </span>
             )}
           </div>
@@ -127,27 +117,94 @@ function WeatherWidget() {
 }
 
 // ────────────────────────────────────────────────────────────
-// WorkItemSlide — 작업항목 목록 슬라이드
+// HighRiskSlide — 지적도(좌) + 고위험작업 목록(우) 분할 뷰
 // ────────────────────────────────────────────────────────────
-function WorkItemSlide({
-  items, type,
+function HighRiskSlide({
+  meetingId, mapUrl, workItems, allTeamIds,
 }: {
-  items: WorkItem[]
-  type: 'high_risk' | 'general'
+  meetingId: string
+  mapUrl: string | null
+  workItems: WorkItem[]
+  allTeamIds: string[]
 }) {
-  const color = type === 'high_risk' ? 'red' : 'blue'
-  const label = type === 'high_risk' ? '고위험작업' : '일반작업'
+  const highRisk = workItems.filter(w => w.work_type === 'high_risk')
 
+  return (
+    <div className="h-full flex gap-4">
+      {/* 왼쪽: 지적도 */}
+      {mapUrl ? (
+        <div className="flex-1 rounded-xl overflow-hidden bg-neutral-800 min-w-0">
+          <MapAnnotator
+            meetingId={meetingId}
+            mapUrl={mapUrl}
+            myTeamId=""
+            allTeamIds={allTeamIds}
+            readOnly={true}
+            workType="high_risk"
+            workItems={workItems as unknown as WorkItemInfo[]}
+          />
+        </div>
+      ) : (
+        <div className="flex-1 rounded-xl bg-neutral-800/50 border border-white/10 flex items-center justify-center">
+          <p className="text-white/30 text-sm">지도 없음</p>
+        </div>
+      )}
+
+      {/* 오른쪽: 고위험작업 목록 */}
+      <div className="w-[400px] shrink-0 overflow-y-auto space-y-2 pr-1 scrollbar-hide">
+        {highRisk.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center">
+            <p className="text-4xl mb-3">📭</p>
+            <p className="text-white/40 text-sm">등록된 고위험작업이 없습니다.</p>
+          </div>
+        ) : (
+          highRisk.map(item => (
+            <div key={item.id}
+              className="rounded-xl p-3.5 bg-red-950/50 border border-red-800/30">
+              <div className="flex items-start justify-between gap-2 mb-1.5">
+                <h4 className="text-sm font-semibold text-white leading-snug">{item.work_name}</h4>
+                <div className="flex gap-2 text-xs text-white/40 shrink-0 text-right">
+                  {item.location && <span>📍 {item.location}</span>}
+                  {item.worker_count > 0 && <span>👷 {item.worker_count}명</span>}
+                </div>
+              </div>
+              <p className="text-[11px] text-red-300/70 font-medium mb-1">{item.teams?.name}</p>
+              {item.description && (
+                <p className="text-xs text-white/50 mb-1.5">{item.description}</p>
+              )}
+              {item.risk_factors && (
+                <div className="flex gap-1.5 bg-amber-950/50 border border-amber-800/30 rounded-lg px-2.5 py-1.5 mb-1">
+                  <span className="text-amber-400 text-xs shrink-0">⚠</span>
+                  <p className="text-xs text-amber-200/80">{item.risk_factors}</p>
+                </div>
+              )}
+              {item.improvement_measures && (
+                <div className="flex gap-1.5 bg-emerald-950/50 border border-emerald-800/30 rounded-lg px-2.5 py-1.5">
+                  <span className="text-emerald-400 text-xs shrink-0">✅</span>
+                  <p className="text-xs text-emerald-200/80">{item.improvement_measures}</p>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────
+// WorkItemSlide — 일반작업 목록
+// ────────────────────────────────────────────────────────────
+function WorkItemSlide({ items }: { items: WorkItem[] }) {
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center">
         <p className="text-5xl mb-4">📭</p>
-        <p className="text-xl font-medium text-white/60">등록된 {label}이 없습니다.</p>
+        <p className="text-xl font-medium text-white/60">등록된 일반작업이 없습니다.</p>
       </div>
     )
   }
 
-  // 업체별 그룹
   const grouped: Record<string, WorkItem[]> = {}
   items.forEach(item => {
     const name = item.teams?.name ?? '미지정'
@@ -160,49 +217,34 @@ function WorkItemSlide({
       {Object.entries(grouped).map(([company, compItems]) => (
         <div key={company}>
           <div className="flex items-center gap-2 mb-2 sticky top-0 bg-neutral-900/80 backdrop-blur-sm py-1 px-2 rounded-md -mx-2">
-            <span className={`w-2 h-2 rounded-full ${color === 'red' ? 'bg-red-400' : 'bg-blue-400'}`} />
+            <span className="w-2 h-2 rounded-full bg-blue-400" />
             <h3 className="text-sm font-semibold text-white/90">{company}</h3>
             <span className="text-xs text-white/40 ml-auto">{compItems.length}건</span>
           </div>
           <div className="space-y-2 pl-3">
             {compItems.map(item => (
               <div key={item.id}
-                className={[
-                  'rounded-xl p-4',
-                  color === 'red'
-                    ? 'bg-red-950/40 border border-red-800/30'
-                    : 'bg-blue-950/40 border border-blue-800/30',
-                ].join(' ')}>
-                <div className="flex items-start justify-between gap-4 mb-2">
+                className="rounded-xl p-4 bg-blue-950/40 border border-blue-800/30">
+                <div className="flex items-start justify-between gap-4 mb-1.5">
                   <h4 className="text-base font-semibold text-white leading-snug">{item.work_name}</h4>
                   <div className="flex gap-3 text-sm text-white/50 shrink-0">
                     {item.location && <span>📍 {item.location}</span>}
                     {item.worker_count > 0 && <span>👷 {item.worker_count}명</span>}
                   </div>
                 </div>
-                {item.description && (
-                  <p className="text-sm text-white/60 mb-2">{item.description}</p>
+                {item.description && <p className="text-sm text-white/60 mb-2">{item.description}</p>}
+                {item.risk_factors && (
+                  <div className="flex gap-2 bg-amber-950/50 border border-amber-800/30 rounded-lg px-3 py-2 mb-1">
+                    <span className="text-amber-400 text-sm shrink-0">⚠</span>
+                    <p className="text-sm text-amber-200/80">{item.risk_factors}</p>
+                  </div>
                 )}
-                <div className="space-y-1.5">
-                  {item.risk_factors && (
-                    <div className="flex gap-2 bg-amber-950/50 border border-amber-800/30 rounded-lg px-3 py-2">
-                      <span className="text-amber-400 text-sm shrink-0">⚠</span>
-                      <div>
-                        <p className="text-[10px] font-semibold text-amber-400/80 uppercase tracking-wider mb-0.5">위험요인</p>
-                        <p className="text-sm text-amber-200/80">{item.risk_factors}</p>
-                      </div>
-                    </div>
-                  )}
-                  {item.improvement_measures && (
-                    <div className="flex gap-2 bg-emerald-950/50 border border-emerald-800/30 rounded-lg px-3 py-2">
-                      <span className="text-emerald-400 text-sm shrink-0">✅</span>
-                      <div>
-                        <p className="text-[10px] font-semibold text-emerald-400/80 uppercase tracking-wider mb-0.5">개선대책</p>
-                        <p className="text-sm text-emerald-200/80">{item.improvement_measures}</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                {item.improvement_measures && (
+                  <div className="flex gap-2 bg-emerald-950/50 border border-emerald-800/30 rounded-lg px-3 py-2">
+                    <span className="text-emerald-400 text-sm shrink-0">✅</span>
+                    <p className="text-sm text-emerald-200/80">{item.improvement_measures}</p>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -213,29 +255,72 @@ function WorkItemSlide({
 }
 
 // ────────────────────────────────────────────────────────────
-// MapSlide — 지적도 슬라이드
+// MaterialSlide — 자재 하역/운반 목록
 // ────────────────────────────────────────────────────────────
-function MapSlide({
-  meetingId, mapUrl, workItems, workType, allTeamIds,
-}: {
-  meetingId: string
-  mapUrl: string
-  workItems: WorkItem[]
-  workType: 'high_risk' | 'general'
-  allTeamIds: string[]
-}) {
+function MaterialSlide({ slots }: { slots: MaterialSlot[] }) {
+  const allReservations = slots.flatMap(slot =>
+    (slot.material_reservations ?? []).map(r => ({ ...r, slot_time: slot.slot_time, gate: slot.gate }))
+  )
+
+  if (allReservations.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center">
+        <p className="text-5xl mb-4">📭</p>
+        <p className="text-xl font-medium text-white/60">등록된 자재 예약이 없습니다.</p>
+      </div>
+    )
+  }
+
+  // GATE별 그룹
+  const gates = [...new Set(allReservations.map(r => r.gate))].sort()
+
   return (
-    <div className="h-full w-full flex items-center justify-center">
-      <div className="w-full h-full max-w-4xl mx-auto rounded-xl overflow-hidden bg-neutral-800">
-        <MapAnnotator
-          meetingId={meetingId}
-          mapUrl={mapUrl}
-          myTeamId=""
-          allTeamIds={allTeamIds}
-          readOnly={true}
-          workType={workType}
-          workItems={workItems as unknown as WorkItemInfo[]}
-        />
+    <div className="h-full overflow-y-auto scrollbar-hide">
+      {/* 테이블 헤더 */}
+      <div className="grid grid-cols-[80px_80px_1fr_1fr_120px] gap-0 mb-2 px-4">
+        {['GATE', '시간대', '업체명', '자재 내용', '차량'].map(h => (
+          <div key={h} className="text-[10px] font-semibold text-white/30 uppercase tracking-widest py-2">{h}</div>
+        ))}
+      </div>
+
+      <div className="space-y-4">
+        {gates.map(gate => {
+          const gateItems = allReservations
+            .filter(r => r.gate === gate)
+            .sort((a, b) => a.slot_time.localeCompare(b.slot_time))
+
+          return (
+            <div key={gate}>
+              <div className="flex items-center gap-2 px-4 py-1.5 mb-1">
+                <span className="text-xs font-bold text-amber-400 tracking-widest">{gate}</span>
+                <div className="flex-1 h-px bg-amber-400/20" />
+                <span className="text-xs text-white/30">{gateItems.length}건</span>
+              </div>
+              {gateItems.map((r, idx) => (
+                <div key={idx}
+                  className="grid grid-cols-[80px_80px_1fr_1fr_120px] gap-0 px-4 py-3 border-b border-white/5 hover:bg-white/5 transition-colors">
+                  <div>
+                    <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-white/10 text-white/60">
+                      {r.gate}
+                    </span>
+                  </div>
+                  <div className="text-sm font-semibold text-white tabular-nums self-center">
+                    {r.slot_time?.slice(0, 5)}
+                  </div>
+                  <div className="text-sm text-white/70 self-center">{r.teams?.name ?? '미지정'}</div>
+                  <div className="text-sm text-white/80 self-center">{r.material_description ?? '—'}</div>
+                  <div className="self-center">
+                    {r.vehicle_type && (
+                      <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-white/10 text-white/60">
+                        {r.vehicle_type}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -258,7 +343,6 @@ function NotePanel({
   const [saved, setSaved] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // 슬라이드 변경 시 메모 내용 교체
   useEffect(() => {
     try { setText(localStorage.getItem(noteKey(meetingId, slideIdx)) ?? '') } catch {}
   }, [meetingId, slideIdx])
@@ -274,37 +358,29 @@ function NotePanel({
   }
 
   return (
-    <div className="absolute top-0 right-0 h-full w-80 bg-neutral-900/95 backdrop-blur-xl border-l border-white/10 flex flex-col z-30 shadow-2xl">
-      {/* 헤더 */}
+    <div className="absolute top-0 right-0 h-full w-72 bg-neutral-900/95 backdrop-blur-xl border-l border-white/10 flex flex-col z-30 shadow-2xl">
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
         <div>
           <p className="text-[10px] font-semibold text-white/40 uppercase tracking-widest">슬라이드 메모</p>
-          <p className="text-xs text-white/70 mt-0.5">SLIDE {slideIdx + 1} — {SLIDES[slideIdx]?.label}</p>
+          <p className="text-xs text-white/70 mt-0.5">{SLIDES[slideIdx]?.label}</p>
         </div>
         <div className="flex items-center gap-2">
-          {saved && (
-            <span className="text-[10px] text-emerald-400">저장됨 ✓</span>
-          )}
-          <button onClick={onClose}
-            className="text-white/40 hover:text-white/80 transition-colors p-1">
+          {saved && <span className="text-[10px] text-emerald-400">저장됨 ✓</span>}
+          <button onClick={onClose} className="text-white/40 hover:text-white/80 transition-colors p-1">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
       </div>
-      {/* 메모 입력 */}
       <textarea
         value={text}
         onChange={e => handleChange(e.target.value)}
         placeholder="이 슬라이드 관련 메모를 작성하세요.&#10;자동 저장됩니다."
         className="flex-1 resize-none bg-transparent text-sm text-white/80 placeholder-white/20 px-4 py-3 outline-none leading-relaxed"
       />
-      {/* 하단 힌트 */}
       <div className="px-4 py-2 border-t border-white/10 shrink-0">
-        <p className="text-[10px] text-white/25">
-          입력 후 자동 저장 · 브라우저 로컬에 보관
-        </p>
+        <p className="text-[10px] text-white/25">입력 후 자동 저장 · 브라우저 로컬에 보관</p>
       </div>
     </div>
   )
@@ -321,11 +397,12 @@ export function MeetingModeView({
 }) {
   const [meeting,    setMeeting]    = useState<Meeting | null>(null)
   const [workItems,  setWorkItems]  = useState<WorkItem[]>([])
+  const [slots,      setSlots]      = useState<MaterialSlot[]>([])
   const [allTeamIds, setAllTeamIds] = useState<string[]>([])
   const [loading,    setLoading]    = useState(true)
 
-  const [slideIdx,   setSlideIdx]   = useState(0)
-  const [showNote,   setShowNote]   = useState(false)
+  const [slideIdx,     setSlideIdx]     = useState(0)
+  const [showNote,     setShowNote]     = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -335,10 +412,12 @@ export function MeetingModeView({
     Promise.all([
       fetch(`/api/meeting-info?meetingId=${meetingId}`).then(r => r.json()).catch(() => null),
       fetch(`/api/work-items?meetingId=${meetingId}`).then(r => r.json()).catch(() => []),
+      fetch(`/api/material-slots?meetingId=${meetingId}`).then(r => r.json()).catch(() => []),
       fetch('/api/teams').then(r => r.json()).catch(() => []),
-    ]).then(([mtgData, wiData, teamsData]) => {
+    ]).then(([mtgData, wiData, slotsData, teamsData]) => {
       if (mtgData?.meeting) setMeeting(mtgData.meeting)
       if (Array.isArray(wiData)) setWorkItems(wiData)
+      if (Array.isArray(slotsData)) setSlots(slotsData)
       if (Array.isArray(teamsData)) setAllTeamIds(teamsData.map((t: {id:string}) => t.id))
       setLoading(false)
     })
@@ -352,9 +431,9 @@ export function MeetingModeView({
       } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
         setSlideIdx(i => Math.max(i - 1, 0))
       } else if (e.key === 'Escape') {
-        if (showNote) { setShowNote(false) }
-        else if (isFullscreen) { document.exitFullscreen?.() }
-        else { onClose() }
+        if (showNote) setShowNote(false)
+        else if (isFullscreen) document.exitFullscreen?.()
+        else onClose()
       } else if (e.key === 'm' || e.key === 'M') {
         setShowNote(s => !s)
       } else if (e.key === 'f' || e.key === 'F') {
@@ -367,11 +446,8 @@ export function MeetingModeView({
 
   // ── 전체화면 ─────────────────────────────────────────────
   const toggleFullscreen = useCallback(() => {
-    if (!document.fullscreenElement) {
-      containerRef.current?.requestFullscreen?.()
-    } else {
-      document.exitFullscreen?.()
-    }
+    if (!document.fullscreenElement) containerRef.current?.requestFullscreen?.()
+    else document.exitFullscreen?.()
   }, [])
 
   useEffect(() => {
@@ -380,10 +456,11 @@ export function MeetingModeView({
     return () => document.removeEventListener('fullscreenchange', handler)
   }, [])
 
-  const currentSlide = SLIDES[slideIdx]
-  const highRiskItems = useMemo(() => workItems.filter(w => w.work_type === 'high_risk'), [workItems])
-  const generalItems  = useMemo(() => workItems.filter(w => w.work_type === 'general'),  [workItems])
+  const generalItems = useMemo(() => workItems.filter(w => w.work_type === 'general'), [workItems])
   const mapUrl = meeting?.map_file_url ?? null
+
+  // 자재 총 건수
+  const materialCount = slots.reduce((acc, s) => acc + (s.material_reservations?.length ?? 0), 0)
 
   if (loading) {
     return (
@@ -396,6 +473,8 @@ export function MeetingModeView({
     )
   }
 
+  const currentSlide = SLIDES[slideIdx]
+
   return (
     <div ref={containerRef}
       className="fixed inset-0 bg-neutral-950 flex flex-col z-50 select-none"
@@ -405,7 +484,6 @@ export function MeetingModeView({
       <header className="shrink-0 flex items-center justify-between px-5 py-3"
         style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
 
-        {/* 왼쪽: 닫기 + 타이틀 */}
         <div className="flex items-center gap-3">
           <button onClick={onClose}
             className="flex items-center gap-1.5 text-white/50 hover:text-white/90 transition-colors text-sm font-medium">
@@ -416,32 +494,23 @@ export function MeetingModeView({
           </button>
           <div className="w-px h-4 bg-white/10" />
           <div>
-            <p className="text-[10px] font-semibold text-white/30 uppercase tracking-widest">
-              DABs 회의 모드
-            </p>
-            <h1 className="text-sm font-semibold text-white/90 leading-tight">
-              {meeting?.title ?? meetingId}
-            </h1>
+            <p className="text-[10px] font-semibold text-white/30 uppercase tracking-widest">DABs 회의 모드</p>
+            <h1 className="text-sm font-semibold text-white/90 leading-tight">{meeting?.title ?? meetingId}</h1>
           </div>
         </div>
 
-        {/* 오른쪽: 날씨 + 메모 + 전체화면 */}
         <div className="flex items-center gap-3">
           <WeatherWidget />
           <div className="w-px h-5 bg-white/10" />
-          <button
-            onClick={() => setShowNote(s => !s)}
+          <button onClick={() => setShowNote(s => !s)}
             className={[
               'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
-              showNote
-                ? 'bg-white/20 text-white'
-                : 'text-white/50 hover:text-white/80 hover:bg-white/10',
+              showNote ? 'bg-white/20 text-white' : 'text-white/50 hover:text-white/80 hover:bg-white/10',
             ].join(' ')}
             title="메모 (M)">
             📝 메모
           </button>
-          <button
-            onClick={toggleFullscreen}
+          <button onClick={toggleFullscreen}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white/50 hover:text-white/80 hover:bg-white/10 transition-colors"
             title="전체화면 (F)">
             {isFullscreen ? (
@@ -459,38 +528,32 @@ export function MeetingModeView({
 
       {/* ── 슬라이드 본문 ───────────────────────────────────── */}
       <div className="flex-1 relative overflow-hidden">
-        {/* 슬라이드 영역 */}
-        <div className={['absolute inset-0 flex flex-col transition-[right] duration-300', showNote ? 'right-80' : 'right-0'].join(' ')}>
+        <div className={['absolute inset-0 flex flex-col transition-[right] duration-300', showNote ? 'right-72' : 'right-0'].join(' ')}>
 
           {/* 슬라이드 타이틀 */}
-          <div className="shrink-0 flex items-center justify-between px-8 pt-5 pb-3">
+          <div className="shrink-0 flex items-center justify-between px-8 pt-4 pb-3">
             <div className="flex items-center gap-2">
-              <span className="text-2xl">{currentSlide.icon}</span>
-              <h2 className="text-xl font-bold text-white/90">{currentSlide.label}</h2>
+              <span className="text-xl">{currentSlide.icon}</span>
+              <h2 className="text-lg font-bold text-white/90">{currentSlide.label}</h2>
             </div>
             <div className="flex items-center gap-2 text-white/30 text-sm">
-              <span>{slideIdx + 1}</span>
-              <span>/</span>
-              <span>{SLIDES.length}</span>
+              <span>{slideIdx + 1}</span><span>/</span><span>{SLIDES.length}</span>
             </div>
           </div>
 
           {/* 슬라이드 콘텐츠 */}
           <div className="flex-1 overflow-hidden px-8 pb-4">
-            {currentSlide.type === 'map_high_risk' && mapUrl ? (
-              <MapSlide meetingId={meetingId} mapUrl={mapUrl} workItems={highRiskItems}
-                workType="high_risk" allTeamIds={allTeamIds} />
-            ) : currentSlide.type === 'work_high_risk' ? (
-              <WorkItemSlide items={highRiskItems} type="high_risk" />
+            {currentSlide.type === 'high_risk' ? (
+              <HighRiskSlide
+                meetingId={meetingId}
+                mapUrl={mapUrl}
+                workItems={workItems}
+                allTeamIds={allTeamIds}
+              />
             ) : currentSlide.type === 'work_general' ? (
-              <WorkItemSlide items={generalItems} type="general" />
+              <WorkItemSlide items={generalItems} />
             ) : (
-              // 지도 없을 때 fallback
-              <div className="h-full flex flex-col items-center justify-center text-center">
-                <p className="text-5xl mb-4">🗺</p>
-                <p className="text-xl font-medium text-white/50">지도 파일이 없습니다.</p>
-                <p className="text-sm text-white/30 mt-1">관리자 대시보드에서 지도를 업로드해 주세요.</p>
-              </div>
+              <MaterialSlide slots={slots} />
             )}
           </div>
 
@@ -505,8 +568,8 @@ export function MeetingModeView({
           )}
           {slideIdx < SLIDES.length - 1 && (
             <button onClick={() => setSlideIdx(i => i + 1)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors"
-              style={{ right: showNote ? 'calc(20rem + 0.75rem)' : '0.75rem' }}>
+              className="absolute top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors"
+              style={{ right: showNote ? 'calc(18rem + 0.75rem)' : '0.75rem' }}>
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
@@ -520,22 +583,37 @@ export function MeetingModeView({
         )}
       </div>
 
-      {/* ── 하단 슬라이드 탭 바 ─────────────────────────────── */}
-      <footer className="shrink-0 flex items-center gap-2 px-5 py-3 overflow-x-auto"
+      {/* ── 하단 탭 바 ──────────────────────────────────────── */}
+      <footer className="shrink-0 flex items-center gap-2 px-5 py-3"
         style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-        {SLIDES.map((slide, idx) => (
-          <button key={slide.type}
-            onClick={() => setSlideIdx(idx)}
-            className={[
-              'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all duration-150',
-              idx === slideIdx
-                ? 'bg-white text-neutral-900'
-                : 'text-white/50 hover:text-white/80 hover:bg-white/10',
-            ].join(' ')}>
-            <span>{slide.icon}</span>
-            <span>{slide.label}</span>
-          </button>
-        ))}
+        {SLIDES.map((slide, idx) => {
+          const count =
+            slide.type === 'high_risk'    ? workItems.filter(w => w.work_type === 'high_risk').length :
+            slide.type === 'work_general' ? workItems.filter(w => w.work_type === 'general').length   :
+            materialCount
+
+          return (
+            <button key={slide.type}
+              onClick={() => setSlideIdx(idx)}
+              className={[
+                'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all duration-150',
+                idx === slideIdx
+                  ? 'bg-white text-neutral-900'
+                  : 'text-white/50 hover:text-white/80 hover:bg-white/10',
+              ].join(' ')}>
+              <span>{slide.icon}</span>
+              <span>{slide.label}</span>
+              {count > 0 && (
+                <span className={[
+                  'text-xs px-1.5 py-0.5 rounded-full font-semibold',
+                  idx === slideIdx ? 'bg-neutral-900/20 text-neutral-700' : 'bg-white/15 text-white/60',
+                ].join(' ')}>
+                  {count}
+                </span>
+              )}
+            </button>
+          )
+        })}
         <div className="ml-auto text-[11px] text-white/20 shrink-0">
           ← → 키보드 이동 · M 메모 · F 전체화면 · Esc 닫기
         </div>
