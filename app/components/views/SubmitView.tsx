@@ -271,9 +271,9 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
       errs.personnelTotal = '총 인원을 올바르게 입력해 주세요.'
     if (!workProcess.trim())
       errs.workProcess = '작업공정을 입력해 주세요.'
-    // 지적도가 있으면 마커 필수
-    if (hasMap && myMarkerCount === 0)
-      errs.markers = '고위험 또는 일반작업 지적도에 장비/작업구역을 1개 이상 표시해 주세요.'
+    // 지적도가 있으면 고위험 마커 필수
+    if (hasMap && myHighRiskCount === 0)
+      errs.markers = '고위험 지적도에 장비/작업구역을 1개 이상 표시해 주세요.'
     setErrors(errs); return Object.keys(errs).length === 0
   }
 
@@ -420,8 +420,8 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
   if (loading) return <FullPageSpinner />
   if (!team)   return <ErrorPage message="업체 정보를 찾을 수 없습니다." />
 
-  // 고위험/일반 탭에서만 2컬럼 레이아웃
-  const showMapColumn = hasMap && (activeTab === 'high_risk' || activeTab === 'general')
+  // 고위험 탭에서만 2컬럼 레이아웃 (일반작업은 지적도 없음)
+  const showMapColumn = hasMap && activeTab === 'high_risk'
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -516,23 +516,6 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
               </div>
             )}
 
-            {/* ── 왼쪽: 일반 지적도 (XL만) ───────────────── */}
-            {hasMap && activeTab === 'general' && (
-              <div className="hidden xl:block xl:sticky xl:top-[73px]">
-                <MapAnnotator
-                  meetingId={meeting!.id}
-                  mapUrl={meeting!.map_file_url!}
-                  myTeamId={teamId}
-                  allTeamIds={allTeams.map(t => t.id)}
-                  readOnly={false}
-                  workType="general"
-                  onMarkerCountChange={count => setMyGeneralCount(count)}
-                  onMarkerDrop={handleGeneralMarkerDrop}
-                  onMarkerDelete={handleGeneralMarkerDelete}
-                  workItems={workItems}
-                />
-              </div>
-            )}
 
             {/* ── 오른쪽: 탭 + 폼 ─────────────────────────── */}
             <div>
@@ -541,7 +524,7 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                 style={{ borderBottom: '1px solid rgba(0,0,0,0.07)' }}>
                 {([
                   { key: 'high_risk', label: '고위험작업', badge: myHighRiskCount > 0 ? `${myHighRiskCount}` : null, color: 'red' },
-                  { key: 'general',   label: '일반작업',   badge: myGeneralCount > 0  ? `${myGeneralCount}`  : null, color: 'blue' },
+                  { key: 'general',   label: '일반작업',   badge: null, color: 'blue' },
                   { key: 'material',  label: '자재하역',   badge: null, color: null },
                   { key: 'submit',    label: '자료제출',   badge: null, color: null },
                 ] as { key: Tab; label: string; badge: string | null; color: string | null }[]).map(t => (
@@ -620,50 +603,16 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
 
                 {/* ── 일반작업 ───────────────────────────────── */}
                 <div className={activeTab !== 'general' ? 'hidden' : ''}>
-                  {/* 모바일: 일반 지적도 */}
-                  {hasMap && (
-                    <div className="xl:hidden mb-5">
-                      <MapAnnotator
-                        meetingId={meeting!.id}
-                        mapUrl={meeting!.map_file_url!}
-                        myTeamId={teamId}
-                        allTeamIds={allTeams.map(t => t.id)}
-                        readOnly={false}
-                        workType="general"
-                        onMarkerCountChange={count => setMyGeneralCount(count)}
-                        onMarkerDrop={handleGeneralMarkerDrop}
-                        onMarkerDelete={handleGeneralMarkerDelete}
-                        workItems={workItems}
-                      />
-                    </div>
-                  )}
-                  {/* XL: 지적도 안내 메시지 */}
-                  {hasMap && (
-                    <div className="hidden xl:flex items-center gap-2 mb-4 px-3 py-2 bg-blue-50 rounded-lg border border-blue-100">
-                      <span className="text-blue-400">🗺️</span>
-                      <p className="text-xs text-blue-600">
-                        {myGeneralCount > 0
-                          ? `✓ 일반 지적도에 ${myGeneralCount}개 마커 등록됨 — 왼쪽에서 추가 가능`
-                          : '왼쪽 일반 지적도에 장비/작업구역을 드래그하세요'}
-                      </p>
-                    </div>
-                  )}
                   <WorkItemTab
                     workType="general" label="일반작업" color="blue"
                     isClosed={isClosed}
                     items={workItems.filter(i => i.work_type === 'general')}
                     isLoading={workLoading}
                     myTeamId={teamId} myTeamName={team.name}
-                    onAdd={async (data) => {
-                      await addWorkItem('general', data)
-                      if (pendingGeneralMarker && data.work_name) {
-                        await saveMarker(pendingGeneralMarker.markerType, pendingGeneralMarker.x, pendingGeneralMarker.y, 'general', data.work_name as string)
-                        setPendingGeneralMarker(null)
-                      }
-                    }}
+                    onAdd={async (data) => { await addWorkItem('general', data) }}
                     onDelete={deleteWorkItem}
-                    pendingMarkerType={pendingGeneralMarker?.markerType ?? null}
-                    onCancelPendingMarker={() => setPendingGeneralMarker(null)}
+                    pendingMarkerType={null}
+                    onCancelPendingMarker={() => {}}
                   />
                 </div>
 
@@ -683,8 +632,8 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                 <div className={activeTab !== 'submit' ? 'hidden' : ''}>
                   <SubmitTab
                     meeting={meeting} isClosed={isClosed}
-                    hasMap={hasMap} myMarkerCount={myMarkerCount}
-                    myHighRiskCount={myHighRiskCount} myGeneralCount={myGeneralCount}
+                    hasMap={hasMap} myMarkerCount={myHighRiskCount}
+                    myHighRiskCount={myHighRiskCount}
                     personnel={personnel} setPersonnel={setPersonnel}
                     workProcess={workProcess} setWorkProcess={setWorkProcess}
                     equipRows={equipRows} setEquipRows={setEquipRows}
@@ -701,7 +650,6 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                     onFileChange={f => validateAndSetFile(f)}
                     onSubmit={handleSubmit}
                     onGoToHighRisk={() => setActiveTab('high_risk')}
-                    onGoToGeneral={() => setActiveTab('general')}
                   />
                 </div>
               </div>
@@ -720,15 +668,15 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
 
 // ── 자료제출 탭 ───────────────────────────────────────────────
 function SubmitTab({
-  meeting, isClosed, hasMap, myMarkerCount, myHighRiskCount, myGeneralCount,
+  meeting, isClosed, hasMap, myMarkerCount, myHighRiskCount,
   personnel, setPersonnel, workProcess, setWorkProcess,
   equipRows, setEquipRows, file, setFile,
   dragOver, setDragOver, errors, step, progress, errorMsg, downloadUrl,
   prevLoading, prevDate, prevLoaded, draftSaved, fileInputRef,
-  onLoadPrevious, onDrop, onFileChange, onSubmit, onGoToHighRisk, onGoToGeneral,
+  onLoadPrevious, onDrop, onFileChange, onSubmit, onGoToHighRisk,
 }: {
   meeting: Meeting | null; isClosed: boolean; hasMap: boolean; myMarkerCount: number
-  myHighRiskCount: number; myGeneralCount: number
+  myHighRiskCount: number
   personnel: Record<string, string>; setPersonnel: React.Dispatch<React.SetStateAction<{elderly:string;superElderly:string;foreign:string;female:string;diseased:string;total:string}>>
   workProcess: string; setWorkProcess: (v: string) => void
   equipRows: {type: string; count: string; isCustom: boolean}[]
@@ -742,7 +690,7 @@ function SubmitTab({
   fileInputRef: React.RefObject<HTMLInputElement | null>
   onLoadPrevious: () => void; onDrop: (e: React.DragEvent) => void
   onFileChange: (f: File) => void; onSubmit: (e: React.FormEvent) => void
-  onGoToHighRisk: () => void; onGoToGeneral: () => void
+  onGoToHighRisk: () => void
 }) {
   const equipComposingRef = useRef(false)
   if (!meeting) return (
@@ -773,40 +721,22 @@ function SubmitTab({
   return (
     <form onSubmit={onSubmit} className="space-y-5">
 
-      {/* 지적도 마커 상태 (있을 경우) */}
+      {/* 고위험 지적도 마커 상태 */}
       {hasMap && (
-        <div className="space-y-2">
-          {/* 고위험 지적도 상태 */}
-          <button type="button" onClick={onGoToHighRisk}
-            className={[
-              'w-full flex items-center justify-between px-4 py-2.5 rounded-lg border text-left transition-colors',
-              myHighRiskCount > 0 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200',
-            ].join(' ')}>
-            <p className={`text-sm font-medium ${myHighRiskCount > 0 ? 'text-red-800' : 'text-amber-800'}`}>
-              {myHighRiskCount > 0
-                ? `✓ 고위험 지적도 마커 ${myHighRiskCount}개`
-                : '⚠ 고위험 지적도 마커 없음'}
-            </p>
-            <span className={`text-xs ${myHighRiskCount > 0 ? 'text-red-400' : 'text-amber-500'}`}>
-              탭으로 이동 →
-            </span>
-          </button>
-          {/* 일반 지적도 상태 */}
-          <button type="button" onClick={onGoToGeneral}
-            className={[
-              'w-full flex items-center justify-between px-4 py-2.5 rounded-lg border text-left transition-colors',
-              myGeneralCount > 0 ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-200',
-            ].join(' ')}>
-            <p className={`text-sm font-medium ${myGeneralCount > 0 ? 'text-blue-800' : 'text-amber-800'}`}>
-              {myGeneralCount > 0
-                ? `✓ 일반 지적도 마커 ${myGeneralCount}개`
-                : '⚠ 일반 지적도 마커 없음'}
-            </p>
-            <span className={`text-xs ${myGeneralCount > 0 ? 'text-blue-400' : 'text-amber-500'}`}>
-              탭으로 이동 →
-            </span>
-          </button>
-        </div>
+        <button type="button" onClick={onGoToHighRisk}
+          className={[
+            'w-full flex items-center justify-between px-4 py-2.5 rounded-lg border text-left transition-colors',
+            myHighRiskCount > 0 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200',
+          ].join(' ')}>
+          <p className={`text-sm font-medium ${myHighRiskCount > 0 ? 'text-red-800' : 'text-amber-800'}`}>
+            {myHighRiskCount > 0
+              ? `✓ 고위험 지적도 마커 ${myHighRiskCount}개`
+              : '⚠ 고위험 지적도 마커 없음'}
+          </p>
+          <span className={`text-xs ${myHighRiskCount > 0 ? 'text-red-400' : 'text-amber-500'}`}>
+            탭으로 이동 →
+          </span>
+        </button>
       )}
       {errors.markers && (
         <p className="text-xs text-red-500">{errors.markers}</p>
@@ -1030,7 +960,6 @@ function WorkItemTab({
   const [riskFactors,       setRiskFactors]       = useState('')
   const [improveMeasures,   setImproveMeasures]   = useState('')
   const [saving,      setSaving]      = useState(false)
-  const composingRef = useRef(false)
 
   // 마커가 드롭되면 자동으로 폼 열기
   useEffect(() => {
@@ -1100,18 +1029,14 @@ function WorkItemTab({
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-neutral-400 uppercase tracking-wider">작업명 *</label>
               <input type="text" placeholder="예) 철근 배근 작업" value={workName}
-                onCompositionStart={() => { composingRef.current = true }}
-                onCompositionEnd={e => { composingRef.current = false; setWorkName((e.target as HTMLInputElement).value) }}
-                onChange={e => { if (!composingRef.current) setWorkName(e.target.value) }}
+                onChange={e => setWorkName(e.target.value)}
                 className={inputCls} />
             </div>
             <div className="grid grid-cols-2 gap-2.5">
               <div className="space-y-1">
                 <label className="block text-[10px] font-medium text-neutral-400 uppercase tracking-wider">위치/구간</label>
                 <input type="text" placeholder="예) A동 3층" value={location}
-                  onCompositionStart={() => { composingRef.current = true }}
-                  onCompositionEnd={e => { composingRef.current = false; setLocation((e.target as HTMLInputElement).value) }}
-                  onChange={e => { if (!composingRef.current) setLocation(e.target.value) }}
+                  onChange={e => setLocation(e.target.value)}
                   className={inputCls} />
               </div>
               <div className="space-y-1">
@@ -1123,9 +1048,7 @@ function WorkItemTab({
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-neutral-400 uppercase tracking-wider">상세 내용</label>
               <textarea rows={2} placeholder="작업 상세 내용" value={description}
-                onCompositionStart={() => { composingRef.current = true }}
-                onCompositionEnd={e => { composingRef.current = false; setDescription((e.target as HTMLTextAreaElement).value) }}
-                onChange={e => { if (!composingRef.current) setDescription(e.target.value) }}
+                onChange={e => setDescription(e.target.value)}
                 className={`${inputCls} resize-none w-full`}
                 style={{ height: 'auto', padding: '0.4rem 0.625rem' }} />
             </div>
@@ -1133,18 +1056,14 @@ function WorkItemTab({
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-amber-600 uppercase tracking-wider">⚠ 위험요인</label>
               <textarea rows={2} placeholder="예) 굴착 작업 중 지반 붕괴 위험" value={riskFactors}
-                onCompositionStart={() => { composingRef.current = true }}
-                onCompositionEnd={e => { composingRef.current = false; setRiskFactors((e.target as HTMLTextAreaElement).value) }}
-                onChange={e => { if (!composingRef.current) setRiskFactors(e.target.value) }}
+                onChange={e => setRiskFactors(e.target.value)}
                 className="w-full border border-amber-200 rounded-md px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-amber-300 resize-none bg-amber-50/40"
                 style={{ height: 'auto' }} />
             </div>
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-emerald-600 uppercase tracking-wider">✅ 개선대책</label>
               <textarea rows={2} placeholder="예) 흙막이 설치 및 안전망 설치 확인" value={improveMeasures}
-                onCompositionStart={() => { composingRef.current = true }}
-                onCompositionEnd={e => { composingRef.current = false; setImproveMeasures((e.target as HTMLTextAreaElement).value) }}
-                onChange={e => { if (!composingRef.current) setImproveMeasures(e.target.value) }}
+                onChange={e => setImproveMeasures(e.target.value)}
                 className="w-full border border-emerald-200 rounded-md px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-emerald-300 resize-none bg-emerald-50/40"
                 style={{ height: 'auto' }} />
             </div>

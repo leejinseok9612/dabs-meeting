@@ -398,34 +398,6 @@ export function AdminDetailView({
           </section>
         )}
 
-        {/* ── 일반 지적도 아코디언 ────────────────────────── */}
-        {mapUrl && (
-          <section className="surface overflow-hidden">
-            <button
-              className="w-full flex items-center justify-between px-5 py-3.5 transition-colors duration-150 hover:bg-neutral-50/80"
-              onClick={() => setOpenMapSection(prev => prev === 'general' ? null : 'general')}
-            >
-              <div className="flex items-center gap-3">
-                <span className="w-2 h-2 rounded-full bg-blue-400" />
-                <div className="text-left">
-                  <h2 className="text-sm font-semibold text-neutral-900 tracking-tight">일반 지적도</h2>
-                  <p className="text-[11px] text-neutral-400 mt-0.5">일반 작업 마커 현황</p>
-                </div>
-              </div>
-              <svg className={['w-4 h-4 text-neutral-400 transition-transform duration-150', openMapSection === 'general' ? 'rotate-180' : ''].join(' ')}
-                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {openMapSection === 'general' && (
-              <div className="border-t border-neutral-100 p-4 animate-accordion-down">
-                <MapAnnotator meetingId={meetingId} mapUrl={mapUrl} myTeamId=""
-                  allTeamIds={allTeams.map(t => t.id)} readOnly={true} workType="general"
-                  workItems={workItems as unknown as WorkItemInfo[]} />
-              </div>
-            )}
-          </section>
-        )}
 
         {/* ── 작업 현황 / 자재 하역 (아코디언) ─────────────── */}
         {([

@@ -35,10 +35,9 @@ interface WeatherData {
 }
 
 // ── 슬라이드 정의 ─────────────────────────────────────────────
-type SlideType = 'map_high_risk' | 'map_general' | 'work_high_risk' | 'work_general'
+type SlideType = 'map_high_risk' | 'work_high_risk' | 'work_general'
 const SLIDES: { type: SlideType; label: string; icon: string }[] = [
   { type: 'map_high_risk',  label: '고위험 지적도',   icon: '🗺' },
-  { type: 'map_general',    label: '일반 지적도',     icon: '📍' },
   { type: 'work_high_risk', label: '고위험작업 내용', icon: '⚠️' },
   { type: 'work_general',   label: '일반작업 내용',   icon: '📋' },
 ]
@@ -481,9 +480,6 @@ export function MeetingModeView({
             {currentSlide.type === 'map_high_risk' && mapUrl ? (
               <MapSlide meetingId={meetingId} mapUrl={mapUrl} workItems={highRiskItems}
                 workType="high_risk" allTeamIds={allTeamIds} />
-            ) : currentSlide.type === 'map_general' && mapUrl ? (
-              <MapSlide meetingId={meetingId} mapUrl={mapUrl} workItems={generalItems}
-                workType="general" allTeamIds={allTeamIds} />
             ) : currentSlide.type === 'work_high_risk' ? (
               <WorkItemSlide items={highRiskItems} type="high_risk" />
             ) : currentSlide.type === 'work_general' ? (
