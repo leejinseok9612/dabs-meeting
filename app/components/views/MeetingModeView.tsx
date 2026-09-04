@@ -52,16 +52,27 @@ interface WeatherData {
   isMock: boolean; error?: string
 }
 
-// ── 슬라이드 정의 ─────────────────────────────────────────
-type SlideType = 'high_risk' | 'work_general' | 'material'
-const SLIDES: { type: SlideType; label: string; icon: string }[] = [
+// ── 섹션 정의 ─────────────────────────────────────────────
+type SectionType = 'high_risk' | 'work_general' | 'material'
+const SECTIONS: { type: SectionType; label: string; icon: string }[] = [
   { type: 'high_risk',    label: '고위험 현황',     icon: '⚠️' },
   { type: 'work_general', label: '일반작업 내용',   icon: '📋' },
   { type: 'material',     label: '자재 하역/운반',  icon: '🚛' },
 ]
 
-const noteKey = (meetingId: string, slideIdx: number) =>
-  `dabs_note_${meetingId}_${slideIdx}`
+const noteKey = (meetingId: string) => `dabs_note_${meetingId}`
+
+// ── CDN 스크립트 로더 (html2canvas / jsPDF) ───────────────
+function loadScript(src: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return }
+    const el = document.createElement('script')
+    el.src = src
+    el.onload = () => resolve()
+    el.onerror = reject
+    document.head.appendChild(el)
+  })
+}
 
 function weatherIcon(pty: number | null): string {
   if (!pty || pty === 0) return '🌤'
@@ -396,10 +407,10 @@ function HighRiskSlide({ meetingId, mapUrl, workItems, allTeamIds }: {
   const [hoveredTeamId, setHoveredTeamId] = useState<string | null>(null)
 
   return (
-    <div className="h-full flex gap-4">
+    <div className="flex gap-4 items-start">
       {/* 지적도 */}
       {mapUrl ? (
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 h-[500px]">
           <MeetingMapViewer
             meetingId={meetingId}
             mapUrl={mapUrl}
@@ -408,15 +419,15 @@ function HighRiskSlide({ meetingId, mapUrl, workItems, allTeamIds }: {
           />
         </div>
       ) : (
-        <div className={`flex-1 rounded-xl flex items-center justify-center border ${dk ? 'bg-neutral-800/50 border-white/10' : 'bg-gray-100 border-gray-200'}`}>
+        <div className={`flex-1 h-[500px] rounded-xl flex items-center justify-center border ${dk ? 'bg-neutral-800/50 border-white/10' : 'bg-gray-100 border-gray-200'}`}>
           <p className={dk ? 'text-white/30 text-sm' : 'text-gray-400 text-sm'}>지도 없음</p>
         </div>
       )}
 
       {/* 고위험작업 목록 */}
-      <div className="w-[400px] shrink-0 overflow-y-auto space-y-2 pr-1 scrollbar-hide">
+      <div className="w-[400px] shrink-0 space-y-2 pr-1">
         {highRisk.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center">
+          <div className="flex flex-col items-center justify-center py-16 text-center">
             <p className="text-4xl mb-3">📭</p>
             <p className={`text-sm ${dk ? 'text-white/40' : 'text-gray-400'}`}>등록된 고위험작업이 없습니다.</p>
           </div>
@@ -475,7 +486,7 @@ function WorkItemSlide({ items }: { items: WorkItem[] }) {
 
   if (items.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center">
+      <div className="flex flex-col items-center justify-center py-16 text-center">
         <p className="text-5xl mb-4">📭</p>
         <p className={`text-xl font-medium ${dk ? 'text-white/60' : 'text-gray-400'}`}>등록된 일반작업이 없습니다.</p>
       </div>
@@ -490,7 +501,7 @@ function WorkItemSlide({ items }: { items: WorkItem[] }) {
   })
 
   return (
-    <div className="h-full overflow-y-auto px-2 py-1 space-y-4 scrollbar-hide">
+    <div className="px-2 py-1 space-y-4">
       {Object.entries(grouped).map(([company, compItems]) => (
         <div key={company}>
           <div className={`flex items-center gap-2 mb-2 sticky top-0 backdrop-blur-sm py-1 px-2 rounded-md -mx-2 ${dk ? 'bg-neutral-900/80' : 'bg-gray-50/95'}`}>
@@ -543,7 +554,7 @@ function MaterialSlide({ slots }: { slots: MaterialSlot[] }) {
 
   if (allReservations.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center">
+      <div className="flex flex-col items-center justify-center py-16 text-center">
         <p className="text-5xl mb-4">📭</p>
         <p className={`text-xl font-medium ${dk ? 'text-white/60' : 'text-gray-400'}`}>등록된 자재 예약이 없습니다.</p>
       </div>
@@ -553,7 +564,7 @@ function MaterialSlide({ slots }: { slots: MaterialSlot[] }) {
   const gates = [...new Set(allReservations.map(r => r.gate))].sort()
 
   return (
-    <div className="h-full overflow-y-auto scrollbar-hide">
+    <div>
       <div className="grid grid-cols-[80px_80px_1fr_1fr_120px] gap-0 mb-2 px-4">
         {['GATE', '시간대', '업체명', '자재 내용', '차량'].map(h => (
           <div key={h} className={`text-[10px] font-semibold uppercase tracking-widest py-2 ${dk ? 'text-white/30' : 'text-gray-400'}`}>{h}</div>
@@ -602,19 +613,15 @@ function MaterialSlide({ slots }: { slots: MaterialSlot[] }) {
 // ────────────────────────────────────────────────────────
 // NotePanel
 // ────────────────────────────────────────────────────────
-function NotePanel({ meetingId, slideIdx, onClose }: {
-  meetingId: string; slideIdx: number; onClose: () => void
+function NotePanel({ meetingId, onClose }: {
+  meetingId: string; onClose: () => void
 }) {
   const theme = useTheme()
   const dk = theme === 'dark'
-  const key = noteKey(meetingId, slideIdx)
+  const key = noteKey(meetingId)
   const [text, setText] = useState(() => { try { return localStorage.getItem(key) ?? '' } catch { return '' } })
   const [saved, setSaved] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    try { setText(localStorage.getItem(noteKey(meetingId, slideIdx)) ?? '') } catch {}
-  }, [meetingId, slideIdx])
 
   const handleChange = (val: string) => {
     setText(val)
@@ -627,11 +634,11 @@ function NotePanel({ meetingId, slideIdx, onClose }: {
   }
 
   return (
-    <div className={`absolute top-0 right-0 h-full w-72 flex flex-col z-30 shadow-2xl border-l ${dk ? 'bg-neutral-900/95 border-white/10' : 'bg-white/98 border-gray-200'}`}>
+    <div data-note-panel className={`absolute top-0 right-0 h-full w-72 flex flex-col z-30 shadow-2xl border-l ${dk ? 'bg-neutral-900/95 border-white/10' : 'bg-white/98 border-gray-200'}`}>
       <div className={`flex items-center justify-between px-4 py-3 border-b shrink-0 ${dk ? 'border-white/10' : 'border-gray-200'}`}>
         <div>
-          <p className={`text-[10px] font-semibold uppercase tracking-widest ${dk ? 'text-white/40' : 'text-gray-400'}`}>슬라이드 메모</p>
-          <p className={`text-xs mt-0.5 ${dk ? 'text-white/70' : 'text-gray-600'}`}>{SLIDES[slideIdx]?.label}</p>
+          <p className={`text-[10px] font-semibold uppercase tracking-widest ${dk ? 'text-white/40' : 'text-gray-400'}`}>회의 메모</p>
+          <p className={`text-xs mt-0.5 ${dk ? 'text-white/70' : 'text-gray-600'}`}>자동 저장</p>
         </div>
         <div className="flex items-center gap-2">
           {saved && <span className="text-[10px] text-emerald-500">저장됨 ✓</span>}
@@ -645,7 +652,7 @@ function NotePanel({ meetingId, slideIdx, onClose }: {
       <textarea
         value={text}
         onChange={e => handleChange(e.target.value)}
-        placeholder="이 슬라이드 관련 메모를 작성하세요.&#10;자동 저장됩니다."
+        placeholder="회의 관련 메모를 작성하세요.&#10;자동 저장됩니다."
         className={`flex-1 resize-none bg-transparent text-sm px-4 py-3 outline-none leading-relaxed ${dk ? 'text-white/80 placeholder-white/20' : 'text-gray-700 placeholder-gray-300'}`}
       />
       <div className={`px-4 py-2 border-t shrink-0 ${dk ? 'border-white/10' : 'border-gray-200'}`}>
@@ -691,12 +698,14 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
   const [slots,      setSlots]      = useState<MaterialSlot[]>([])
   const [allTeamIds, setAllTeamIds] = useState<string[]>([])
   const [loading,    setLoading]    = useState(true)
-  const [slideIdx,     setSlideIdx]     = useState(0)
+  const [activeSection, setActiveSection] = useState<SectionType>('high_risk')
   const [showNote,     setShowNote]     = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [theme,        setTheme]        = useState<Theme>('dark')
+  const [pdfLoading,   setPdfLoading]   = useState(false)
 
-  const containerRef = useRef<HTMLDivElement>(null)
+  const containerRef  = useRef<HTMLDivElement>(null)
+  const scrollBodyRef = useRef<HTMLDivElement>(null)
   const dk = theme === 'dark'
 
   useEffect(() => {
@@ -714,11 +723,25 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
     })
   }, [meetingId])
 
+  // 스크롤 위치에 따라 활성 섹션 추적
+  useEffect(() => {
+    const body = scrollBodyRef.current
+    if (!body) return
+    const handler = () => {
+      for (const section of SECTIONS) {
+        const el = document.getElementById(`section-${section.type}`)
+        if (!el) continue
+        const rect = el.getBoundingClientRect()
+        if (rect.top <= 120) setActiveSection(section.type)
+      }
+    }
+    body.addEventListener('scroll', handler, { passive: true })
+    return () => body.removeEventListener('scroll', handler)
+  }, [loading])
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') setSlideIdx(i => Math.min(i + 1, SLIDES.length - 1))
-      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') setSlideIdx(i => Math.max(i - 1, 0))
-      else if (e.key === 'Escape') {
+      if (e.key === 'Escape') {
         if (showNote) setShowNote(false)
         else if (isFullscreen) document.exitFullscreen?.()
         else onClose()
@@ -740,9 +763,73 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
     return () => document.removeEventListener('fullscreenchange', handler)
   }, [])
 
-  const generalItems = useMemo(() => workItems.filter(w => w.work_type === 'general'), [workItems])
-  const mapUrl = meeting?.map_file_url ?? null
+  // 섹션으로 스크롤
+  const scrollToSection = useCallback((type: SectionType) => {
+    const el = document.getElementById(`section-${type}`)
+    const body = scrollBodyRef.current
+    if (!el || !body) return
+    const offset = el.offsetTop - 16
+    body.scrollTo({ top: offset, behavior: 'smooth' })
+  }, [])
+
+  // PDF 다운로드 (CDN html2canvas + jsPDF)
+  const downloadPDF = useCallback(async () => {
+    const body = scrollBodyRef.current
+    if (!body || !meeting) return
+    setPdfLoading(true)
+    try {
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js')
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')
+
+      // 스크롤 영역을 전체 높이로 임시 확장
+      const origOverflow = body.style.overflow
+      const origHeight   = body.style.height
+      const origPosition = body.style.position
+      body.style.overflow = 'visible'
+      body.style.height   = body.scrollHeight + 'px'
+      body.style.position = 'static'
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const canvas = await (window as any).html2canvas(body, {
+        useCORS: true, allowTaint: true, scale: 1.5,
+        backgroundColor: dk ? '#0a0a0a' : '#f9fafb',
+      })
+
+      body.style.overflow = origOverflow
+      body.style.height   = origHeight
+      body.style.position = origPosition
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { jsPDF } = (window as any).jspdf
+      const pdf    = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      const pageW  = pdf.internal.pageSize.getWidth()
+      const pageH  = pdf.internal.pageSize.getHeight()
+      const ratio  = pageW / canvas.width
+      const totalH = canvas.height * ratio
+      let y = 0
+      while (y < totalH) {
+        if (y > 0) pdf.addPage()
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.85), 'JPEG', 0, -y, pageW, totalH)
+        y += pageH
+      }
+      pdf.save(`DABs_회의자료_${meeting.date}.pdf`)
+    } catch (err) {
+      console.error('PDF 생성 오류:', err)
+    } finally {
+      setPdfLoading(false)
+    }
+  }, [dk, meeting])
+
+  const generalItems  = useMemo(() => workItems.filter(w => w.work_type === 'general'), [workItems])
+  const highRiskItems = useMemo(() => workItems.filter(w => w.work_type === 'high_risk'), [workItems])
+  const mapUrl        = meeting?.map_file_url ?? null
   const materialCount = slots.reduce((acc, s) => acc + (s.material_reservations?.length ?? 0), 0)
+
+  const sectionCount = (type: SectionType) => {
+    if (type === 'high_risk')    return highRiskItems.length
+    if (type === 'work_general') return generalItems.length
+    return materialCount
+  }
 
   if (loading) {
     return (
@@ -755,11 +842,9 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
     )
   }
 
-  const currentSlide = SLIDES[slideIdx]
-
-  // 테마별 클래스
   const headerBorderStyle = { borderBottom: `1px solid ${dk ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}` }
   const footerBorderStyle = { borderTop:    `1px solid ${dk ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}` }
+  const dividerStyle      = { borderColor:   dk ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }
 
   return (
     <ThemeCtx.Provider value={theme}>
@@ -790,6 +875,30 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
             <div className={`w-px h-5 ${dk ? 'bg-white/10' : 'bg-gray-200'}`} />
             <ThemeToggle theme={theme} onToggle={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} />
             <div className={`w-px h-5 ${dk ? 'bg-white/10' : 'bg-gray-200'}`} />
+            {/* PDF 다운로드 */}
+            <button
+              onClick={downloadPDF}
+              disabled={pdfLoading}
+              className={[
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                pdfLoading
+                  ? dk ? 'opacity-40 cursor-not-allowed text-white/40' : 'opacity-40 cursor-not-allowed text-gray-400'
+                  : dk ? 'text-white/50 hover:text-white/80 hover:bg-white/10' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100',
+              ].join(' ')}
+              title="PDF 다운로드">
+              {pdfLoading ? (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+              )}
+              {pdfLoading ? '생성 중…' : 'PDF'}
+            </button>
+            <div className={`w-px h-5 ${dk ? 'bg-white/10' : 'bg-gray-200'}`} />
             <button onClick={() => setShowNote(s => !s)}
               className={[
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
@@ -816,78 +925,84 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
           </div>
         </header>
 
-        {/* ── 슬라이드 본문 ────────────────────────────── */}
+        {/* ── 스크롤 본문 ──────────────────────────────── */}
         <div className="flex-1 relative overflow-hidden">
-          <div className={['absolute inset-0 flex flex-col transition-[right] duration-300', showNote ? 'right-72' : 'right-0'].join(' ')}>
-
-            {/* 슬라이드 타이틀 */}
-            <div className="shrink-0 flex items-center justify-between px-8 pt-4 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">{currentSlide.icon}</span>
-                <h2 className={`text-lg font-bold ${dk ? 'text-white/90' : 'text-gray-900'}`}>{currentSlide.label}</h2>
+          <div
+            ref={scrollBodyRef}
+            className={[
+              'absolute inset-0 overflow-y-auto transition-[right] duration-300',
+              showNote ? 'right-72' : 'right-0',
+            ].join(' ')}
+          >
+            {/* ① 고위험 현황 */}
+            <section id="section-high_risk" className="px-8 pt-6 pb-8">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-lg">⚠️</span>
+                <h2 className={`text-base font-bold ${dk ? 'text-white/90' : 'text-gray-900'}`}>고위험 현황</h2>
+                {highRiskItems.length > 0 && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${dk ? 'bg-red-900/60 text-red-300' : 'bg-red-100 text-red-600'}`}>
+                    {highRiskItems.length}건
+                  </span>
+                )}
               </div>
-              <div className={`flex items-center gap-2 text-sm ${dk ? 'text-white/30' : 'text-gray-400'}`}>
-                <span>{slideIdx + 1}</span><span>/</span><span>{SLIDES.length}</span>
+              <HighRiskSlide meetingId={meetingId} mapUrl={mapUrl} workItems={workItems} allTeamIds={allTeamIds} />
+            </section>
+
+            <div className="mx-8 border-t" style={dividerStyle} />
+
+            {/* ② 일반작업 내용 */}
+            <section id="section-work_general" className="px-8 pt-6 pb-8">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-lg">📋</span>
+                <h2 className={`text-base font-bold ${dk ? 'text-white/90' : 'text-gray-900'}`}>일반작업 내용</h2>
+                {generalItems.length > 0 && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${dk ? 'bg-blue-900/60 text-blue-300' : 'bg-blue-100 text-blue-600'}`}>
+                    {generalItems.length}건
+                  </span>
+                )}
               </div>
-            </div>
+              <WorkItemSlide items={generalItems} />
+            </section>
 
-            {/* 슬라이드 콘텐츠 */}
-            <div className="flex-1 overflow-hidden px-8 pb-4">
-              {currentSlide.type === 'high_risk' ? (
-                <HighRiskSlide meetingId={meetingId} mapUrl={mapUrl} workItems={workItems} allTeamIds={allTeamIds} />
-              ) : currentSlide.type === 'work_general' ? (
-                <WorkItemSlide items={generalItems} />
-              ) : (
-                <MaterialSlide slots={slots} />
-              )}
-            </div>
+            <div className="mx-8 border-t" style={dividerStyle} />
 
-            {/* 화살표 */}
-            {slideIdx > 0 && (
-              <button onClick={() => setSlideIdx(i => i - 1)}
-                className={`absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full flex items-center justify-center transition-colors ${dk ? 'bg-white/10 hover:bg-white/20 text-white/70 hover:text-white' : 'bg-black/5 hover:bg-black/10 text-gray-500 hover:text-gray-800'}`}>
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-            )}
-            {slideIdx < SLIDES.length - 1 && (
-              <button onClick={() => setSlideIdx(i => i + 1)}
-                className={`absolute top-1/2 -translate-y-1/2 w-10 h-10 rounded-full flex items-center justify-center transition-colors ${dk ? 'bg-white/10 hover:bg-white/20 text-white/70 hover:text-white' : 'bg-black/5 hover:bg-black/10 text-gray-500 hover:text-gray-800'}`}
-                style={{ right: showNote ? 'calc(18rem + 0.75rem)' : '0.75rem' }}>
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            )}
+            {/* ③ 자재 하역/운반 */}
+            <section id="section-material" className="px-8 pt-6 pb-10">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-lg">🚛</span>
+                <h2 className={`text-base font-bold ${dk ? 'text-white/90' : 'text-gray-900'}`}>자재 하역/운반</h2>
+                {materialCount > 0 && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${dk ? 'bg-amber-900/60 text-amber-300' : 'bg-amber-100 text-amber-700'}`}>
+                    {materialCount}건
+                  </span>
+                )}
+              </div>
+              <MaterialSlide slots={slots} />
+            </section>
           </div>
 
           {/* 메모 패널 */}
           {showNote && (
-            <NotePanel meetingId={meetingId} slideIdx={slideIdx} onClose={() => setShowNote(false)} />
+            <NotePanel meetingId={meetingId} onClose={() => setShowNote(false)} />
           )}
         </div>
 
-        {/* ── 하단 탭 바 ───────────────────────────────── */}
+        {/* ── 하단 탭 바 (섹션 빠른 이동) ─────────────── */}
         <footer className="shrink-0 flex items-center gap-2 px-5 py-3" style={footerBorderStyle}>
-          {SLIDES.map((slide, idx) => {
-            const count =
-              slide.type === 'high_risk'    ? workItems.filter(w => w.work_type === 'high_risk').length :
-              slide.type === 'work_general' ? workItems.filter(w => w.work_type === 'general').length   :
-              materialCount
-
-            const isActive = idx === slideIdx
+          {SECTIONS.map(section => {
+            const count    = sectionCount(section.type)
+            const isActive = activeSection === section.type
             return (
-              <button key={slide.type}
-                onClick={() => setSlideIdx(idx)}
+              <button key={section.type}
+                onClick={() => scrollToSection(section.type)}
                 className={[
                   'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all duration-150',
                   isActive
                     ? dk ? 'bg-white text-neutral-900' : 'bg-gray-900 text-white'
                     : dk ? 'text-white/50 hover:text-white/80 hover:bg-white/10' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100',
                 ].join(' ')}>
-                <span>{slide.icon}</span>
-                <span>{slide.label}</span>
+                <span>{section.icon}</span>
+                <span>{section.label}</span>
                 {count > 0 && (
                   <span className={[
                     'text-xs px-1.5 py-0.5 rounded-full font-semibold',
@@ -902,7 +1017,7 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
             )
           })}
           <div className={`ml-auto text-[11px] shrink-0 ${dk ? 'text-white/20' : 'text-gray-300'}`}>
-            ← → 키보드 이동 · M 메모 · F 전체화면 · Esc 닫기
+            M 메모 · F 전체화면 · Esc 닫기
           </div>
         </footer>
       </div>
