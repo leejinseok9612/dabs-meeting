@@ -533,10 +533,10 @@ function WorkItemSection({
           <thead>
             <tr className="bg-neutral-50/80 border-b border-neutral-100">
               <th className="text-left px-5 py-2.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider">업체명</th>
-              <th className="text-left px-4 py-2.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider">작업명</th>
+              <th className="text-left px-4 py-2.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider">작업명 / 내용</th>
               <th className="text-left px-4 py-2.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider">위치</th>
               <th className="text-left px-4 py-2.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider">인원</th>
-              <th className="text-left px-4 py-2.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider">내용</th>
+              <th className="text-left px-4 py-2.5 text-[10px] font-medium text-amber-500 uppercase tracking-wider">⚠ 위험요인 / ✅ 개선대책</th>
               <th className="px-3 py-2.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider">관리</th>
             </tr>
           </thead>
@@ -553,10 +553,26 @@ function WorkItemSection({
                     {item.teams?.name ?? '—'}
                   </div>
                 </td>
-                <td className="px-4 py-2.5 font-medium text-neutral-700">{item.work_name}</td>
+                <td className="px-4 py-2.5 max-w-[200px]">
+                  <p className="font-medium text-neutral-700 text-xs leading-snug">{item.work_name}</p>
+                  {item.description && <p className="text-[10px] text-neutral-400 mt-0.5 line-clamp-1">{item.description}</p>}
+                </td>
                 <td className="px-4 py-2.5 text-neutral-500">{item.location || '—'}</td>
                 <td className="px-4 py-2.5 text-neutral-500 whitespace-nowrap">{item.worker_count > 0 ? `${item.worker_count}명` : '—'}</td>
-                <td className="px-4 py-2.5 text-neutral-400 max-w-[200px] truncate">{item.description || '—'}</td>
+                <td className="px-4 py-2.5 max-w-[240px]">
+                  {item.risk_factors ? (
+                    <p className="text-[10px] text-amber-700 line-clamp-2 leading-snug">
+                      <span className="font-medium">⚠ </span>{item.risk_factors}
+                    </p>
+                  ) : (
+                    <span className="text-[10px] text-neutral-300">—</span>
+                  )}
+                  {item.improvement_measures && (
+                    <p className="text-[10px] text-emerald-700 line-clamp-2 leading-snug mt-1">
+                      <span className="font-medium">✅ </span>{item.improvement_measures}
+                    </p>
+                  )}
+                </td>
                 <td className="px-3 py-2 whitespace-nowrap">
                   <div className="flex items-center gap-1 justify-center">
                     <button onClick={() => openEdit(item)}
