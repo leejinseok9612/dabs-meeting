@@ -170,6 +170,10 @@ function MeetingMapViewer({
   const [offset,        setOffset]        = useState({ x: 0, y: 0 })
   const [isDragging,    setIsDragging]    = useState(false)
   const [naturalSize,   setNaturalSize]   = useState<{ w: number; h: number } | null>(null)
+  // ── 마커 편집 모드 ──────────────────────────────────────
+  const [editMode,      setEditMode]      = useState(false)
+  const [draggingMkId,  setDraggingMkId] = useState<string | null>(null)
+  const draggingMkIdRef = useRef<string | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const lastPointer  = useRef<{ x: number; y: number } | null>(null)
@@ -212,20 +216,70 @@ function MeetingMapViewer({
     zoom(e.deltaY < 0 ? 0.08 : -0.08)
   }, [zoom])
 
+  // 포인터 위치 → 이미지 내 x_pct / y_pct 변환
+  const pctFromPointer = useCallback((clientX: number, clientY: number) => {
+    if (!containerRef.current || !naturalSize) return null
+    const rect = containerRef.current.getBoundingClientRect()
+    const cx = rect.left + rect.width  / 2 + offset.x
+    const cy = rect.top  + rect.height / 2 + offset.y
+    const imgL = cx - (naturalSize.w * scale) / 2
+    const imgT = cy - (naturalSize.h * scale) / 2
+    const relX = (clientX - imgL) / scale
+    const relY = (clientY - imgT) / scale
+    return {
+      x: Math.max(0, Math.min(100, (relX / naturalSize.w) * 100)),
+      y: Math.max(0, Math.min(100, (relY / naturalSize.h) * 100)),
+    }
+  }, [naturalSize, scale, offset])
+
+  // 마커 삭제
+  const deleteMarker = useCallback(async (id: string) => {
+    setMarkers(prev => prev.filter(m => m.id !== id))
+    await fetch(`/api/map-markers?id=${id}`, { method: 'DELETE' }).catch(() => {})
+  }, [])
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest('button')) return
+    if (draggingMkIdRef.current) return // 마커 드래그 중엔 지도 팬 안 함
     setIsDragging(true)
     lastPointer.current = { x: e.clientX, y: e.clientY }
     e.currentTarget.setPointerCapture(e.pointerId)
   }
   const handlePointerMove = (e: React.PointerEvent) => {
+    // 마커 드래그 중
+    if (draggingMkIdRef.current) {
+      const pct = pctFromPointer(e.clientX, e.clientY)
+      if (!pct) return
+      setMarkers(prev => prev.map(m =>
+        m.id === draggingMkIdRef.current ? { ...m, x_pct: pct.x, y_pct: pct.y } : m
+      ))
+      return
+    }
     if (!isDragging || !lastPointer.current) return
     const dx = e.clientX - lastPointer.current.x
     const dy = e.clientY - lastPointer.current.y
     lastPointer.current = { x: e.clientX, y: e.clientY }
     setOffset(o => ({ x: o.x + dx, y: o.y + dy }))
   }
-  const handlePointerUp = () => { setIsDragging(false); lastPointer.current = null }
+  const handlePointerUp = async (e: React.PointerEvent) => {
+    // 마커 드래그 종료 → API 저장
+    if (draggingMkIdRef.current) {
+      const id  = draggingMkIdRef.current
+      const pct = pctFromPointer(e.clientX, e.clientY)
+      if (pct) {
+        await fetch('/api/map-markers', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, x_pct: pct.x, y_pct: pct.y }),
+        }).catch(() => {})
+      }
+      draggingMkIdRef.current = null
+      setDraggingMkId(null)
+      return
+    }
+    setIsDragging(false)
+    lastPointer.current = null
+  }
 
   const teamLegend = useMemo(() => {
     return allTeamIds
@@ -292,6 +346,21 @@ function MeetingMapViewer({
       {/* 헤더 */}
       <div className={`shrink-0 px-3 py-2 border-b flex items-center gap-2 flex-wrap ${headerBg}`}>
         <span className={`text-xs font-semibold ${headerText}`}>🗺️ 고위험작업 지적도</span>
+        {/* 편집 모드 토글 */}
+        <button
+          onClick={() => { setEditMode(e => !e); setClickedMarker(null) }}
+          className={[
+            'text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-colors',
+            editMode
+              ? 'bg-orange-500 border-orange-400 text-white'
+              : dk ? 'bg-neutral-700 border-neutral-600 text-neutral-300 hover:bg-neutral-600' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50',
+          ].join(' ')}
+        >
+          {editMode ? '✏️ 편집 중' : '✏️ 편집'}
+        </button>
+        {editMode && (
+          <span className={`text-[9px] ${dk ? 'text-orange-300/70' : 'text-orange-600/70'}`}>드래그: 이동 · ✕: 삭제</span>
+        )}
         {teamLegend.length > 0 && (
           <div className="flex gap-1 ml-auto flex-wrap">
             <button
@@ -429,8 +498,8 @@ function MeetingMapViewer({
       {/* 지도 캔버스 */}
       <div
         ref={containerRef}
-        className={`flex-1 relative overflow-hidden ${canvasBg}`}
-        style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+        className={`map-canvas flex-1 relative overflow-hidden ${canvasBg}`}
+        style={{ cursor: draggingMkId ? 'grabbing' : isDragging ? 'grabbing' : editMode ? 'default' : 'grab' }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -476,38 +545,65 @@ function MeetingMapViewer({
               />
               {visibleMarkers.map(marker => {
                 const color = marker.team_id ? (teamColorMap[marker.team_id] ?? '#6B7280') : '#6B7280'
-                const isHighlighted = hoveredTeamId != null && marker.team_id === hoveredTeamId
-                const isDimmed      = hoveredTeamId != null && marker.team_id !== hoveredTeamId
+                const isHighlighted = !editMode && hoveredTeamId != null && marker.team_id === hoveredTeamId
+                const isDimmed      = !editMode && hoveredTeamId != null && marker.team_id !== hoveredTeamId
                 const isClicked     = clickedMarker?.id === marker.id
+                const isBeingDragged = draggingMkId === marker.id
                 return (
                   <div key={marker.id} className="absolute"
                     style={{
                       left: `${marker.x_pct}%`,
                       top: `${marker.y_pct}%`,
-                      transform: `translate(-50%, -50%) scale(${isHighlighted || isClicked ? 1.4 : 1})`,
-                      transition: 'opacity 0.15s ease, transform 0.15s ease',
+                      transform: `translate(-50%, -50%) scale(${isHighlighted || isClicked || isBeingDragged ? 1.4 : 1})`,
+                      transition: isBeingDragged ? 'none' : 'opacity 0.15s ease, transform 0.15s ease',
                       opacity: isDimmed ? 0.15 : 1,
-                      zIndex: isHighlighted || isClicked ? 30 : 10,
-                      cursor: 'pointer',
+                      zIndex: isHighlighted || isClicked || isBeingDragged ? 30 : 10,
+                      cursor: editMode ? 'grab' : 'pointer',
                     }}
-                    onPointerDown={e => e.stopPropagation()}
-                    onClick={e => { e.stopPropagation(); setClickedMarker(prev => prev?.id === marker.id ? null : marker) }}
+                    onPointerDown={e => {
+                      e.stopPropagation()
+                      if (editMode) {
+                        draggingMkIdRef.current = marker.id
+                        setDraggingMkId(marker.id)
+                        ;(e.currentTarget.closest('.map-canvas') as HTMLElement | null)
+                          ?.setPointerCapture?.(e.pointerId)
+                      }
+                    }}
+                    onClick={e => {
+                      e.stopPropagation()
+                      if (!editMode && !isBeingDragged) setClickedMarker(prev => prev?.id === marker.id ? null : marker)
+                    }}
                   >
+                    {/* 편집 모드 삭제 버튼 */}
+                    {editMode && (
+                      <button
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 border border-white text-white flex items-center justify-center text-[9px] font-bold z-50 hover:bg-red-600"
+                        style={{ lineHeight: 1 }}
+                        onPointerDown={e => e.stopPropagation()}
+                        onClick={e => { e.stopPropagation(); deleteMarker(marker.id) }}
+                      >✕</button>
+                    )}
                     {/* 펄스 링 */}
-                    {(isHighlighted || isClicked) && (
+                    {!editMode && (isHighlighted || isClicked) && (
                       <div className="absolute rounded-full animate-ping pointer-events-none"
                         style={{ inset: '-10px', background: isClicked ? 'rgba(59,130,246,0.4)' : 'rgba(250,204,21,0.5)' }} />
+                    )}
+                    {editMode && isBeingDragged && (
+                      <div className="absolute rounded-full pointer-events-none"
+                        style={{ inset: '-8px', background: 'rgba(251,146,60,0.35)', borderRadius: '50%' }} />
                     )}
                     <div className="flex flex-col items-center">
                       <div
                         className="w-9 h-9 rounded-full flex items-center justify-center text-xl border-2 border-white"
                         style={{
                           background: color,
-                          boxShadow: isClicked
-                            ? `0 0 16px 4px rgba(59,130,246,0.6), 0 4px 12px rgba(0,0,0,0.3)`
-                            : isHighlighted
-                              ? `0 0 16px 4px rgba(250,204,21,0.6), 0 4px 12px rgba(0,0,0,0.3)`
-                              : '0 4px 12px rgba(0,0,0,0.2)',
+                          boxShadow: editMode
+                            ? `0 0 0 2px rgba(251,146,60,0.7), 0 4px 12px rgba(0,0,0,0.3)`
+                            : isClicked
+                              ? `0 0 16px 4px rgba(59,130,246,0.6), 0 4px 12px rgba(0,0,0,0.3)`
+                              : isHighlighted
+                                ? `0 0 16px 4px rgba(250,204,21,0.6), 0 4px 12px rgba(0,0,0,0.3)`
+                                : '0 4px 12px rgba(0,0,0,0.2)',
                         }}
                         title={`${marker.teams?.name ?? ''}${marker.label ? ' · ' + marker.label : ''}`}
                       >
@@ -950,6 +1046,132 @@ function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }
 }
 
 // ────────────────────────────────────────────────────────
+// PdfFilterModal — PDF 출력 전 섹션/업체 필터
+// ────────────────────────────────────────────────────────
+interface PdfFilter {
+  sections: { high_risk: boolean; general: boolean; material: boolean }
+  companies: Set<string> // 빈 Set = 전체
+}
+function PdfFilterModal({ workItems, onConfirm, onCancel }: {
+  workItems: WorkItem[]
+  onConfirm: (f: PdfFilter) => void
+  onCancel: () => void
+}) {
+  const theme = useTheme()
+  const dk = theme === 'dark'
+
+  const allCompanies = useMemo(() => {
+    const s = new Set<string>()
+    workItems.forEach(w => s.add(w.teams?.name ?? '미지정'))
+    return [...s].sort()
+  }, [workItems])
+
+  const [sections, setSections] = useState({ high_risk: true, general: true, material: true })
+  const [companies, setCompanies] = useState<Set<string>>(new Set()) // 빈 = 전체
+
+  const toggleSection = (k: keyof typeof sections) =>
+    setSections(p => ({ ...p, [k]: !p[k] }))
+
+  const toggleCompany = (name: string) =>
+    setCompanies(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name); else next.add(name)
+      return next
+    })
+
+  const isAllCo = companies.size === 0
+  const toggleAllCo = () => setCompanies(isAllCo ? new Set(allCompanies) : new Set())
+
+  const card = `rounded-xl border p-4 ${dk ? 'bg-neutral-800 border-white/10' : 'bg-white border-gray-200'}`
+  const chk = (on: boolean) => `w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
+    on ? 'bg-blue-500 border-blue-500' : dk ? 'border-white/30 bg-transparent' : 'border-gray-300 bg-white'
+  }`
+
+  const SECTION_LABELS = [
+    { key: 'high_risk' as const,  icon: '⚠️', label: '고위험 현황' },
+    { key: 'general'   as const,  icon: '📋', label: '일반작업 내용' },
+    { key: 'material'  as const,  icon: '🚛', label: '자재 하역/운반' },
+  ]
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 px-4" onClick={onCancel}>
+      <div
+        className={`w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden ${dk ? 'bg-neutral-900 border border-white/10' : 'bg-gray-50 border border-gray-200'}`}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* 헤더 */}
+        <div className={`px-5 py-4 border-b flex items-center justify-between ${dk ? 'border-white/10' : 'border-gray-200'}`}>
+          <div>
+            <p className={`text-[10px] font-semibold uppercase tracking-widest ${dk ? 'text-white/40' : 'text-gray-400'}`}>PDF 출력 설정</p>
+            <p className={`text-sm font-bold mt-0.5 ${dk ? 'text-white' : 'text-gray-900'}`}>출력할 항목 선택</p>
+          </div>
+          <button onClick={onCancel} className={`p-1.5 rounded-lg ${dk ? 'text-white/40 hover:text-white/80 hover:bg-white/8' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'}`}>✕</button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          {/* 섹션 */}
+          <div>
+            <p className={`text-[11px] font-semibold mb-2 ${dk ? 'text-white/50' : 'text-gray-500'}`}>섹션 선택</p>
+            <div className={card}>
+              <div className="space-y-2.5">
+                {SECTION_LABELS.map(({ key, icon, label }) => (
+                  <button key={key} onClick={() => toggleSection(key)} className="flex items-center gap-3 w-full text-left">
+                    <div className={chk(sections[key])}>
+                      {sections[key] && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>}
+                    </div>
+                    <span className="text-sm">{icon}</span>
+                    <span className={`text-sm ${dk ? 'text-white/80' : 'text-gray-700'}`}>{label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* 업체 필터 */}
+          {allCompanies.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className={`text-[11px] font-semibold ${dk ? 'text-white/50' : 'text-gray-500'}`}>업체 필터</p>
+                <button onClick={toggleAllCo} className={`text-[10px] px-2 py-0.5 rounded-full ${dk ? 'text-white/40 hover:text-white/70 hover:bg-white/8' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}>
+                  {isAllCo ? '특정 업체만' : '전체 업체'}
+                </button>
+              </div>
+              <div className={card}>
+                <div className="space-y-2.5">
+                  {allCompanies.map(co => {
+                    const on = isAllCo || companies.has(co)
+                    return (
+                      <button key={co} onClick={() => { if (isAllCo) { setCompanies(new Set([co])) } else toggleCompany(co) }} className="flex items-center gap-3 w-full text-left">
+                        <div className={chk(on)}>
+                          {on && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>}
+                        </div>
+                        <span className={`text-sm ${dk ? 'text-white/80' : 'text-gray-700'}`}>{co}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 하단 버튼 */}
+        <div className={`px-5 pb-5 pt-2 flex gap-2 border-t ${dk ? 'border-white/10' : 'border-gray-200'}`}>
+          <button onClick={onCancel} className={`flex-1 py-2.5 rounded-xl text-sm border transition-colors ${dk ? 'border-white/10 text-white/60 hover:bg-white/5' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>취소</button>
+          <button
+            onClick={() => onConfirm({ sections, companies })}
+            disabled={!sections.high_risk && !sections.general && !sections.material}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            📄 PDF 생성
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────
 // MeetingModeView — 메인 컴포넌트
 // ────────────────────────────────────────────────────────
 export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onClose: () => void }) {
@@ -959,10 +1181,11 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
   const [allTeamIds, setAllTeamIds] = useState<string[]>([])
   const [loading,    setLoading]    = useState(true)
   const [activeSection, setActiveSection] = useState<SectionType>('high_risk')
-  const [showNote,     setShowNote]     = useState(false)
-  const [isFullscreen, setIsFullscreen] = useState(false)
-  const [theme,        setTheme]        = useState<Theme>('dark')
-  const [pdfLoading,   setPdfLoading]   = useState(false)
+  const [showNote,      setShowNote]      = useState(false)
+  const [isFullscreen,  setIsFullscreen]  = useState(false)
+  const [theme,         setTheme]         = useState<Theme>('dark')
+  const [pdfLoading,    setPdfLoading]    = useState(false)
+  const [pdfFilterOpen, setPdfFilterOpen] = useState(false)
 
   const containerRef  = useRef<HTMLDivElement>(null)
   const scrollBodyRef = useRef<HTMLDivElement>(null)
@@ -1033,10 +1256,11 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
   }, [])
 
   // PDF 다운로드 — 새 창 HTML + 브라우저 인쇄
-  // 구조: [지적도+마커] [고위험/업체별] [일반작업/업체별] [자재] [메모]
-  const downloadPDF = useCallback(async () => {
+  // 구조: [지적도+마커] [고위험/업체별 3열] [일반작업/업체별 3열] [자재] [메모]
+  const downloadPDF = useCallback(async (filter: PdfFilter) => {
     if (!meeting) return
     setPdfLoading(true)
+    setPdfFilterOpen(false)
 
     // ── HTML 이스케이프 ─────────────────────────────────────
     const esc = (s: string) =>
@@ -1054,13 +1278,15 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
     const pdfColorMap: Record<string, string> = {}
     allTeamIds.forEach((tid, idx) => { pdfColorMap[tid] = TEAM_COLORS[idx % TEAM_COLORS.length] })
 
-    // ── 데이터 준비 ─────────────────────────────────────────
+    // ── 데이터 준비 (필터 적용) ─────────────────────────────
     const noteText = (() => { try { return localStorage.getItem(noteKey(meetingId)) ?? '' } catch { return '' } })()
-    const highRisk = workItems.filter(w => w.work_type === 'high_risk')
-    const general  = workItems.filter(w => w.work_type === 'general')
-    const allRes   = slots.flatMap(s =>
-      (s.material_reservations ?? []).map(r => ({ ...r, slot_time: s.slot_time, gate: s.gate }))
-    )
+    const coFilter = (w: WorkItem) =>
+      filter.companies.size === 0 || filter.companies.has(w.teams?.name ?? '미지정')
+    const highRisk = filter.sections.high_risk ? workItems.filter(w => w.work_type === 'high_risk' && coFilter(w)) : []
+    const general  = filter.sections.general   ? workItems.filter(w => w.work_type === 'general'   && coFilter(w)) : []
+    const allRes   = filter.sections.material
+      ? slots.flatMap(s => (s.material_reservations ?? []).map(r => ({ ...r, slot_time: s.slot_time, gate: s.gate })))
+      : []
     const pdfMapUrl = meeting.map_file_url ?? null
 
     // ── 지적도 위 마커 HTML ──────────────────────────────────
@@ -1073,20 +1299,17 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
       </div>`
     }).join('')
 
-    // ── 작업 카드 렌더 (한 줄 헤더) ─────────────────────────
+    // ── 작업 카드 렌더 (3컬럼용 — 세로 레이아웃) ────────────
     const cardHtml = (item: WorkItem, color: 'red' | 'blue') => {
-      const metaParts = [
-        item.teams?.name ? `<span class="co ${color}">${esc(item.teams.name)}</span>` : '',
-        item.location    ? `<span>📍${esc(item.location)}</span>` : '',
-        item.worker_count > 0 ? `<span>👷${item.worker_count}명</span>` : '',
-      ].filter(Boolean).join('<span class="sep">·</span>')
+      const metaRow = [
+        item.location    ? `📍${esc(item.location)}` : '',
+        item.worker_count > 0 ? `👷${item.worker_count}명` : '',
+      ].filter(Boolean).join(' · ')
       return `
       <div class="card ${color}">
         <div class="card-top">
-          <div class="card-row">
-            <span class="ctitle">${esc(item.work_name)}</span>
-            <span class="cmeta">${metaParts}</span>
-          </div>
+          <div class="ctitle">${esc(item.work_name)}</div>
+          ${metaRow ? `<div class="cmeta">${metaRow}</div>` : ''}
           ${item.description ? `<div class="cdesc">${esc(item.description)}</div>` : ''}
         </div>
         ${item.risk_factors ? `<div class="risk"><span class="lbl">⚠ 위험요인</span>${esc(item.risk_factors)}</div>` : ''}
@@ -1108,7 +1331,7 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
       Object.entries(grouped).map(([co, items]) =>
         `<div class="co-grp">
           <div class="co-title ${color}-co">${esc(co)} <span class="gcnt">${items.length}건</span></div>
-          ${items.map(i => cardHtml(i, color)).join('')}
+          <div class="co-cards">${items.map(i => cardHtml(i, color)).join('')}</div>
         </div>`
       ).join('')
 
@@ -1156,28 +1379,25 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,
 /* ── 지적도 ── */
 .map-wrap{position:relative;display:block;width:100%;line-height:0}
 .map-wrap img{width:100%;height:auto;display:block;max-height:215mm;object-fit:contain}
-/* ── 작업 카드 ── */
-.co-grp{margin-bottom:20px}
+/* ── 작업 카드 (3컬럼 그리드) ── */
+.co-grp{margin-bottom:18px}
 .co-title{font-size:12px;font-weight:800;color:#111;background:#f3f4f6;border-radius:5px;padding:5px 10px;margin-bottom:6px;display:flex;align-items:center;gap:6px;letter-spacing:-.3px;border-left:3px solid #9ca3af}
 .co-title.red-co{border-left-color:#ef4444;color:#991b1b}
 .co-title.blue-co{border-left-color:#3b82f6;color:#1e40af}
 .gcnt{font-size:10px;color:#9ca3af;font-weight:400;margin-left:4px}
-.card{border-radius:5px;margin-bottom:4px;overflow:hidden;break-inside:avoid;page-break-inside:avoid;border:1px solid #e5e7eb}
-.card-top{padding:5px 10px}
+/* 3컬럼 그리드 */
+.co-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.card{border-radius:5px;overflow:hidden;break-inside:avoid;page-break-inside:avoid;border:1px solid #e5e7eb;display:flex;flex-direction:column}
+.card-top{padding:6px 9px;flex:1}
 .card.red .card-top{background:#fef2f2;border-bottom:1px solid #fecaca}
 .card.blue .card-top{background:#eff6ff;border-bottom:1px solid #bfdbfe}
-/* 한 줄 헤더: 작업명 왼쪽, 업체·위치·인원 오른쪽 */
-.card-row{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
-.ctitle{font-size:11px;font-weight:700;line-height:1.3;flex:1;min-width:0}
-.cmeta{font-size:10px;color:#6b7280;white-space:nowrap;flex-shrink:0;display:flex;align-items:center;gap:3px}
-.cmeta .sep{color:#d1d5db;margin:0 1px}
-.cmeta .co.red{color:#dc2626;font-weight:700;font-size:10px}
-.cmeta .co.blue{color:#2563eb;font-weight:700;font-size:10px}
-.cdesc{font-size:9px;color:#6b7280;margin-top:2px;line-height:1.4}
+.ctitle{font-size:10px;font-weight:700;line-height:1.35;margin-bottom:2px}
+.cmeta{font-size:8px;color:#6b7280;line-height:1.3}
+.cdesc{font-size:8px;color:#6b7280;margin-top:2px;line-height:1.3}
 /* 위험요인·개선대책: 레이블+내용 한 줄 */
-.risk{padding:4px 10px;background:#fffbeb;border-top:1px solid #fde68a;font-size:10px;color:#78350f;line-height:1.5}
-.impr{padding:4px 10px;background:#f0fdf4;border-top:1px solid #bbf7d0;font-size:10px;color:#14532d;line-height:1.5}
-.lbl{display:inline;font-size:9px;font-weight:700;margin-right:5px}
+.risk{padding:3px 9px;background:#fffbeb;border-top:1px solid #fde68a;font-size:9px;color:#78350f;line-height:1.4}
+.impr{padding:3px 9px;background:#f0fdf4;border-top:1px solid #bbf7d0;font-size:9px;color:#14532d;line-height:1.4}
+.lbl{display:inline;font-size:8px;font-weight:700;margin-right:4px}
 .risk .lbl{color:#b45309}.impr .lbl{color:#16a34a}
 /* ── 자재 ── */
 table{width:100%;border-collapse:collapse}
@@ -1303,7 +1523,7 @@ ${noteText.trim() ? `
             <div className={`w-px h-5 ${dk ? 'bg-white/10' : 'bg-gray-200'}`} />
             {/* PDF 다운로드 */}
             <button
-              onClick={downloadPDF}
+              onClick={() => setPdfFilterOpen(true)}
               disabled={pdfLoading}
               className={[
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
@@ -1412,6 +1632,15 @@ ${noteText.trim() ? `
             <NotePanel meetingId={meetingId} onClose={() => setShowNote(false)} />
           )}
         </div>
+
+        {/* PDF 필터 모달 */}
+        {pdfFilterOpen && (
+          <PdfFilterModal
+            workItems={workItems}
+            onConfirm={filter => downloadPDF(filter)}
+            onCancel={() => setPdfFilterOpen(false)}
+          />
+        )}
 
         {/* ── 하단 탭 바 (섹션 빠른 이동) ─────────────── */}
         <footer className="shrink-0 flex items-center gap-2 px-5 py-3" style={footerBorderStyle}>

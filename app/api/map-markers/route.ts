@@ -52,6 +52,22 @@ export async function PATCH(req: NextRequest) {
   return NextResponse.json({ ok: true })
 }
 
+// PUT /api/map-markers — 마커 위치(x_pct, y_pct) 업데이트
+// body: { id, x_pct, y_pct }
+export async function PUT(req: NextRequest) {
+  const { id, x_pct, y_pct } = await req.json()
+  if (!id || x_pct === undefined || y_pct === undefined) {
+    return NextResponse.json({ error: 'id, x_pct, y_pct required' }, { status: 400 })
+  }
+  const supabase = await createServerSupabase()
+  const { error } = await supabase
+    .from('map_markers')
+    .update({ x_pct, y_pct })
+    .eq('id', id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ ok: true })
+}
+
 // DELETE /api/map-markers?id=xxx  또는 ?meetingId=&teamId=&label=&workType= (작업항목 삭제 시 마커 일괄 삭제)
 export async function DELETE(req: NextRequest) {
   const { searchParams } = new URL(req.url)
