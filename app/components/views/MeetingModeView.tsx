@@ -626,8 +626,8 @@ function HighRiskSlide({ meetingId, mapUrl, workItems, allTeamIds }: {
                 {/* ── 한 줄 헤더: 작업명 + 업체·위치·인원 ── */}
                 <div className="flex items-baseline justify-between gap-2 mb-1">
                   <h4 className={`text-sm font-semibold leading-snug shrink-0 mr-1 ${dk ? 'text-white' : 'text-gray-900'}`}>{item.work_name}</h4>
-                  <div className={`flex items-center gap-1 text-[11px] shrink-0 flex-wrap justify-end ${dk ? 'text-white/40' : 'text-gray-400'}`}>
-                    {item.teams?.name && <span className={`font-medium ${dk ? 'text-red-300/70' : 'text-red-500'}`}>{item.teams.name}</span>}
+                  <div className={`flex items-center gap-1 text-xs shrink-0 flex-wrap justify-end ${dk ? 'text-white/40' : 'text-gray-400'}`}>
+                    {item.teams?.name && <span className={`font-bold text-xs ${dk ? 'text-red-300/80' : 'text-red-600'}`}>{item.teams.name}</span>}
                     {item.location && <><span className={dk ? 'text-white/20' : 'text-gray-300'}>·</span><span>📍{item.location}</span></>}
                     {item.worker_count > 0 && <><span className={dk ? 'text-white/20' : 'text-gray-300'}>·</span><span>👷{item.worker_count}명</span></>}
                   </div>
@@ -695,7 +695,7 @@ function WorkItemSlide({ items }: { items: WorkItem[] }) {
   }
 
   return (
-    <div className="px-2 py-1 space-y-1.5">
+    <div className="px-2 py-1 space-y-2">
       {/* 전체 펼치기/접기 컨트롤 */}
       <div className="flex items-center justify-between mb-2 px-1">
         <span className={`text-xs ${dk ? 'text-white/30' : 'text-gray-400'}`}>
@@ -1107,7 +1107,7 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
     const renderGrouped = (grouped: Record<string, WorkItem[]>, color: 'red' | 'blue') =>
       Object.entries(grouped).map(([co, items]) =>
         `<div class="co-grp">
-          <div class="co-title">● ${esc(co)} <span class="gcnt">${items.length}건</span></div>
+          <div class="co-title ${color}-co">${esc(co)} <span class="gcnt">${items.length}건</span></div>
           ${items.map(i => cardHtml(i, color)).join('')}
         </div>`
       ).join('')
@@ -1157,9 +1157,11 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,
 .map-wrap{position:relative;display:block;width:100%;line-height:0}
 .map-wrap img{width:100%;height:auto;display:block;max-height:215mm;object-fit:contain}
 /* ── 작업 카드 ── */
-.co-grp{margin-bottom:12px}
-.co-title{font-size:10px;font-weight:700;color:#374151;background:#f3f4f6;border-radius:4px;padding:4px 8px;margin-bottom:5px;display:flex;align-items:center;gap:5px}
-.gcnt{font-size:9px;color:#9ca3af;font-weight:400;margin-left:4px}
+.co-grp{margin-bottom:20px}
+.co-title{font-size:12px;font-weight:800;color:#111;background:#f3f4f6;border-radius:5px;padding:5px 10px;margin-bottom:6px;display:flex;align-items:center;gap:6px;letter-spacing:-.3px;border-left:3px solid #9ca3af}
+.co-title.red-co{border-left-color:#ef4444;color:#991b1b}
+.co-title.blue-co{border-left-color:#3b82f6;color:#1e40af}
+.gcnt{font-size:10px;color:#9ca3af;font-weight:400;margin-left:4px}
 .card{border-radius:5px;margin-bottom:4px;overflow:hidden;break-inside:avoid;page-break-inside:avoid;border:1px solid #e5e7eb}
 .card-top{padding:5px 10px}
 .card.red .card-top{background:#fef2f2;border-bottom:1px solid #fecaca}
@@ -1167,14 +1169,15 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,
 /* 한 줄 헤더: 작업명 왼쪽, 업체·위치·인원 오른쪽 */
 .card-row{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
 .ctitle{font-size:11px;font-weight:700;line-height:1.3;flex:1;min-width:0}
-.cmeta{font-size:9px;color:#6b7280;white-space:nowrap;flex-shrink:0;display:flex;align-items:center;gap:3px}
+.cmeta{font-size:10px;color:#6b7280;white-space:nowrap;flex-shrink:0;display:flex;align-items:center;gap:3px}
 .cmeta .sep{color:#d1d5db;margin:0 1px}
-.cmeta .co.red{color:#dc2626;font-weight:600}
-.cmeta .co.blue{color:#2563eb;font-weight:600}
+.cmeta .co.red{color:#dc2626;font-weight:700;font-size:10px}
+.cmeta .co.blue{color:#2563eb;font-weight:700;font-size:10px}
 .cdesc{font-size:9px;color:#6b7280;margin-top:2px;line-height:1.4}
-.risk{padding:5px 11px;background:#fffbeb;border-top:1px solid #fde68a;font-size:10px;color:#78350f;line-height:1.6}
-.impr{padding:5px 11px;background:#f0fdf4;border-top:1px solid #bbf7d0;font-size:10px;color:#14532d;line-height:1.6}
-.lbl{display:block;font-size:8px;font-weight:700;margin-bottom:1px}
+/* 위험요인·개선대책: 레이블+내용 한 줄 */
+.risk{padding:4px 10px;background:#fffbeb;border-top:1px solid #fde68a;font-size:10px;color:#78350f;line-height:1.5}
+.impr{padding:4px 10px;background:#f0fdf4;border-top:1px solid #bbf7d0;font-size:10px;color:#14532d;line-height:1.5}
+.lbl{display:inline;font-size:9px;font-weight:700;margin-right:5px}
 .risk .lbl{color:#b45309}.impr .lbl{color:#16a34a}
 /* ── 자재 ── */
 table{width:100%;border-collapse:collapse}
