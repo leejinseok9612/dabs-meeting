@@ -149,17 +149,20 @@ function WeatherWidget() {
 // ────────────────────────────────────────────────────────
 function MeetingMapViewer({
   meetingId, mapUrl, allTeamIds, hoveredTeamId,
+  filterTeamIds, onFilterToggle, onFilterClear,
 }: {
   meetingId: string
   mapUrl: string
   allTeamIds: string[]
   hoveredTeamId?: string | null
+  filterTeamIds: Set<string>
+  onFilterToggle: (id: string) => void
+  onFilterClear: () => void
 }) {
   const theme = useTheme()
   const dk = theme === 'dark'
 
   const [markers,      setMarkers]      = useState<MapMarkerData[]>([])
-  const [filterTeamId, setFilterTeamId] = useState<string | null>(null)
   const [scale,        setScale]        = useState(1)
   const [offset,       setOffset]       = useState({ x: 0, y: 0 })
   const [isDragging,   setIsDragging]   = useState(false)
@@ -237,8 +240,8 @@ function MeetingMapViewer({
     return m
   }, [allTeamIds])
 
-  const visibleMarkers = filterTeamId
-    ? markers.filter(m => m.team_id === filterTeamId)
+  const visibleMarkers = filterTeamIds.size > 0
+    ? markers.filter(m => m.team_id && filterTeamIds.has(m.team_id))
     : markers
 
   // 헤더/캔버스 테마
@@ -258,32 +261,36 @@ function MeetingMapViewer({
         {teamLegend.length > 0 && (
           <div className="flex gap-1 ml-auto flex-wrap">
             <button
-              onClick={() => setFilterTeamId(null)}
+              onClick={onFilterClear}
               className={[
                 'text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors',
-                filterTeamId === null
+                filterTeamIds.size === 0
                   ? dk ? 'bg-white text-neutral-900' : 'bg-slate-800 text-white'
                   : dk ? 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400',
               ].join(' ')}
             >
               전체 ({markers.length})
             </button>
-            {teamLegend.map(t => (
-              <button
-                key={t.id}
-                onClick={() => setFilterTeamId(prev => prev === t.id ? null : t.id)}
-                className="text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors flex items-center gap-1"
-                style={filterTeamId === t.id
-                  ? { backgroundColor: t.color, color: 'white', border: `1px solid ${t.color}` }
-                  : dk
-                    ? { backgroundColor: '#404040', border: '1px solid #525252', color: '#d4d4d4' }
-                    : { backgroundColor: 'white', border: '1px solid #e2e8f0', color: '#475569' }
-                }
-              >
-                <span className="w-1.5 h-1.5 rounded-full inline-block shrink-0" style={{ background: t.color }} />
-                {t.name} ({t.count})
-              </button>
-            ))}
+            {teamLegend.map(t => {
+              const active = filterTeamIds.has(t.id)
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => onFilterToggle(t.id)}
+                  className="text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors flex items-center gap-1"
+                  style={active
+                    ? { backgroundColor: t.color, color: 'white', border: `1px solid ${t.color}` }
+                    : dk
+                      ? { backgroundColor: '#404040', border: '1px solid #525252', color: '#d4d4d4' }
+                      : { backgroundColor: 'white', border: '1px solid #e2e8f0', color: '#475569' }
+                  }
+                >
+                  <span className="w-1.5 h-1.5 rounded-full inline-block shrink-0" style={{ background: t.color }} />
+                  {t.name} ({t.count})
+                  {active && <span className="ml-0.5 opacity-70">✓</span>}
+                </button>
+              )
+            })}
           </div>
         )}
       </div>
@@ -405,6 +412,23 @@ function HighRiskSlide({ meetingId, mapUrl, workItems, allTeamIds }: {
   const dk = theme === 'dark'
   const highRisk = workItems.filter(w => w.work_type === 'high_risk')
   const [hoveredTeamId, setHoveredTeamId] = useState<string | null>(null)
+  // 다중 선택 팀 필터 (지도 헤더 ↔ 오른쪽 카드 목록 동기화)
+  const [filterTeamIds, setFilterTeamIds] = useState<Set<string>>(new Set())
+
+  const handleFilterToggle = useCallback((id: string) => {
+    setFilterTeamIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+  const handleFilterClear = useCallback(() => setFilterTeamIds(new Set()), [])
+
+  // 필터가 켜져 있으면 해당 업체 카드만 표시
+  const visibleHighRisk = filterTeamIds.size > 0
+    ? highRisk.filter(item => filterTeamIds.has(item.team_id))
+    : highRisk
 
   return (
     <div className="flex gap-4 items-start">
@@ -416,6 +440,9 @@ function HighRiskSlide({ meetingId, mapUrl, workItems, allTeamIds }: {
             mapUrl={mapUrl}
             allTeamIds={allTeamIds}
             hoveredTeamId={hoveredTeamId}
+            filterTeamIds={filterTeamIds}
+            onFilterToggle={handleFilterToggle}
+            onFilterClear={handleFilterClear}
           />
         </div>
       ) : (
@@ -427,13 +454,22 @@ function HighRiskSlide({ meetingId, mapUrl, workItems, allTeamIds }: {
 
       {/* 고위험작업 목록 */}
       <div className="w-[400px] shrink-0 space-y-2 pr-1">
-        {highRisk.length === 0 ? (
+        {/* 필터 활성 시 안내 배지 */}
+        {filterTeamIds.size > 0 && (
+          <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${dk ? 'bg-neutral-800 text-white/60' : 'bg-slate-100 text-slate-500'}`}>
+            <span>{filterTeamIds.size}개 업체 필터 중 · {visibleHighRisk.length}건 표시</span>
+            <button onClick={handleFilterClear} className={`text-[10px] underline ${dk ? 'text-white/40 hover:text-white/70' : 'text-slate-400 hover:text-slate-600'}`}>전체 보기</button>
+          </div>
+        )}
+        {visibleHighRisk.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <p className="text-4xl mb-3">📭</p>
-            <p className={`text-sm ${dk ? 'text-white/40' : 'text-gray-400'}`}>등록된 고위험작업이 없습니다.</p>
+            <p className={`text-sm ${dk ? 'text-white/40' : 'text-gray-400'}`}>
+              {filterTeamIds.size > 0 ? '선택한 업체의 고위험작업이 없습니다.' : '등록된 고위험작업이 없습니다.'}
+            </p>
           </div>
         ) : (
-          highRisk.map(item => {
+          visibleHighRisk.map(item => {
             const isHovered = hoveredTeamId === item.team_id
             return (
               <div
