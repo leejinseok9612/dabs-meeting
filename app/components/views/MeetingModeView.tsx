@@ -654,11 +654,35 @@ function HighRiskSlide({ meetingId, mapUrl, workItems, allTeamIds }: {
 }
 
 // ────────────────────────────────────────────────────────
-// WorkItemSlide
+// WorkItemSlide — 업체별 아코디언
 // ────────────────────────────────────────────────────────
 function WorkItemSlide({ items }: { items: WorkItem[] }) {
   const theme = useTheme()
   const dk = theme === 'dark'
+
+  // 업체별 그룹
+  const grouped: Record<string, WorkItem[]> = {}
+  items.forEach(item => {
+    const name = item.teams?.name ?? '미지정'
+    if (!grouped[name]) grouped[name] = []
+    grouped[name].push(item)
+  })
+  const companies = Object.keys(grouped)
+
+  // 아코디언 열림 상태 — 기본: 첫 번째 업체만 열림
+  const [openSet, setOpenSet] = useState<Set<string>>(() => new Set(companies.slice(0, 1)))
+
+  const toggleCompany = useCallback((name: string) => {
+    setOpenSet(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }, [])
+
+  const expandAll  = useCallback(() => setOpenSet(new Set(companies)), [companies.join(',')])  // eslint-disable-line
+  const collapseAll = useCallback(() => setOpenSet(new Set()), [])
 
   if (items.length === 0) {
     return (
@@ -669,50 +693,107 @@ function WorkItemSlide({ items }: { items: WorkItem[] }) {
     )
   }
 
-  const grouped: Record<string, WorkItem[]> = {}
-  items.forEach(item => {
-    const name = item.teams?.name ?? '미지정'
-    if (!grouped[name]) grouped[name] = []
-    grouped[name].push(item)
-  })
-
   return (
-    <div className="px-2 py-1 space-y-4">
-      {Object.entries(grouped).map(([company, compItems]) => (
-        <div key={company}>
-          <div className={`flex items-center gap-2 mb-2 sticky top-0 backdrop-blur-sm py-1 px-2 rounded-md -mx-2 ${dk ? 'bg-neutral-900/80' : 'bg-gray-50/95'}`}>
-            <span className="w-2 h-2 rounded-full bg-blue-400" />
-            <h3 className={`text-sm font-semibold ${dk ? 'text-white/90' : 'text-gray-800'}`}>{company}</h3>
-            <span className={`text-xs ml-auto ${dk ? 'text-white/40' : 'text-gray-400'}`}>{compItems.length}건</span>
-          </div>
-          <div className="space-y-2 pl-3">
-            {compItems.map(item => (
-              <div key={item.id} className={`rounded-xl p-4 border ${dk ? 'bg-blue-950/40 border-blue-800/30' : 'bg-blue-50 border-blue-200'}`}>
-                <div className="flex items-start justify-between gap-4 mb-1.5">
-                  <h4 className={`text-base font-semibold leading-snug ${dk ? 'text-white' : 'text-gray-900'}`}>{item.work_name}</h4>
-                  <div className={`flex gap-3 text-sm shrink-0 ${dk ? 'text-white/50' : 'text-gray-400'}`}>
-                    {item.location && <span>📍 {item.location}</span>}
-                    {item.worker_count > 0 && <span>👷 {item.worker_count}명</span>}
-                  </div>
-                </div>
-                {item.description && <p className={`text-sm mb-2 ${dk ? 'text-white/60' : 'text-gray-600'}`}>{item.description}</p>}
-                {item.risk_factors && (
-                  <div className={`flex gap-2 rounded-lg px-3 py-2 mb-1 border ${dk ? 'bg-amber-950/50 border-amber-800/30' : 'bg-amber-50 border-amber-200'}`}>
-                    <span className="text-amber-400 text-sm shrink-0">⚠</span>
-                    <p className={`text-sm ${dk ? 'text-amber-200/80' : 'text-amber-800'}`}>{item.risk_factors}</p>
-                  </div>
-                )}
-                {item.improvement_measures && (
-                  <div className={`flex gap-2 rounded-lg px-3 py-2 border ${dk ? 'bg-emerald-950/50 border-emerald-800/30' : 'bg-emerald-50 border-emerald-200'}`}>
-                    <span className="text-emerald-400 text-sm shrink-0">✅</span>
-                    <p className={`text-sm ${dk ? 'text-emerald-200/80' : 'text-emerald-800'}`}>{item.improvement_measures}</p>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+    <div className="px-2 py-1 space-y-1.5">
+      {/* 전체 펼치기/접기 컨트롤 */}
+      <div className="flex items-center justify-between mb-2 px-1">
+        <span className={`text-xs ${dk ? 'text-white/30' : 'text-gray-400'}`}>
+          {companies.length}개 업체 · {items.length}건
+        </span>
+        <div className="flex gap-2">
+          <button
+            onClick={expandAll}
+            className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${dk ? 'text-white/40 hover:text-white/70 hover:bg-white/8' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
+          >전체 펼치기</button>
+          <button
+            onClick={collapseAll}
+            className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${dk ? 'text-white/40 hover:text-white/70 hover:bg-white/8' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
+          >전체 접기</button>
         </div>
-      ))}
+      </div>
+
+      {companies.map(company => {
+        const compItems = grouped[company]
+        const isOpen = openSet.has(company)
+        const hasRisk = compItems.some(i => i.risk_factors || i.improvement_measures)
+        return (
+          <div
+            key={company}
+            className={`rounded-xl overflow-hidden border transition-colors ${
+              dk
+                ? isOpen ? 'border-blue-800/40 bg-blue-950/20' : 'border-white/8 bg-white/3'
+                : isOpen ? 'border-blue-200 bg-blue-50/40' : 'border-gray-200 bg-white'
+            }`}
+          >
+            {/* 업체 헤더 (클릭 시 토글) */}
+            <button
+              onClick={() => toggleCompany(company)}
+              className="w-full flex items-center gap-3 px-4 py-3 text-left"
+            >
+              {/* 아코디언 화살표 */}
+              <svg
+                className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''} ${dk ? 'text-white/40' : 'text-gray-400'}`}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+
+              {/* 업체 이름 */}
+              <span className={`text-sm font-semibold flex-1 text-left ${dk ? 'text-white/90' : 'text-gray-800'}`}>
+                {company}
+              </span>
+
+              {/* 위험요인 배지 */}
+              {hasRisk && (
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${dk ? 'bg-amber-900/60 text-amber-300' : 'bg-amber-100 text-amber-600'}`}>
+                  ⚠ 위험요인
+                </span>
+              )}
+
+              {/* 건수 배지 */}
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${
+                isOpen
+                  ? dk ? 'bg-blue-700/60 text-blue-200' : 'bg-blue-600 text-white'
+                  : dk ? 'bg-white/10 text-white/50' : 'bg-gray-100 text-gray-500'
+              }`}>
+                {compItems.length}건
+              </span>
+            </button>
+
+            {/* 작업 항목 목록 (펼쳐진 경우) */}
+            {isOpen && (
+              <div className={`border-t px-4 pb-3 pt-2 space-y-2 ${dk ? 'border-white/8' : 'border-blue-100'}`}>
+                {compItems.map(item => (
+                  <div key={item.id} className={`rounded-lg overflow-hidden border ${dk ? 'border-blue-800/30' : 'border-blue-200'}`}>
+                    <div className={`px-3.5 py-2.5 ${dk ? 'bg-blue-950/60' : 'bg-blue-50'}`}>
+                      <div className="flex items-start justify-between gap-3 mb-1">
+                        <h4 className={`text-sm font-semibold leading-snug ${dk ? 'text-white' : 'text-gray-900'}`}>{item.work_name}</h4>
+                        <div className={`flex gap-2 text-xs shrink-0 ${dk ? 'text-white/40' : 'text-gray-400'}`}>
+                          {item.location && <span>📍 {item.location}</span>}
+                          {item.worker_count > 0 && <span>👷 {item.worker_count}명</span>}
+                        </div>
+                      </div>
+                      {item.description && <p className={`text-xs ${dk ? 'text-white/50' : 'text-gray-500'}`}>{item.description}</p>}
+                    </div>
+                    {item.risk_factors && (
+                      <div className={`flex gap-2 px-3.5 py-2 border-t ${dk ? 'bg-amber-950/50 border-amber-800/30' : 'bg-amber-50 border-amber-100'}`}>
+                        <span className="text-amber-400 text-xs shrink-0 mt-0.5">⚠</span>
+                        <p className={`text-xs ${dk ? 'text-amber-200/80' : 'text-amber-800'}`}>{item.risk_factors}</p>
+                      </div>
+                    )}
+                    {item.improvement_measures && (
+                      <div className={`flex gap-2 px-3.5 py-2 border-t ${dk ? 'bg-emerald-950/50 border-emerald-800/30' : 'bg-emerald-50 border-emerald-100'}`}>
+                        <span className="text-emerald-400 text-xs shrink-0 mt-0.5">✅</span>
+                        <p className={`text-xs ${dk ? 'text-emerald-200/80' : 'text-emerald-800'}`}>{item.improvement_measures}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -948,14 +1029,27 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
     body.scrollTo({ top: offset, behavior: 'smooth' })
   }, [])
 
-  // PDF 다운로드 — 새 창 HTML + 브라우저 인쇄 (외부 라이브러리 불필요)
-  const downloadPDF = useCallback(() => {
+  // PDF 다운로드 — 새 창 HTML + 브라우저 인쇄
+  // 구조: [지적도+마커] [고위험/업체별] [일반작업/업체별] [자재] [메모]
+  const downloadPDF = useCallback(async () => {
     if (!meeting) return
     setPdfLoading(true)
 
     // ── HTML 이스케이프 ─────────────────────────────────────
     const esc = (s: string) =>
       (s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+
+    // ── 마커 데이터 fetch ────────────────────────────────────
+    let pdfMarkers: MapMarkerData[] = []
+    try {
+      const res = await fetch(`/api/map-markers?meetingId=${meetingId}`)
+      const data = await res.json()
+      if (Array.isArray(data)) pdfMarkers = (data as MapMarkerData[]).filter(m => m.work_type === 'high_risk')
+    } catch { /* 마커 없이 진행 */ }
+
+    // ── 팀 컬러 맵 ──────────────────────────────────────────
+    const pdfColorMap: Record<string, string> = {}
+    allTeamIds.forEach((tid, idx) => { pdfColorMap[tid] = TEAM_COLORS[idx % TEAM_COLORS.length] })
 
     // ── 데이터 준비 ─────────────────────────────────────────
     const noteText = (() => { try { return localStorage.getItem(noteKey(meetingId)) ?? '' } catch { return '' } })()
@@ -964,33 +1058,58 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
     const allRes   = slots.flatMap(s =>
       (s.material_reservations ?? []).map(r => ({ ...r, slot_time: s.slot_time, gate: s.gate }))
     )
+    const pdfMapUrl = meeting.map_file_url ?? null
 
-    // ── 작업 카드 공통 렌더 ──────────────────────────────────
+    // ── 지적도 위 마커 HTML ──────────────────────────────────
+    const mapMarkersHtml = pdfMarkers.map(m => {
+      const color = pdfColorMap[m.team_id ?? ''] ?? '#6B7280'
+      const icon  = MARKER_ICONS[m.marker_type] ?? '📍'
+      return `<div style="position:absolute;left:${m.x_pct}%;top:${m.y_pct}%;transform:translate(-50%,-100%);z-index:10;pointer-events:none;">
+        <div style="width:26px;height:26px;border-radius:50%;background:${color};border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.35);">${icon}</div>
+        ${m.label ? `<div style="font-size:8px;background:rgba(0,0,0,0.65);color:white;padding:1px 3px;border-radius:2px;margin-top:1px;max-width:58px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;">${esc(m.label)}</div>` : ''}
+      </div>`
+    }).join('')
+
+    // ── 작업 카드 렌더 ───────────────────────────────────────
     const cardHtml = (item: WorkItem, color: 'red' | 'blue') => `
-      <div class="card">
-        <div class="card-hd ${color}">
-          <div class="row"><span class="ctitle">${esc(item.work_name)}</span>
-            <span class="cmeta">${item.worker_count > 0 ? '👷 '+item.worker_count+'명' : ''}</span></div>
-          <div class="cmeta">${item.teams?.name ? esc(item.teams.name) : ''}${item.location ? ' &nbsp;·&nbsp; 📍 '+esc(item.location) : ''}</div>
+      <div class="card ${color}">
+        <div class="card-top">
+          <div class="card-row">
+            <span class="ctitle">${esc(item.work_name)}</span>
+            <span class="cmeta">${item.worker_count > 0 ? '👷 '+item.worker_count+'명' : ''}</span>
+          </div>
+          <div class="cmeta2">${item.teams?.name ? esc(item.teams.name) : ''}${item.location ? ' · 📍 '+esc(item.location) : ''}</div>
           ${item.description ? `<div class="cdesc">${esc(item.description)}</div>` : ''}
         </div>
-        ${item.risk_factors ? `<div class="risk"><b>⚠ 위험요인</b><br>${esc(item.risk_factors)}</div>` : ''}
-        ${item.improvement_measures ? `<div class="impr"><b>✓ 개선대책</b><br>${esc(item.improvement_measures)}</div>` : ''}
+        ${item.risk_factors ? `<div class="risk"><span class="lbl">⚠ 위험요인</span>${esc(item.risk_factors)}</div>` : ''}
+        ${item.improvement_measures ? `<div class="impr"><span class="lbl">✓ 개선대책</span>${esc(item.improvement_measures)}</div>` : ''}
       </div>`
 
-    // ── 일반작업 업체별 그룹 ─────────────────────────────────
-    const genGrouped: Record<string, WorkItem[]> = {}
-    general.forEach(item => {
-      const n = item.teams?.name ?? '미지정'
-      if (!genGrouped[n]) genGrouped[n] = []
-      genGrouped[n].push(item)
-    })
+    // ── 업체별 그룹핑 ────────────────────────────────────────
+    const groupBy = (items: WorkItem[]) => {
+      const g: Record<string, WorkItem[]> = {}
+      items.forEach(item => {
+        const n = item.teams?.name ?? '미지정'
+        if (!g[n]) g[n] = []
+        g[n].push(item)
+      })
+      return g
+    }
+    const renderGrouped = (grouped: Record<string, WorkItem[]>, color: 'red' | 'blue') =>
+      Object.entries(grouped).map(([co, items]) =>
+        `<div class="co-grp">
+          <div class="co-title">● ${esc(co)} <span class="gcnt">${items.length}건</span></div>
+          ${items.map(i => cardHtml(i, color)).join('')}
+        </div>`
+      ).join('')
+
+    const hrHtml = highRisk.length === 0
+      ? '<p class="empty">등록된 고위험작업이 없습니다.</p>'
+      : renderGrouped(groupBy(highRisk), 'red')
+
     const genHtml = general.length === 0
       ? '<p class="empty">등록된 일반작업이 없습니다.</p>'
-      : Object.entries(genGrouped).map(([co, items]) =>
-          `<div class="grp"><div class="grp-title">● ${esc(co)} <span class="gcnt">${items.length}건</span></div>
-           ${items.map(i => cardHtml(i, 'blue')).join('')}</div>`
-        ).join('')
+      : renderGrouped(groupBy(general), 'blue')
 
     // ── 자재 테이블 ─────────────────────────────────────────
     const gates = [...new Set(allRes.map(r => r.gate))].sort()
@@ -1008,69 +1127,95 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
          }).join('')}
          </tbody></table>`
 
-    // ── 전체 HTML ───────────────────────────────────────────
+    // ── 전체 HTML (5페이지 구조) ────────────────────────────
     const html = `<!DOCTYPE html><html lang="ko"><head>
 <meta charset="UTF-8">
 <title>DABs 회의자료_${esc(meeting.date)}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,sans-serif;font-size:12px;color:#111;background:#fff}
-.pg-hd{padding:28px 36px 22px;border-bottom:3px solid #111;margin-bottom:0}
-.pg-title{font-size:22px;font-weight:800;letter-spacing:-.5px}
-.pg-meta{font-size:11px;color:#6b7280;margin-top:6px}
-.sec{padding:24px 36px}
-.sec-title{font-size:16px;font-weight:700;margin-bottom:14px;padding-bottom:7px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;gap:8px}
-.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700}
+@page{size:A4 portrait;margin:14mm 16mm}
+body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,sans-serif;font-size:11px;color:#111;background:#fff}
+/* ── 공통 ── */
+.page-break{page-break-before:always;break-before:page}
+.pg-hd{padding:0 0 10px;border-bottom:3px solid #111;margin-bottom:14px}
+.pg-title{font-size:18px;font-weight:800;letter-spacing:-.5px}
+.pg-meta{font-size:9px;color:#6b7280;margin-top:4px}
+.sec-title{font-size:13px;font-weight:700;margin-bottom:11px;padding-bottom:6px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;gap:7px}
+.badge{display:inline-block;padding:2px 7px;border-radius:9px;font-size:9px;font-weight:700}
 .br{background:#fef2f2;color:#dc2626}.bb{background:#eff6ff;color:#2563eb}.ba{background:#fffbeb;color:#b45309}
-.card{border:1px solid #e5e7eb;border-radius:8px;margin-bottom:10px;overflow:hidden;break-inside:avoid;page-break-inside:avoid}
-.card-hd{padding:10px 14px;border-bottom:1px solid #e5e7eb}
-.card-hd.red{background:#fef2f2;border-bottom-color:#fecaca}
-.card-hd.blue{background:#eff6ff;border-bottom-color:#bfdbfe}
-.row{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
-.ctitle{font-size:13px;font-weight:700;line-height:1.4}
-.cmeta{font-size:10px;color:#6b7280;margin-top:3px;white-space:nowrap}
-.cdesc{font-size:11px;color:#6b7280;margin-top:4px}
-.risk{padding:8px 14px;background:#fffbeb;border-top:1px solid #fde68a;font-size:11px;color:#78350f;line-height:1.6}
-.risk b{display:block;font-size:10px;color:#b45309;margin-bottom:2px}
-.impr{padding:8px 14px;background:#f0fdf4;border-top:1px solid #bbf7d0;font-size:11px;color:#14532d;line-height:1.6}
-.impr b{display:block;font-size:10px;color:#16a34a;margin-bottom:2px}
-.grp{margin-bottom:20px}
-.grp-title{font-size:12px;font-weight:700;color:#374151;background:#f3f4f6;border-radius:6px;padding:6px 10px;margin-bottom:8px}
-.gcnt{font-size:11px;color:#9ca3af;font-weight:400}
+.empty{color:#9ca3af;padding:10px 0;font-size:11px}
+/* ── 지적도 ── */
+.map-wrap{position:relative;display:block;width:100%;line-height:0}
+.map-wrap img{width:100%;height:auto;display:block;max-height:215mm;object-fit:contain}
+/* ── 작업 카드 ── */
+.co-grp{margin-bottom:14px}
+.co-title{font-size:10px;font-weight:700;color:#374151;background:#f3f4f6;border-radius:4px;padding:4px 8px;margin-bottom:6px;display:flex;align-items:center;gap:5px}
+.gcnt{font-size:9px;color:#9ca3af;font-weight:400;margin-left:4px}
+.card{border-radius:6px;margin-bottom:6px;overflow:hidden;break-inside:avoid;page-break-inside:avoid;border:1px solid #e5e7eb}
+.card-top{padding:7px 11px}
+.card.red .card-top{background:#fef2f2;border-bottom:1px solid #fecaca}
+.card.blue .card-top{background:#eff6ff;border-bottom:1px solid #bfdbfe}
+.card-row{display:flex;justify-content:space-between;align-items:flex-start;gap:5px}
+.ctitle{font-size:11px;font-weight:700;line-height:1.4}
+.cmeta{font-size:9px;color:#6b7280;white-space:nowrap}
+.cmeta2{font-size:9px;color:#6b7280;margin-top:2px}
+.cdesc{font-size:9px;color:#6b7280;margin-top:3px}
+.risk{padding:5px 11px;background:#fffbeb;border-top:1px solid #fde68a;font-size:10px;color:#78350f;line-height:1.6}
+.impr{padding:5px 11px;background:#f0fdf4;border-top:1px solid #bbf7d0;font-size:10px;color:#14532d;line-height:1.6}
+.lbl{display:block;font-size:8px;font-weight:700;margin-bottom:1px}
+.risk .lbl{color:#b45309}.impr .lbl{color:#16a34a}
+/* ── 자재 ── */
 table{width:100%;border-collapse:collapse}
-th{font-size:10px;font-weight:700;color:#6b7280;text-align:left;padding:8px 10px;border-bottom:2px solid #e5e7eb;background:#f9fafb}
-td{font-size:11px;padding:8px 10px;border-bottom:1px solid #f3f4f6;vertical-align:top}
-.gate-hd{font-weight:700;color:#b45309;background:#fffbeb;border-top:1px solid #fde68a;border-bottom:1px solid #fde68a;font-size:11px;letter-spacing:.5px}
+th{font-size:9px;font-weight:700;color:#6b7280;text-align:left;padding:5px 8px;border-bottom:2px solid #e5e7eb;background:#f9fafb}
+td{font-size:10px;padding:5px 8px;border-bottom:1px solid #f3f4f6;vertical-align:top}
+.gate-hd{font-weight:700;color:#b45309;background:#fffbeb;border-top:1px solid #fde68a;border-bottom:1px solid #fde68a;font-size:9px;letter-spacing:.5px}
 .mono{font-variant-numeric:tabular-nums;font-weight:600}
-.note-pre{white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:12px;line-height:1.9;color:#374151;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb}
-.divider{height:0;border:none;border-top:1px solid #e5e7eb;margin:0 36px}
-.empty{color:#9ca3af;padding:12px 0}
-@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.no-print{display:none!important}}
+/* ── 메모 ── */
+.note-pre{white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:11px;line-height:1.8;color:#374151;padding:14px;background:#f9fafb;border-radius:7px;border:1px solid #e5e7eb;max-height:220mm;overflow:hidden}
+@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body>
+
+<!-- ▌공통 헤더 -->
 <div class="pg-hd">
   <div class="pg-title">📋 ${esc(meeting.title || 'DABs 회의 자료')}</div>
   <div class="pg-meta">회의 일자: ${esc(meeting.date)} &nbsp;·&nbsp; 출력: ${new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric'})}</div>
 </div>
 
-<div class="sec">
-  <div class="sec-title">⚠️ 고위험 현황 <span class="badge br">${highRisk.length}건</span></div>
-  ${highRisk.length===0 ? '<p class="empty">등록된 고위험작업이 없습니다.</p>' : highRisk.map(i=>cardHtml(i,'red')).join('')}
+${pdfMapUrl ? `
+<!-- ▌PAGE 1 — 지적도 + 마커 -->
+<div class="sec-title">🗺️ 고위험작업 지적도 <span class="badge br">${pdfMarkers.length}개소</span></div>
+<div class="map-wrap">
+  <img src="${pdfMapUrl}" alt="지적도">
+  ${mapMarkersHtml}
 </div>
-<hr class="divider">
-<div class="sec">
-  <div class="sec-title">📋 일반작업 내용 <span class="badge bb">${general.length}건</span></div>
-  ${genHtml}
+
+<!-- ▌PAGE 2 — 고위험 현황 -->
+<div class="page-break">
+` : `<!-- ▌PAGE 1 — 고위험 현황 -->`}
+<div class="sec-title">⚠️ 고위험 현황 <span class="badge br">${highRisk.length}건</span></div>
+${hrHtml}
+${pdfMapUrl ? '</div>' : ''}
+
+<!-- ▌PAGE 3(또는 2) — 일반작업 내용 -->
+<div class="page-break">
+<div class="sec-title">📋 일반작업 내용 <span class="badge bb">${general.length}건</span></div>
+${genHtml}
 </div>
-<hr class="divider">
-<div class="sec">
-  <div class="sec-title">🚛 자재 하역/운반 <span class="badge ba">${allRes.length}건</span></div>
-  ${matHtml}
+
+<!-- ▌PAGE 4(또는 3) — 자재 하역/운반 -->
+<div class="page-break">
+<div class="sec-title">🚛 자재 하역/운반 <span class="badge ba">${allRes.length}건</span></div>
+${matHtml}
 </div>
-${noteText.trim() ? `<hr class="divider"><div class="sec">
-  <div class="sec-title">📝 회의 메모</div>
-  <pre class="note-pre">${esc(noteText)}</pre>
+
+${noteText.trim() ? `
+<!-- ▌PAGE 5(또는 4) — 회의 메모 -->
+<div class="page-break">
+<div class="sec-title">📝 회의 메모</div>
+<pre class="note-pre">${esc(noteText)}</pre>
 </div>` : ''}
-<script>window.addEventListener('load',function(){setTimeout(function(){window.print()},400)})</script>
+
+<script>window.addEventListener('load',function(){setTimeout(function(){window.print()},500)})</script>
 </body></html>`
 
     // ── 새 창에 출력 ─────────────────────────────────────────
@@ -1084,7 +1229,7 @@ ${noteText.trim() ? `<hr class="divider"><div class="sec">
     pw.document.write(html)
     pw.document.close()
     setPdfLoading(false)
-  }, [meeting, meetingId, workItems, slots])
+  }, [meeting, meetingId, workItems, slots, allTeamIds])
 
   const generalItems  = useMemo(() => workItems.filter(w => w.work_type === 'general'), [workItems])
   const highRiskItems = useMemo(() => workItems.filter(w => w.work_type === 'high_risk'), [workItems])
