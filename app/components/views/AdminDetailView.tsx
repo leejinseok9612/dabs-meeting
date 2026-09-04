@@ -797,42 +797,12 @@ function SubmissionsSection({ sorted, meeting }: { sorted: SubmissionRow[]; meet
   const submittedCount = sorted.filter(s => s.status === 'submitted').length
   const pendingCount   = sorted.filter(s => s.status === 'pending').length
 
-  function exportCSV() {
-    const headers = ['순번','업체명','부서','제출상태','총인원','고령자','초고령자','외국인','여성','유질환','작업공정','투입장비','제출파일','제출시간','검토상태','관리자메모']
-    const rows = sorted.map((s, i) => [
-      String(i + 1), s.teams?.name ?? '', s.teams?.department ?? '',
-      s.status === 'submitted' ? '제출완료' : s.status === 'rejected' ? '반려' : '미제출',
-      String(s.personnel_count ?? ''),
-      String(s.personnel_detail?.elderly ?? ''), String(s.personnel_detail?.superElderly ?? ''),
-      String(s.personnel_detail?.foreign ?? ''), String(s.personnel_detail?.female ?? ''),
-      String(s.personnel_detail?.diseased ?? ''),
-      s.work_process ?? '', s.equipment ?? '', s.file_name ?? '',
-      s.submitted_at ? new Date(s.submitted_at).toLocaleString('ko-KR') : '',
-      s.reviewed_status === 'approved' ? '검토완료' : s.reviewed_status === 'revision_requested' ? '보완요청' : '',
-      s.admin_notes ?? '',
-    ])
-    const csv  = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
-    const url  = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url
-    a.download = `DABs_제출현황_${meeting?.date ?? new Date().toISOString().split('T')[0]}.csv`
-    a.click(); URL.revokeObjectURL(url)
-    toast.success('CSV 파일이 다운로드됩니다.')
-  }
-
   return (
     <>
       <section className="surface overflow-hidden">
         <div className="px-5 py-3.5 border-b border-neutral-100 space-y-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <h2 className="text-sm font-semibold text-neutral-900 tracking-tight">업체별 제출 현황</h2>
-            <button onClick={exportCSV} className="btn btn-secondary btn-sm gap-1.5">
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round"
-                  d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-              </svg>
-              CSV 내보내기
-            </button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative flex-1 min-w-[160px] max-w-56">
