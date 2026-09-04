@@ -408,9 +408,9 @@ function HighRiskSlide({ meetingId, mapUrl, workItems, allTeamIds }: {
 
   return (
     <div className="flex gap-4 items-start">
-      {/* 지적도 */}
+      {/* 지적도 — sticky로 고정, 카드 스크롤 시에도 계속 보임 */}
       {mapUrl ? (
-        <div className="flex-1 min-w-0 h-[500px]">
+        <div className="flex-1 min-w-0 sticky top-4" style={{ height: 'calc(100vh - 160px)' }}>
           <MeetingMapViewer
             meetingId={meetingId}
             mapUrl={mapUrl}
@@ -419,7 +419,8 @@ function HighRiskSlide({ meetingId, mapUrl, workItems, allTeamIds }: {
           />
         </div>
       ) : (
-        <div className={`flex-1 h-[500px] rounded-xl flex items-center justify-center border ${dk ? 'bg-neutral-800/50 border-white/10' : 'bg-gray-100 border-gray-200'}`}>
+        <div className={`flex-1 sticky top-4 rounded-xl flex items-center justify-center border ${dk ? 'bg-neutral-800/50 border-white/10' : 'bg-gray-100 border-gray-200'}`}
+          style={{ height: 'calc(100vh - 160px)' }}>
           <p className={dk ? 'text-white/30 text-sm' : 'text-gray-400 text-sm'}>지도 없음</p>
         </div>
       )}
