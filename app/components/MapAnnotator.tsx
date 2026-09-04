@@ -78,7 +78,9 @@ export default function MapAnnotator({
   const [hoverId,      setHoverId]      = useState<string | null>(null)
   const [clickedMarker, setClickedMarker] = useState<MapMarker | null>(null)
   const [filterTeamId, setFilterTeamId]   = useState<string | null>(null)
+  const [dropRejected, setDropRejected]   = useState(false)
   const mapRef   = useRef<HTMLDivElement>(null)
+  const imgRef   = useRef<HTMLImageElement>(null)
   const supabase = useMemo(() => createClient(), [])
 
   // 채널 이름: workType에 따라 고유하게
@@ -137,6 +139,34 @@ export default function MapAnnotator({
     const rect = mapRef.current.getBoundingClientRect()
     const x = ((e.clientX - rect.left) / rect.width) * 100
     const y = ((e.clientY - rect.top) / rect.height) * 100
+
+    // ── 지적도 경계 검사: 드롭 위치 픽셀 색상 확인 ─────────
+    const imgEl = imgRef.current
+    if (imgEl && imgEl.complete && imgEl.naturalWidth > 0) {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width  = imgEl.naturalWidth
+        canvas.height = imgEl.naturalHeight
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.drawImage(imgEl, 0, 0)
+          const px = Math.round(((e.clientX - rect.left) / rect.width)  * imgEl.naturalWidth)
+          const py = Math.round(((e.clientY - rect.top)  / rect.height) * imgEl.naturalHeight)
+          const pixel = ctx.getImageData(px, py, 1, 1).data
+          const [r, g, b, a] = [pixel[0], pixel[1], pixel[2], pixel[3]]
+          // 투명하거나 흰색/밝은 회색(배경)이면 지적도 외부 → 드롭 거부
+          if (a < 30 || (r > 225 && g > 225 && b > 225)) {
+            setDropRejected(true)
+            setTimeout(() => setDropRejected(false), 1800)
+            setDraggingType(null)
+            return
+          }
+        }
+      } catch (_) {
+        // CORS 등 캔버스 접근 실패 시 → 제한 없이 허용
+      }
+    }
+
     // 폼은 오른쪽 패널(WorkItemTab)에서 표시 — 부모에게 위치만 전달
     onMarkerDrop?.(draggingType, x, y)
     setDraggingType(null)
@@ -322,17 +352,32 @@ export default function MapAnnotator({
           onDrop={handleDrop}
         >
           <img
+            ref={imgRef}
             src={mapUrl}
             alt="지적도"
             className="w-full h-auto block pointer-events-none"
             draggable={false}
+            crossOrigin="anonymous"
           />
 
           {draggingType && (
             <div className="absolute inset-0 bg-blue-500/10 border-4 border-dashed border-blue-400
                             flex items-center justify-center pointer-events-none z-10">
               <div className="bg-white rounded-xl px-6 py-3 shadow-lg text-sm font-semibold text-blue-600">
-                {MARKER_TYPES[draggingType]?.icon} 여기에 놓으세요
+                {MARKER_TYPES[draggingType]?.icon} 지적도 위에 놓으세요
+              </div>
+            </div>
+          )}
+
+          {/* 드롭 거부 피드백 */}
+          {dropRejected && (
+            <div className="absolute inset-0 bg-red-500/15 border-4 border-red-400
+                            flex items-center justify-center pointer-events-none z-20
+                            animate-pulse">
+              <div className="bg-white rounded-xl px-6 py-3 shadow-xl text-sm font-semibold text-red-600
+                              flex items-center gap-2">
+                <span className="text-lg">🚫</span>
+                지적도 위에만 마커를 놓을 수 있습니다
               </div>
             </div>
           )}
