@@ -150,6 +150,7 @@ function WeatherWidget() {
 function MeetingMapViewer({
   meetingId, mapUrl, allTeamIds, hoveredTeamId,
   filterTeamIds, onFilterToggle, onFilterClear,
+  workItems = [],
 }: {
   meetingId: string
   mapUrl: string
@@ -158,15 +159,17 @@ function MeetingMapViewer({
   filterTeamIds: Set<string>
   onFilterToggle: (id: string) => void
   onFilterClear: () => void
+  workItems?: WorkItem[]
 }) {
   const theme = useTheme()
   const dk = theme === 'dark'
 
-  const [markers,      setMarkers]      = useState<MapMarkerData[]>([])
-  const [scale,        setScale]        = useState(1)
-  const [offset,       setOffset]       = useState({ x: 0, y: 0 })
-  const [isDragging,   setIsDragging]   = useState(false)
-  const [naturalSize,  setNaturalSize]  = useState<{ w: number; h: number } | null>(null)
+  const [markers,       setMarkers]       = useState<MapMarkerData[]>([])
+  const [clickedMarker, setClickedMarker] = useState<MapMarkerData | null>(null)
+  const [scale,         setScale]         = useState(1)
+  const [offset,        setOffset]        = useState({ x: 0, y: 0 })
+  const [isDragging,    setIsDragging]    = useState(false)
+  const [naturalSize,   setNaturalSize]   = useState<{ w: number; h: number } | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const lastPointer  = useRef<{ x: number; y: number } | null>(null)
@@ -244,6 +247,37 @@ function MeetingMapViewer({
     ? markers.filter(m => m.team_id && filterTeamIds.has(m.team_id))
     : markers
 
+  // 클릭한 마커에 연결된 작업 항목 — 3단계 매칭
+  const clickedMarkerItems = useMemo(() => {
+    if (!clickedMarker) return []
+    const tid = clickedMarker.team_id ?? ''
+
+    // 1순위: label === work_name 정확 매칭
+    const exact = workItems.filter(w => w.team_id === tid && w.work_name === clickedMarker.label)
+    if (exact.length) return exact
+
+    // 2순위: 부분 문자열 매칭
+    if (clickedMarker.label) {
+      const lbl = clickedMarker.label.toLowerCase()
+      const fuzzy = workItems.filter(w =>
+        w.team_id === tid && (
+          w.work_name.toLowerCase().includes(lbl) ||
+          lbl.includes(w.work_name.toLowerCase())
+        )
+      )
+      if (fuzzy.length) return fuzzy
+    }
+
+    // 3순위: 같은 팀 + work_type (위험요인 있는 것 우선, 최대 5개)
+    if (clickedMarker.work_type) {
+      return workItems
+        .filter(w => w.team_id === tid && w.work_type === clickedMarker.work_type)
+        .sort((a, b) => (b.risk_factors ? 1 : 0) - (a.risk_factors ? 1 : 0))
+        .slice(0, 5)
+    }
+    return []
+  }, [clickedMarker, workItems])
+
   // 헤더/캔버스 테마
   const headerBg    = dk ? 'bg-neutral-800 border-neutral-700' : 'bg-red-50 border-red-200'
   const headerText  = dk ? 'text-red-300' : 'text-red-700'
@@ -294,6 +328,103 @@ function MeetingMapViewer({
           </div>
         )}
       </div>
+
+      {/* ── 마커 클릭 팝업 ─────────────────────────────────── */}
+      {clickedMarker && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-4"
+          onClick={() => setClickedMarker(null)}
+        >
+          <div
+            className={`rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden ${dk ? 'bg-neutral-900 border border-white/10' : 'bg-white'}`}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* 헤더 */}
+            <div className={`px-6 pt-5 pb-4 border-b ${dk ? 'border-white/10' : 'border-gray-100'}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-12 h-12 rounded-full flex items-center justify-center text-2xl border-2 border-white/30 shadow-lg"
+                    style={{ background: teamColorMap[clickedMarker.team_id ?? ''] ?? '#6B7280' }}
+                  >
+                    {MARKER_ICONS[clickedMarker.marker_type] ?? '📍'}
+                  </div>
+                  <div>
+                    <p className={`font-bold text-sm ${dk ? 'text-white' : 'text-gray-900'}`}>
+                      {clickedMarker.teams?.name ?? '업체 미지정'}
+                    </p>
+                    {clickedMarker.label && (
+                      <p className={`text-xs mt-0.5 ${dk ? 'text-white/50' : 'text-gray-500'}`}>{clickedMarker.label}</p>
+                    )}
+                    {clickedMarker.work_type && (
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded mt-1 inline-block ${
+                        clickedMarker.work_type === 'high_risk'
+                          ? 'bg-red-100 text-red-600'
+                          : 'bg-blue-100 text-blue-600'
+                      }`}>
+                        {clickedMarker.work_type === 'high_risk' ? '고위험 작업' : '일반 작업'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setClickedMarker(null)}
+                  className={`text-lg p-1 leading-none ${dk ? 'text-white/40 hover:text-white/80' : 'text-gray-400 hover:text-gray-700'}`}
+                >✕</button>
+              </div>
+            </div>
+
+            {/* 연결 작업 항목 */}
+            {clickedMarkerItems.length > 0 ? (
+              <div className="px-5 py-4 space-y-3 max-h-72 overflow-y-auto">
+                {clickedMarkerItems.map(item => (
+                  <div key={item.id} className="rounded-xl overflow-hidden"
+                    style={{ border: item.work_type === 'high_risk' ? '1px solid rgba(252,165,165,0.5)' : '1px solid rgba(147,197,253,0.5)' }}>
+                    <div className="px-3.5 py-2.5"
+                      style={{ background: item.work_type === 'high_risk' ? 'rgba(254,242,242,0.85)' : 'rgba(239,246,255,0.85)' }}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${item.work_type === 'high_risk' ? 'bg-red-400' : 'bg-blue-400'}`} />
+                        <p className="text-xs font-semibold text-neutral-800 leading-snug">{item.work_name}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-[10px] text-neutral-500 pl-3.5">
+                        {item.location && <span>📍 {item.location}</span>}
+                        {item.worker_count > 0 && <span>👷 {item.worker_count}명</span>}
+                      </div>
+                      {item.description && (
+                        <p className="text-[10px] text-neutral-400 mt-1 pl-3.5 leading-relaxed">{item.description}</p>
+                      )}
+                    </div>
+                    {item.risk_factors && (
+                      <div className="px-3.5 py-2 border-t border-amber-100 bg-amber-50/70">
+                        <p className="text-[10px] font-semibold text-amber-600 mb-0.5">⚠ 위험요인</p>
+                        <p className="text-[11px] text-amber-800 leading-relaxed">{item.risk_factors}</p>
+                      </div>
+                    )}
+                    {item.improvement_measures && (
+                      <div className="px-3.5 py-2 border-t border-emerald-100 bg-emerald-50/70">
+                        <p className="text-[10px] font-semibold text-emerald-600 mb-0.5">✅ 개선대책</p>
+                        <p className="text-[11px] text-emerald-800 leading-relaxed">{item.improvement_measures}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className={`px-5 py-6 text-center text-sm ${dk ? 'text-white/40' : 'text-gray-400'}`}>
+                연결된 작업 항목이 없습니다
+              </div>
+            )}
+
+            {/* 닫기 */}
+            <div className="px-6 pb-5 pt-2">
+              <button
+                onClick={() => setClickedMarker(null)}
+                className={`w-full py-2.5 rounded-xl text-sm border transition-colors ${dk ? 'border-white/10 text-white/60 hover:bg-white/5' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+              >닫기</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 지도 캔버스 */}
       <div
@@ -347,29 +478,36 @@ function MeetingMapViewer({
                 const color = marker.team_id ? (teamColorMap[marker.team_id] ?? '#6B7280') : '#6B7280'
                 const isHighlighted = hoveredTeamId != null && marker.team_id === hoveredTeamId
                 const isDimmed      = hoveredTeamId != null && marker.team_id !== hoveredTeamId
+                const isClicked     = clickedMarker?.id === marker.id
                 return (
                   <div key={marker.id} className="absolute"
                     style={{
                       left: `${marker.x_pct}%`,
                       top: `${marker.y_pct}%`,
-                      transform: `translate(-50%, -50%) scale(${isHighlighted ? 1.4 : 1})`,
+                      transform: `translate(-50%, -50%) scale(${isHighlighted || isClicked ? 1.4 : 1})`,
                       transition: 'opacity 0.15s ease, transform 0.15s ease',
                       opacity: isDimmed ? 0.15 : 1,
-                      zIndex: isHighlighted ? 30 : 10,
-                    }}>
+                      zIndex: isHighlighted || isClicked ? 30 : 10,
+                      cursor: 'pointer',
+                    }}
+                    onPointerDown={e => e.stopPropagation()}
+                    onClick={e => { e.stopPropagation(); setClickedMarker(prev => prev?.id === marker.id ? null : marker) }}
+                  >
                     {/* 펄스 링 */}
-                    {isHighlighted && (
+                    {(isHighlighted || isClicked) && (
                       <div className="absolute rounded-full animate-ping pointer-events-none"
-                        style={{ inset: '-10px', background: 'rgba(250,204,21,0.5)' }} />
+                        style={{ inset: '-10px', background: isClicked ? 'rgba(59,130,246,0.4)' : 'rgba(250,204,21,0.5)' }} />
                     )}
                     <div className="flex flex-col items-center">
                       <div
                         className="w-9 h-9 rounded-full flex items-center justify-center text-xl border-2 border-white"
                         style={{
                           background: color,
-                          boxShadow: isHighlighted
-                            ? `0 0 16px 4px rgba(250,204,21,0.6), 0 4px 12px rgba(0,0,0,0.3)`
-                            : '0 4px 12px rgba(0,0,0,0.2)',
+                          boxShadow: isClicked
+                            ? `0 0 16px 4px rgba(59,130,246,0.6), 0 4px 12px rgba(0,0,0,0.3)`
+                            : isHighlighted
+                              ? `0 0 16px 4px rgba(250,204,21,0.6), 0 4px 12px rgba(0,0,0,0.3)`
+                              : '0 4px 12px rgba(0,0,0,0.2)',
                         }}
                         title={`${marker.teams?.name ?? ''}${marker.label ? ' · ' + marker.label : ''}`}
                       >
@@ -443,6 +581,7 @@ function HighRiskSlide({ meetingId, mapUrl, workItems, allTeamIds }: {
             filterTeamIds={filterTeamIds}
             onFilterToggle={handleFilterToggle}
             onFilterClear={handleFilterClear}
+            workItems={workItems}
           />
         </div>
       ) : (
