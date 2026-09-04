@@ -948,109 +948,143 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
     body.scrollTo({ top: offset, behavior: 'smooth' })
   }, [])
 
-  // PDF 다운로드 — 섹션별 개별 캡처 + 메모 페이지 추가
-  const downloadPDF = useCallback(async () => {
+  // PDF 다운로드 — 새 창 HTML + 브라우저 인쇄 (외부 라이브러리 불필요)
+  const downloadPDF = useCallback(() => {
     if (!meeting) return
     setPdfLoading(true)
-    try {
-      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js')
-      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { jsPDF } = (window as any).jspdf
-      const pdf   = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
-      const pageW = pdf.internal.pageSize.getWidth()
-      const pageH = pdf.internal.pageSize.getHeight()
-      const bg    = dk ? '#0a0a0a' : '#f9fafb'
-      let firstPage = true
+    // ── HTML 이스케이프 ─────────────────────────────────────
+    const esc = (s: string) =>
+      (s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
 
-      // ── 헬퍼: 캔버스 → PDF 페이지 분할 추가 ───────────────
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const addCanvasToPdf = (canvas: any) => {
-        if (!canvas || canvas.width === 0 || canvas.height === 0) return
-        const ratio  = pageW / canvas.width
-        const totalH = canvas.height * ratio
-        let offsetY  = 0
-        while (offsetY < totalH) {
-          if (!firstPage) pdf.addPage()
-          firstPage = false
-          pdf.addImage(canvas.toDataURL('image/jpeg', 0.88), 'JPEG', 0, -offsetY, pageW, totalH)
-          offsetY += pageH
-        }
-      }
+    // ── 데이터 준비 ─────────────────────────────────────────
+    const noteText = (() => { try { return localStorage.getItem(noteKey(meetingId)) ?? '' } catch { return '' } })()
+    const highRisk = workItems.filter(w => w.work_type === 'high_risk')
+    const general  = workItems.filter(w => w.work_type === 'general')
+    const allRes   = slots.flatMap(s =>
+      (s.material_reservations ?? []).map(r => ({ ...r, slot_time: s.slot_time, gate: s.gate }))
+    )
 
-      // ── 섹션별 캡처 ─────────────────────────────────────────
-      const sectionIds: SectionType[] = ['high_risk', 'work_general', 'material']
-      for (const type of sectionIds) {
-        const el = document.getElementById(`section-${type}`)
-        if (!el) continue
+    // ── 작업 카드 공통 렌더 ──────────────────────────────────
+    const cardHtml = (item: WorkItem, color: 'red' | 'blue') => `
+      <div class="card">
+        <div class="card-hd ${color}">
+          <div class="row"><span class="ctitle">${esc(item.work_name)}</span>
+            <span class="cmeta">${item.worker_count > 0 ? '👷 '+item.worker_count+'명' : ''}</span></div>
+          <div class="cmeta">${item.teams?.name ? esc(item.teams.name) : ''}${item.location ? ' &nbsp;·&nbsp; 📍 '+esc(item.location) : ''}</div>
+          ${item.description ? `<div class="cdesc">${esc(item.description)}</div>` : ''}
+        </div>
+        ${item.risk_factors ? `<div class="risk"><b>⚠ 위험요인</b><br>${esc(item.risk_factors)}</div>` : ''}
+        ${item.improvement_measures ? `<div class="impr"><b>✓ 개선대책</b><br>${esc(item.improvement_measures)}</div>` : ''}
+      </div>`
 
-        // sticky 요소를 relative로 임시 전환 (캡처 시 위치 고정 방지)
-        const stickyEls = el.querySelectorAll<HTMLElement>('[class*="sticky"]')
-        const origPositions: string[] = []
-        stickyEls.forEach(s => { origPositions.push(s.style.position); s.style.position = 'relative' })
+    // ── 일반작업 업체별 그룹 ─────────────────────────────────
+    const genGrouped: Record<string, WorkItem[]> = {}
+    general.forEach(item => {
+      const n = item.teams?.name ?? '미지정'
+      if (!genGrouped[n]) genGrouped[n] = []
+      genGrouped[n].push(item)
+    })
+    const genHtml = general.length === 0
+      ? '<p class="empty">등록된 일반작업이 없습니다.</p>'
+      : Object.entries(genGrouped).map(([co, items]) =>
+          `<div class="grp"><div class="grp-title">● ${esc(co)} <span class="gcnt">${items.length}건</span></div>
+           ${items.map(i => cardHtml(i, 'blue')).join('')}</div>`
+        ).join('')
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const canvas = await (window as any).html2canvas(el, {
-          useCORS: true, allowTaint: true, scale: 1.5,
-          backgroundColor: bg,
-          scrollY: -window.scrollY,
-        })
+    // ── 자재 테이블 ─────────────────────────────────────────
+    const gates = [...new Set(allRes.map(r => r.gate))].sort()
+    const matHtml = allRes.length === 0
+      ? '<p class="empty">등록된 자재 예약이 없습니다.</p>'
+      : `<table><thead><tr><th>GATE</th><th>시간</th><th>업체</th><th>자재 내용</th><th>차량</th></tr></thead><tbody>
+         ${gates.flatMap(gate => {
+           const rows = allRes.filter(r => r.gate === gate).sort((a,b) => a.slot_time.localeCompare(b.slot_time))
+           return [
+             `<tr><td colspan="5" class="gate-hd">${esc(gate)}</td></tr>`,
+             ...rows.map(r => `<tr><td>${esc(r.gate)}</td><td class="mono">${(r.slot_time??'').slice(0,5)}</td>
+               <td>${esc(r.teams?.name??'미지정')}</td><td>${esc(r.material_description??'—')}</td>
+               <td>${esc(r.vehicle_type??'—')}</td></tr>`)
+           ]
+         }).join('')}
+         </tbody></table>`
 
-        // sticky 복원
-        stickyEls.forEach((s, i) => { s.style.position = origPositions[i] })
-        addCanvasToPdf(canvas)
-      }
+    // ── 전체 HTML ───────────────────────────────────────────
+    const html = `<!DOCTYPE html><html lang="ko"><head>
+<meta charset="UTF-8">
+<title>DABs 회의자료_${esc(meeting.date)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,sans-serif;font-size:12px;color:#111;background:#fff}
+.pg-hd{padding:28px 36px 22px;border-bottom:3px solid #111;margin-bottom:0}
+.pg-title{font-size:22px;font-weight:800;letter-spacing:-.5px}
+.pg-meta{font-size:11px;color:#6b7280;margin-top:6px}
+.sec{padding:24px 36px}
+.sec-title{font-size:16px;font-weight:700;margin-bottom:14px;padding-bottom:7px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;gap:8px}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700}
+.br{background:#fef2f2;color:#dc2626}.bb{background:#eff6ff;color:#2563eb}.ba{background:#fffbeb;color:#b45309}
+.card{border:1px solid #e5e7eb;border-radius:8px;margin-bottom:10px;overflow:hidden;break-inside:avoid;page-break-inside:avoid}
+.card-hd{padding:10px 14px;border-bottom:1px solid #e5e7eb}
+.card-hd.red{background:#fef2f2;border-bottom-color:#fecaca}
+.card-hd.blue{background:#eff6ff;border-bottom-color:#bfdbfe}
+.row{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.ctitle{font-size:13px;font-weight:700;line-height:1.4}
+.cmeta{font-size:10px;color:#6b7280;margin-top:3px;white-space:nowrap}
+.cdesc{font-size:11px;color:#6b7280;margin-top:4px}
+.risk{padding:8px 14px;background:#fffbeb;border-top:1px solid #fde68a;font-size:11px;color:#78350f;line-height:1.6}
+.risk b{display:block;font-size:10px;color:#b45309;margin-bottom:2px}
+.impr{padding:8px 14px;background:#f0fdf4;border-top:1px solid #bbf7d0;font-size:11px;color:#14532d;line-height:1.6}
+.impr b{display:block;font-size:10px;color:#16a34a;margin-bottom:2px}
+.grp{margin-bottom:20px}
+.grp-title{font-size:12px;font-weight:700;color:#374151;background:#f3f4f6;border-radius:6px;padding:6px 10px;margin-bottom:8px}
+.gcnt{font-size:11px;color:#9ca3af;font-weight:400}
+table{width:100%;border-collapse:collapse}
+th{font-size:10px;font-weight:700;color:#6b7280;text-align:left;padding:8px 10px;border-bottom:2px solid #e5e7eb;background:#f9fafb}
+td{font-size:11px;padding:8px 10px;border-bottom:1px solid #f3f4f6;vertical-align:top}
+.gate-hd{font-weight:700;color:#b45309;background:#fffbeb;border-top:1px solid #fde68a;border-bottom:1px solid #fde68a;font-size:11px;letter-spacing:.5px}
+.mono{font-variant-numeric:tabular-nums;font-weight:600}
+.note-pre{white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:12px;line-height:1.9;color:#374151;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb}
+.divider{height:0;border:none;border-top:1px solid #e5e7eb;margin:0 36px}
+.empty{color:#9ca3af;padding:12px 0}
+@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.no-print{display:none!important}}
+</style></head><body>
+<div class="pg-hd">
+  <div class="pg-title">📋 ${esc(meeting.title || 'DABs 회의 자료')}</div>
+  <div class="pg-meta">회의 일자: ${esc(meeting.date)} &nbsp;·&nbsp; 출력: ${new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric'})}</div>
+</div>
 
-      // ── 메모 페이지 ─────────────────────────────────────────
-      const noteText = (() => {
-        try { return localStorage.getItem(noteKey(meetingId)) ?? '' } catch { return '' }
-      })()
+<div class="sec">
+  <div class="sec-title">⚠️ 고위험 현황 <span class="badge br">${highRisk.length}건</span></div>
+  ${highRisk.length===0 ? '<p class="empty">등록된 고위험작업이 없습니다.</p>' : highRisk.map(i=>cardHtml(i,'red')).join('')}
+</div>
+<hr class="divider">
+<div class="sec">
+  <div class="sec-title">📋 일반작업 내용 <span class="badge bb">${general.length}건</span></div>
+  ${genHtml}
+</div>
+<hr class="divider">
+<div class="sec">
+  <div class="sec-title">🚛 자재 하역/운반 <span class="badge ba">${allRes.length}건</span></div>
+  ${matHtml}
+</div>
+${noteText.trim() ? `<hr class="divider"><div class="sec">
+  <div class="sec-title">📝 회의 메모</div>
+  <pre class="note-pre">${esc(noteText)}</pre>
+</div>` : ''}
+<script>window.addEventListener('load',function(){setTimeout(function(){window.print()},400)})</script>
+</body></html>`
 
-      if (noteText.trim()) {
-        // 메모를 렌더할 임시 DOM 생성
-        const noteWrapper = document.createElement('div')
-        noteWrapper.style.cssText = [
-          'position:fixed; top:-9999px; left:0;',
-          'width:1060px; padding:48px 56px;',
-          `background:${bg};`,
-          'font-family:system-ui,-apple-system,sans-serif;',
-        ].join('')
-
-        const heading = document.createElement('h2')
-        heading.textContent = '📝 회의 메모'
-        heading.style.cssText = `font-size:22px;font-weight:700;margin:0 0 14px;color:${dk ? '#f5f5f5' : '#111827'};`
-
-        const hr = document.createElement('hr')
-        hr.style.cssText = `border:none;border-top:1px solid ${dk ? '#3f3f3f' : '#e5e7eb'};margin:0 0 20px;`
-
-        const pre = document.createElement('pre')
-        pre.textContent = noteText
-        pre.style.cssText = [
-          'font-family:system-ui,-apple-system,sans-serif;',
-          `font-size:14px;line-height:1.85;white-space:pre-wrap;word-break:break-word;margin:0;`,
-          `color:${dk ? '#d4d4d4' : '#374151'};`,
-        ].join('')
-
-        noteWrapper.append(heading, hr, pre)
-        document.body.appendChild(noteWrapper)
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const noteCanvas = await (window as any).html2canvas(noteWrapper, {
-          useCORS: true, allowTaint: true, scale: 1.5, backgroundColor: bg,
-        })
-        document.body.removeChild(noteWrapper)
-        addCanvasToPdf(noteCanvas)
-      }
-
-      pdf.save(`DABs_회의자료_${meeting.date}.pdf`)
-    } catch (err) {
-      console.error('PDF 생성 오류:', err)
-      alert('PDF 생성에 실패했습니다. 잠시 후 다시 시도해주세요.')
-    } finally {
+    // ── 새 창에 출력 ─────────────────────────────────────────
+    const pw = window.open('', '_blank', 'width=1100,height=850')
+    if (!pw) {
+      alert('팝업이 차단되어 있습니다.\n브라우저 주소창에서 팝업을 허용한 후 다시 시도해주세요.')
       setPdfLoading(false)
+      return
     }
-  }, [dk, meeting, meetingId])
+    pw.document.open()
+    pw.document.write(html)
+    pw.document.close()
+    setPdfLoading(false)
+  }, [meeting, meetingId, workItems, slots])
 
   const generalItems  = useMemo(() => workItems.filter(w => w.work_type === 'general'), [workItems])
   const highRiskItems = useMemo(() => workItems.filter(w => w.work_type === 'high_risk'), [workItems])
