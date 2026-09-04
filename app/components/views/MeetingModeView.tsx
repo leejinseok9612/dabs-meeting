@@ -809,53 +809,109 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
     body.scrollTo({ top: offset, behavior: 'smooth' })
   }, [])
 
-  // PDF 다운로드 (CDN html2canvas + jsPDF)
+  // PDF 다운로드 — 섹션별 개별 캡처 + 메모 페이지 추가
   const downloadPDF = useCallback(async () => {
-    const body = scrollBodyRef.current
-    if (!body || !meeting) return
+    if (!meeting) return
     setPdfLoading(true)
     try {
       await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js')
       await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')
 
-      // 스크롤 영역을 전체 높이로 임시 확장
-      const origOverflow = body.style.overflow
-      const origHeight   = body.style.height
-      const origPosition = body.style.position
-      body.style.overflow = 'visible'
-      body.style.height   = body.scrollHeight + 'px'
-      body.style.position = 'static'
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const canvas = await (window as any).html2canvas(body, {
-        useCORS: true, allowTaint: true, scale: 1.5,
-        backgroundColor: dk ? '#0a0a0a' : '#f9fafb',
-      })
-
-      body.style.overflow = origOverflow
-      body.style.height   = origHeight
-      body.style.position = origPosition
-
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { jsPDF } = (window as any).jspdf
-      const pdf    = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
-      const pageW  = pdf.internal.pageSize.getWidth()
-      const pageH  = pdf.internal.pageSize.getHeight()
-      const ratio  = pageW / canvas.width
-      const totalH = canvas.height * ratio
-      let y = 0
-      while (y < totalH) {
-        if (y > 0) pdf.addPage()
-        pdf.addImage(canvas.toDataURL('image/jpeg', 0.85), 'JPEG', 0, -y, pageW, totalH)
-        y += pageH
+      const pdf   = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      const pageW = pdf.internal.pageSize.getWidth()
+      const pageH = pdf.internal.pageSize.getHeight()
+      const bg    = dk ? '#0a0a0a' : '#f9fafb'
+      let firstPage = true
+
+      // ── 헬퍼: 캔버스 → PDF 페이지 분할 추가 ───────────────
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const addCanvasToPdf = (canvas: any) => {
+        if (!canvas || canvas.width === 0 || canvas.height === 0) return
+        const ratio  = pageW / canvas.width
+        const totalH = canvas.height * ratio
+        let offsetY  = 0
+        while (offsetY < totalH) {
+          if (!firstPage) pdf.addPage()
+          firstPage = false
+          pdf.addImage(canvas.toDataURL('image/jpeg', 0.88), 'JPEG', 0, -offsetY, pageW, totalH)
+          offsetY += pageH
+        }
       }
+
+      // ── 섹션별 캡처 ─────────────────────────────────────────
+      const sectionIds: SectionType[] = ['high_risk', 'work_general', 'material']
+      for (const type of sectionIds) {
+        const el = document.getElementById(`section-${type}`)
+        if (!el) continue
+
+        // sticky 요소를 relative로 임시 전환 (캡처 시 위치 고정 방지)
+        const stickyEls = el.querySelectorAll<HTMLElement>('[class*="sticky"]')
+        const origPositions: string[] = []
+        stickyEls.forEach(s => { origPositions.push(s.style.position); s.style.position = 'relative' })
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const canvas = await (window as any).html2canvas(el, {
+          useCORS: true, allowTaint: true, scale: 1.5,
+          backgroundColor: bg,
+          scrollY: -window.scrollY,
+        })
+
+        // sticky 복원
+        stickyEls.forEach((s, i) => { s.style.position = origPositions[i] })
+        addCanvasToPdf(canvas)
+      }
+
+      // ── 메모 페이지 ─────────────────────────────────────────
+      const noteText = (() => {
+        try { return localStorage.getItem(noteKey(meetingId)) ?? '' } catch { return '' }
+      })()
+
+      if (noteText.trim()) {
+        // 메모를 렌더할 임시 DOM 생성
+        const noteWrapper = document.createElement('div')
+        noteWrapper.style.cssText = [
+          'position:fixed; top:-9999px; left:0;',
+          'width:1060px; padding:48px 56px;',
+          `background:${bg};`,
+          'font-family:system-ui,-apple-system,sans-serif;',
+        ].join('')
+
+        const heading = document.createElement('h2')
+        heading.textContent = '📝 회의 메모'
+        heading.style.cssText = `font-size:22px;font-weight:700;margin:0 0 14px;color:${dk ? '#f5f5f5' : '#111827'};`
+
+        const hr = document.createElement('hr')
+        hr.style.cssText = `border:none;border-top:1px solid ${dk ? '#3f3f3f' : '#e5e7eb'};margin:0 0 20px;`
+
+        const pre = document.createElement('pre')
+        pre.textContent = noteText
+        pre.style.cssText = [
+          'font-family:system-ui,-apple-system,sans-serif;',
+          `font-size:14px;line-height:1.85;white-space:pre-wrap;word-break:break-word;margin:0;`,
+          `color:${dk ? '#d4d4d4' : '#374151'};`,
+        ].join('')
+
+        noteWrapper.append(heading, hr, pre)
+        document.body.appendChild(noteWrapper)
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const noteCanvas = await (window as any).html2canvas(noteWrapper, {
+          useCORS: true, allowTaint: true, scale: 1.5, backgroundColor: bg,
+        })
+        document.body.removeChild(noteWrapper)
+        addCanvasToPdf(noteCanvas)
+      }
+
       pdf.save(`DABs_회의자료_${meeting.date}.pdf`)
     } catch (err) {
       console.error('PDF 생성 오류:', err)
+      alert('PDF 생성에 실패했습니다. 잠시 후 다시 시도해주세요.')
     } finally {
       setPdfLoading(false)
     }
-  }, [dk, meeting])
+  }, [dk, meeting, meetingId])
 
   const generalItems  = useMemo(() => workItems.filter(w => w.work_type === 'general'), [workItems])
   const highRiskItems = useMemo(() => workItems.filter(w => w.work_type === 'high_risk'), [workItems])
