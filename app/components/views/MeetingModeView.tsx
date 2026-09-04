@@ -623,15 +623,16 @@ function HighRiskSlide({ meetingId, mapUrl, workItems, allTeamIds }: {
                 onMouseEnter={() => setHoveredTeamId(item.team_id)}
                 onMouseLeave={() => setHoveredTeamId(null)}
               >
-                <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <h4 className={`text-sm font-semibold leading-snug ${dk ? 'text-white' : 'text-gray-900'}`}>{item.work_name}</h4>
-                  <div className={`flex gap-2 text-xs shrink-0 text-right ${dk ? 'text-white/40' : 'text-gray-400'}`}>
-                    {item.location && <span>📍 {item.location}</span>}
-                    {item.worker_count > 0 && <span>👷 {item.worker_count}명</span>}
+                {/* ── 한 줄 헤더: 작업명 + 업체·위치·인원 ── */}
+                <div className="flex items-baseline justify-between gap-2 mb-1">
+                  <h4 className={`text-sm font-semibold leading-snug shrink-0 mr-1 ${dk ? 'text-white' : 'text-gray-900'}`}>{item.work_name}</h4>
+                  <div className={`flex items-center gap-1 text-[11px] shrink-0 flex-wrap justify-end ${dk ? 'text-white/40' : 'text-gray-400'}`}>
+                    {item.teams?.name && <span className={`font-medium ${dk ? 'text-red-300/70' : 'text-red-500'}`}>{item.teams.name}</span>}
+                    {item.location && <><span className={dk ? 'text-white/20' : 'text-gray-300'}>·</span><span>📍{item.location}</span></>}
+                    {item.worker_count > 0 && <><span className={dk ? 'text-white/20' : 'text-gray-300'}>·</span><span>👷{item.worker_count}명</span></>}
                   </div>
                 </div>
-                <p className={`text-[11px] font-medium mb-1 ${dk ? 'text-red-300/70' : 'text-red-600'}`}>{item.teams?.name}</p>
-                {item.description && <p className={`text-xs mb-1.5 ${dk ? 'text-white/50' : 'text-gray-500'}`}>{item.description}</p>}
+                {item.description && <p className={`text-xs mb-1 ${dk ? 'text-white/45' : 'text-gray-500'}`}>{item.description}</p>}
                 {item.risk_factors && (
                   <div className={`flex gap-1.5 rounded-lg px-2.5 py-1.5 mb-1 border ${dk ? 'bg-amber-950/50 border-amber-800/30' : 'bg-amber-50 border-amber-200'}`}>
                     <span className="text-amber-400 text-xs shrink-0">⚠</span>
@@ -766,14 +767,16 @@ function WorkItemSlide({ items }: { items: WorkItem[] }) {
                 {compItems.map(item => (
                   <div key={item.id} className={`rounded-lg overflow-hidden border ${dk ? 'border-blue-800/30' : 'border-blue-200'}`}>
                     <div className={`px-3.5 py-2.5 ${dk ? 'bg-blue-950/60' : 'bg-blue-50'}`}>
-                      <div className="flex items-start justify-between gap-3 mb-1">
+                      {/* ── 한 줄 헤더: 작업명 + 위치·인원 ── */}
+                      <div className="flex items-baseline justify-between gap-2">
                         <h4 className={`text-sm font-semibold leading-snug ${dk ? 'text-white' : 'text-gray-900'}`}>{item.work_name}</h4>
-                        <div className={`flex gap-2 text-xs shrink-0 ${dk ? 'text-white/40' : 'text-gray-400'}`}>
-                          {item.location && <span>📍 {item.location}</span>}
-                          {item.worker_count > 0 && <span>👷 {item.worker_count}명</span>}
+                        <div className={`flex items-center gap-1 text-[11px] shrink-0 flex-wrap justify-end ${dk ? 'text-white/40' : 'text-gray-400'}`}>
+                          {item.location && <span>📍{item.location}</span>}
+                          {item.location && item.worker_count > 0 && <span className={dk ? 'text-white/20' : 'text-gray-300'}>·</span>}
+                          {item.worker_count > 0 && <span>👷{item.worker_count}명</span>}
                         </div>
                       </div>
-                      {item.description && <p className={`text-xs ${dk ? 'text-white/50' : 'text-gray-500'}`}>{item.description}</p>}
+                      {item.description && <p className={`text-xs mt-0.5 ${dk ? 'text-white/50' : 'text-gray-500'}`}>{item.description}</p>}
                     </div>
                     {item.risk_factors && (
                       <div className={`flex gap-2 px-3.5 py-2 border-t ${dk ? 'bg-amber-950/50 border-amber-800/30' : 'bg-amber-50 border-amber-100'}`}>
@@ -1070,20 +1073,26 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
       </div>`
     }).join('')
 
-    // ── 작업 카드 렌더 ───────────────────────────────────────
-    const cardHtml = (item: WorkItem, color: 'red' | 'blue') => `
+    // ── 작업 카드 렌더 (한 줄 헤더) ─────────────────────────
+    const cardHtml = (item: WorkItem, color: 'red' | 'blue') => {
+      const metaParts = [
+        item.teams?.name ? `<span class="co ${color}">${esc(item.teams.name)}</span>` : '',
+        item.location    ? `<span>📍${esc(item.location)}</span>` : '',
+        item.worker_count > 0 ? `<span>👷${item.worker_count}명</span>` : '',
+      ].filter(Boolean).join('<span class="sep">·</span>')
+      return `
       <div class="card ${color}">
         <div class="card-top">
           <div class="card-row">
             <span class="ctitle">${esc(item.work_name)}</span>
-            <span class="cmeta">${item.worker_count > 0 ? '👷 '+item.worker_count+'명' : ''}</span>
+            <span class="cmeta">${metaParts}</span>
           </div>
-          <div class="cmeta2">${item.teams?.name ? esc(item.teams.name) : ''}${item.location ? ' · 📍 '+esc(item.location) : ''}</div>
           ${item.description ? `<div class="cdesc">${esc(item.description)}</div>` : ''}
         </div>
         ${item.risk_factors ? `<div class="risk"><span class="lbl">⚠ 위험요인</span>${esc(item.risk_factors)}</div>` : ''}
         ${item.improvement_measures ? `<div class="impr"><span class="lbl">✓ 개선대책</span>${esc(item.improvement_measures)}</div>` : ''}
       </div>`
+    }
 
     // ── 업체별 그룹핑 ────────────────────────────────────────
     const groupBy = (items: WorkItem[]) => {
@@ -1148,18 +1157,21 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,
 .map-wrap{position:relative;display:block;width:100%;line-height:0}
 .map-wrap img{width:100%;height:auto;display:block;max-height:215mm;object-fit:contain}
 /* ── 작업 카드 ── */
-.co-grp{margin-bottom:14px}
-.co-title{font-size:10px;font-weight:700;color:#374151;background:#f3f4f6;border-radius:4px;padding:4px 8px;margin-bottom:6px;display:flex;align-items:center;gap:5px}
+.co-grp{margin-bottom:12px}
+.co-title{font-size:10px;font-weight:700;color:#374151;background:#f3f4f6;border-radius:4px;padding:4px 8px;margin-bottom:5px;display:flex;align-items:center;gap:5px}
 .gcnt{font-size:9px;color:#9ca3af;font-weight:400;margin-left:4px}
-.card{border-radius:6px;margin-bottom:6px;overflow:hidden;break-inside:avoid;page-break-inside:avoid;border:1px solid #e5e7eb}
-.card-top{padding:7px 11px}
+.card{border-radius:5px;margin-bottom:4px;overflow:hidden;break-inside:avoid;page-break-inside:avoid;border:1px solid #e5e7eb}
+.card-top{padding:5px 10px}
 .card.red .card-top{background:#fef2f2;border-bottom:1px solid #fecaca}
 .card.blue .card-top{background:#eff6ff;border-bottom:1px solid #bfdbfe}
-.card-row{display:flex;justify-content:space-between;align-items:flex-start;gap:5px}
-.ctitle{font-size:11px;font-weight:700;line-height:1.4}
-.cmeta{font-size:9px;color:#6b7280;white-space:nowrap}
-.cmeta2{font-size:9px;color:#6b7280;margin-top:2px}
-.cdesc{font-size:9px;color:#6b7280;margin-top:3px}
+/* 한 줄 헤더: 작업명 왼쪽, 업체·위치·인원 오른쪽 */
+.card-row{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+.ctitle{font-size:11px;font-weight:700;line-height:1.3;flex:1;min-width:0}
+.cmeta{font-size:9px;color:#6b7280;white-space:nowrap;flex-shrink:0;display:flex;align-items:center;gap:3px}
+.cmeta .sep{color:#d1d5db;margin:0 1px}
+.cmeta .co.red{color:#dc2626;font-weight:600}
+.cmeta .co.blue{color:#2563eb;font-weight:600}
+.cdesc{font-size:9px;color:#6b7280;margin-top:2px;line-height:1.4}
 .risk{padding:5px 11px;background:#fffbeb;border-top:1px solid #fde68a;font-size:10px;color:#78350f;line-height:1.6}
 .impr{padding:5px 11px;background:#f0fdf4;border-top:1px solid #bbf7d0;font-size:10px;color:#14532d;line-height:1.6}
 .lbl{display:block;font-size:8px;font-weight:700;margin-bottom:1px}
