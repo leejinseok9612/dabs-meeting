@@ -45,6 +45,8 @@ export interface WorkItemInfo {
   worker_count: number
   description?: string
   team_id: string
+  risk_factors?: string
+  improvement_measures?: string
 }
 
 interface Props {
@@ -192,14 +194,38 @@ export default function MapAnnotator({
     ? markers.filter(m => m.team_id === filterTeamId)
     : markers
 
-  // 클릭한 마커 — label로 정확히 매칭되는 작업항목 1개만, 없으면 빈 배열
-  const clickedWorkItem = clickedMarker?.label
-    ? workItems.find(w =>
-        w.team_id  === (clickedMarker.team_id ?? '') &&
-        w.work_name === clickedMarker.label
-      ) ?? null
-    : null
-  const clickedTeamItems = clickedWorkItem ? [clickedWorkItem] : []
+  // 클릭한 마커에 연결된 작업항목 — 3단계 매칭
+  const clickedTeamItems = useMemo(() => {
+    if (!clickedMarker) return []
+    const tid = clickedMarker.team_id ?? ''
+
+    // 1순위: label === work_name 정확 매칭
+    const exact = workItems.filter(w => w.team_id === tid && w.work_name === clickedMarker.label)
+    if (exact.length) return exact
+
+    // 2순위: label이 work_name에 포함되거나 그 반대 (부분 매칭)
+    if (clickedMarker.label) {
+      const lbl = clickedMarker.label.toLowerCase()
+      const fuzzy = workItems.filter(w =>
+        w.team_id === tid && (
+          w.work_name.toLowerCase().includes(lbl) ||
+          lbl.includes(w.work_name.toLowerCase())
+        )
+      )
+      if (fuzzy.length) return fuzzy
+    }
+
+    // 3순위: 같은 team + work_type 전체 (최대 5개, 위험요인 있는 것 우선)
+    if (clickedMarker.work_type) {
+      const byType = workItems
+        .filter(w => w.team_id === tid && w.work_type === clickedMarker.work_type)
+        .sort((a, b) => (b.risk_factors ? 1 : 0) - (a.risk_factors ? 1 : 0))
+        .slice(0, 5)
+      return byType
+    }
+
+    return []
+  }, [clickedMarker, workItems])
 
   return (
     <div className="space-y-4">
@@ -446,34 +472,49 @@ export default function MapAnnotator({
               </div>
             </div>
 
-            {/* 이 마커에 연결된 작업항목 */}
-            {clickedTeamItems.length > 0 && (
-              <div className="px-5 py-4 space-y-2">
+            {/* 이 마커에 연결된 작업항목 + 위험요인/개선대책 */}
+            {clickedTeamItems.length > 0 ? (
+              <div className="px-5 py-4 space-y-3 max-h-72 overflow-y-auto">
                 {clickedTeamItems.map(item => (
-                  <div key={item.id} className="rounded-xl px-4 py-3"
+                  <div key={item.id} className="rounded-xl overflow-hidden"
                     style={{
-                      background: item.work_type === 'high_risk' ? 'rgba(254,242,242,0.8)' : 'rgba(239,246,255,0.8)',
-                      border: item.work_type === 'high_risk' ? '1px solid rgba(252,165,165,0.4)' : '1px solid rgba(147,197,253,0.4)',
+                      border: item.work_type === 'high_risk' ? '1px solid rgba(252,165,165,0.5)' : '1px solid rgba(147,197,253,0.5)',
                     }}>
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${item.work_type === 'high_risk' ? 'bg-red-400' : 'bg-blue-400'}`} />
-                      <p className="text-sm font-semibold text-neutral-800 tracking-tight">{item.work_name}</p>
+                    {/* 작업명 + 기본 정보 */}
+                    <div className="px-3.5 py-2.5"
+                      style={{ background: item.work_type === 'high_risk' ? 'rgba(254,242,242,0.7)' : 'rgba(239,246,255,0.7)' }}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${item.work_type === 'high_risk' ? 'bg-red-400' : 'bg-blue-400'}`} />
+                        <p className="text-xs font-semibold text-neutral-800 leading-snug">{item.work_name}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-[10px] text-neutral-500 pl-3.5">
+                        {item.location && <span>📍 {item.location}</span>}
+                        {item.worker_count > 0 && <span>👷 {item.worker_count}명</span>}
+                      </div>
+                      {item.description && (
+                        <p className="text-[10px] text-neutral-400 mt-1 pl-3.5 leading-relaxed">{item.description}</p>
+                      )}
                     </div>
-                    <div className="flex flex-wrap gap-2.5 text-[11px] text-neutral-500 pl-3.5">
-                      {item.location && <span>{item.location}</span>}
-                      {item.worker_count > 0 && <span>{item.worker_count}명</span>}
-                    </div>
-                    {item.description && (
-                      <p className="text-[11px] text-neutral-400 mt-1 pl-3.5">{item.description}</p>
+                    {/* 위험요인 */}
+                    {item.risk_factors && (
+                      <div className="px-3.5 py-2 border-t border-amber-100 bg-amber-50/60">
+                        <p className="text-[10px] font-semibold text-amber-600 mb-0.5">⚠ 위험요인</p>
+                        <p className="text-[11px] text-amber-800 leading-relaxed">{item.risk_factors}</p>
+                      </div>
+                    )}
+                    {/* 개선대책 */}
+                    {item.improvement_measures && (
+                      <div className="px-3.5 py-2 border-t border-emerald-100 bg-emerald-50/60">
+                        <p className="text-[10px] font-semibold text-emerald-600 mb-0.5">✅ 개선대책</p>
+                        <p className="text-[11px] text-emerald-800 leading-relaxed">{item.improvement_measures}</p>
+                      </div>
                     )}
                   </div>
                 ))}
               </div>
-            )}
-
-            {clickedTeamItems.length === 0 && (
+            ) : (
               <div className="px-5 py-4 text-center text-neutral-400 text-xs">
-                연결된 작업 항목이 없습니다
+                작업 항목이 등록되지 않았습니다
               </div>
             )}
 
