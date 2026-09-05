@@ -1040,13 +1040,16 @@ function SubmissionRowItem({ row, index, onReview }: { row: SubmissionRow; index
 // ── 배지 컴포넌트 ────────────────────────────────────────────────
 function StatusBadge({ status }: { status: SubmissionRow['status'] }) {
   const cfg = {
-    submitted: { cls: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/70', dot: 'bg-emerald-400', pulse: true,  label: '제출완료' },
-    pending:   { cls: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200/70',        dot: 'bg-amber-400',   pulse: false, label: '미제출'   },
-    rejected:  { cls: 'bg-red-50 text-red-600 ring-1 ring-red-200/60',              dot: 'bg-red-400',     pulse: true,  label: '반려'     },
+    submitted: { cls: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/70', dotColor: '#34d399', pulse: true,  label: '제출완료' },
+    pending:   { cls: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200/70',        dotColor: '#fbbf24', pulse: false, label: '미제출'   },
+    rejected:  { cls: 'bg-red-50 text-red-600 ring-1 ring-red-200/60',              dotColor: '#f87171', pulse: true,  label: '반려'     },
   }[status]
   return (
     <span className={`badge ${cfg.cls}`}>
-      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}${cfg.pulse ? ' animate-pulse' : ''}`} />
+      <span
+        className={cfg.pulse ? 'animate-pulse' : undefined}
+        style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: cfg.dotColor, flexShrink: 0 }}
+      />
       {cfg.label}
     </span>
   )
@@ -1056,14 +1059,14 @@ function ReviewedBadge({ status }: { status: 'approved' | 'revision_requested' }
   if (status === 'approved') {
     return (
       <span className="badge bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/60">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+        <span className="animate-pulse" style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#34d399', flexShrink: 0 }} />
         검토완료
       </span>
     )
   }
   return (
     <span className="badge bg-amber-50 text-amber-700 ring-1 ring-amber-200/60">
-      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+      <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#fbbf24', flexShrink: 0 }} />
       보완요청
     </span>
   )

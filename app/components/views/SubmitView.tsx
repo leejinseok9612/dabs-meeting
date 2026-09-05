@@ -1060,28 +1060,34 @@ function WorkItemTab({
             </div>
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-neutral-400 uppercase tracking-wider">상세 내용</label>
-              <textarea rows={2} placeholder="작업 상세 내용" value={description}
-                onChange={e => setDescription(e.target.value)}
-                onInput={(e) => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px' }}
+              <textarea placeholder="작업 상세 내용" value={description}
+                onChange={e => {
+                  setDescription(e.target.value)
+                  const t = e.target; t.style.height = '0px'; t.style.height = t.scrollHeight + 'px'
+                }}
                 className={`${inputCls} resize-none w-full`}
-                style={{ height: 'auto', padding: '0.4rem 0.625rem', overflow: 'hidden' }} />
+                style={{ minHeight: '52px', overflow: 'hidden', padding: '0.4rem 0.625rem' }} />
             </div>
             {/* ── 위험요인 & 개선대책 ── */}
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-amber-600 uppercase tracking-wider">⚠ 위험요인</label>
-              <textarea rows={2} placeholder="예) 굴착 작업 중 지반 붕괴 위험" value={riskFactors}
-                onChange={e => setRiskFactors(e.target.value)}
-                onInput={(e) => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px' }}
+              <textarea placeholder="예) 굴착 작업 중 지반 붕괴 위험" value={riskFactors}
+                onChange={e => {
+                  setRiskFactors(e.target.value)
+                  const t = e.target; t.style.height = '0px'; t.style.height = t.scrollHeight + 'px'
+                }}
                 className="w-full border border-amber-200 rounded-md px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-amber-300 resize-none bg-amber-50/40"
-                style={{ height: 'auto', overflow: 'hidden' }} />
+                style={{ minHeight: '52px', overflow: 'hidden' }} />
             </div>
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-emerald-600 uppercase tracking-wider">✅ 개선대책</label>
-              <textarea rows={2} placeholder="예) 흙막이 설치 및 안전망 설치 확인" value={improveMeasures}
-                onChange={e => setImproveMeasures(e.target.value)}
-                onInput={(e) => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px' }}
+              <textarea placeholder="예) 흙막이 설치 및 안전망 설치 확인" value={improveMeasures}
+                onChange={e => {
+                  setImproveMeasures(e.target.value)
+                  const t = e.target; t.style.height = '0px'; t.style.height = t.scrollHeight + 'px'
+                }}
                 className="w-full border border-emerald-200 rounded-md px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-emerald-300 resize-none bg-emerald-50/40"
-                style={{ height: 'auto', overflow: 'hidden' }} />
+                style={{ minHeight: '52px', overflow: 'hidden' }} />
             </div>
             <div className="flex gap-2 pt-1">
               <button type="button" onClick={handleCancel} className="btn btn-secondary flex-1">취소</button>
