@@ -432,25 +432,31 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
       {/* ── 공지사항 팝업 ──────────────────────────────────── */}
       {showPopup && announcements[popupIdx] && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-8 border border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900 mb-1">공지사항</h2>
-            <p className="text-xs text-gray-500 mb-4">{popupIdx + 1}/{announcements.length}</p>
-            <h3 className="font-medium text-gray-900 mb-2">{announcements[popupIdx].title}</h3>
-            <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap mb-6">
-              {announcements[popupIdx].content}
-            </p>
-            <div className="flex gap-2">
-              {popupIdx < announcements.length - 1 ? (
-                <button onClick={() => setPopupIdx(i => i + 1)}
-                  className="flex-1 py-2.5 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition-colors">
-                  다음 공지
-                </button>
-              ) : (
-                <button onClick={() => setShowPopup(false)}
-                  className="flex-1 py-2.5 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition-colors">
-                  확인
-                </button>
-              )}
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md border border-gray-200 flex flex-col max-h-[85vh]">
+            <div className="px-8 pt-8 pb-4 shrink-0">
+              <h2 className="text-lg font-semibold text-gray-900 mb-1">공지사항</h2>
+              <p className="text-xs text-gray-500">{popupIdx + 1}/{announcements.length}</p>
+            </div>
+            <div className="px-8 flex-1 overflow-y-auto overscroll-contain pb-2">
+              <h3 className="font-medium text-gray-900 mb-2">{announcements[popupIdx].title}</h3>
+              <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                {announcements[popupIdx].content}
+              </p>
+            </div>
+            <div className="px-8 pb-8 pt-4 shrink-0">
+              <div className="flex gap-2">
+                {popupIdx < announcements.length - 1 ? (
+                  <button onClick={() => setPopupIdx(i => i + 1)}
+                    className="flex-1 py-2.5 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition-colors">
+                    다음 공지
+                  </button>
+                ) : (
+                  <button onClick={() => setShowPopup(false)}
+                    className="flex-1 py-2.5 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition-colors">
+                    확인
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1056,23 +1062,26 @@ function WorkItemTab({
               <label className="block text-[10px] font-medium text-neutral-400 uppercase tracking-wider">상세 내용</label>
               <textarea rows={2} placeholder="작업 상세 내용" value={description}
                 onChange={e => setDescription(e.target.value)}
+                onInput={(e) => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px' }}
                 className={`${inputCls} resize-none w-full`}
-                style={{ height: 'auto', padding: '0.4rem 0.625rem' }} />
+                style={{ height: 'auto', padding: '0.4rem 0.625rem', overflow: 'hidden' }} />
             </div>
             {/* ── 위험요인 & 개선대책 ── */}
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-amber-600 uppercase tracking-wider">⚠ 위험요인</label>
               <textarea rows={2} placeholder="예) 굴착 작업 중 지반 붕괴 위험" value={riskFactors}
                 onChange={e => setRiskFactors(e.target.value)}
+                onInput={(e) => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px' }}
                 className="w-full border border-amber-200 rounded-md px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-amber-300 resize-none bg-amber-50/40"
-                style={{ height: 'auto' }} />
+                style={{ height: 'auto', overflow: 'hidden' }} />
             </div>
             <div className="space-y-1">
               <label className="block text-[10px] font-medium text-emerald-600 uppercase tracking-wider">✅ 개선대책</label>
               <textarea rows={2} placeholder="예) 흙막이 설치 및 안전망 설치 확인" value={improveMeasures}
                 onChange={e => setImproveMeasures(e.target.value)}
+                onInput={(e) => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px' }}
                 className="w-full border border-emerald-200 rounded-md px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-emerald-300 resize-none bg-emerald-50/40"
-                style={{ height: 'auto' }} />
+                style={{ height: 'auto', overflow: 'hidden' }} />
             </div>
             <div className="flex gap-2 pt-1">
               <button type="button" onClick={handleCancel} className="btn btn-secondary flex-1">취소</button>

@@ -726,9 +726,9 @@ function HighRiskSlide({ meetingId, mapUrl, workItems, allTeamIds }: {
                 onMouseLeave={() => setHoveredTeamId(null)}
               >
                 {/* ── 한 줄 헤더: 작업명 + 업체·위치·인원 ── */}
-                <div className="flex items-baseline justify-between gap-2 mb-1">
-                  <h4 className={`text-sm font-semibold leading-snug shrink-0 mr-1 ${dk ? 'text-white' : 'text-gray-900'}`}>{item.work_name}</h4>
-                  <div className={`flex items-center gap-1 text-xs shrink-0 flex-wrap justify-end ${dk ? 'text-white/40' : 'text-gray-400'}`}>
+                <div className="flex items-baseline justify-between gap-2 mb-1 min-w-0">
+                  <h4 className={`text-sm font-semibold leading-snug min-w-0 truncate ${dk ? 'text-white' : 'text-gray-900'}`}>{item.work_name}</h4>
+                  <div className={`flex items-center gap-1 text-xs shrink-0 flex-wrap justify-end ml-1 ${dk ? 'text-white/40' : 'text-gray-400'}`}>
                     {item.teams?.name && <span className={`font-bold text-xs ${dk ? 'text-red-300/80' : 'text-red-600'}`}>{item.teams.name}</span>}
                     {item.location && <><span className={dk ? 'text-white/20' : 'text-gray-300'}>·</span><span>📍{item.location}</span></>}
                     {item.worker_count > 0 && <><span className={dk ? 'text-white/20' : 'text-gray-300'}>·</span><span>👷{item.worker_count}명</span></>}
@@ -909,6 +909,7 @@ function WorkItemSlide({ items }: { items: WorkItem[] }) {
 function MaterialSlide({ slots }: { slots: MaterialSlot[] }) {
   const theme = useTheme()
   const dk = theme === 'dark'
+  const [activeGate, setActiveGate] = useState<string>('all')
 
   const allReservations = slots.flatMap(slot =>
     (slot.material_reservations ?? []).map(r => ({ ...r, slot_time: slot.slot_time, gate: slot.gate }))
@@ -924,25 +925,63 @@ function MaterialSlide({ slots }: { slots: MaterialSlot[] }) {
   }
 
   const gates = [...new Set(allReservations.map(r => r.gate))].sort()
+  const gateCount = (g: string) => g === 'all' ? allReservations.length : allReservations.filter(r => r.gate === g).length
+  const visibleGates = activeGate === 'all' ? gates : [activeGate]
+  const visibleItems = (gate: string) =>
+    allReservations.filter(r => r.gate === gate).sort((a, b) => a.slot_time.localeCompare(b.slot_time))
+
+  const tabCls = (active: boolean) => [
+    'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap',
+    active
+      ? dk ? 'bg-white text-neutral-900' : 'bg-gray-900 text-white'
+      : dk ? 'text-white/50 hover:bg-white/10 hover:text-white/80' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800',
+  ].join(' ')
+
+  const cntCls = (active: boolean) => [
+    'text-xs px-1.5 py-0.5 rounded-full font-semibold',
+    active
+      ? dk ? 'bg-black/20 text-neutral-700' : 'bg-white/20 text-white/90'
+      : dk ? 'bg-white/15 text-white/60' : 'bg-gray-200 text-gray-500',
+  ].join(' ')
 
   return (
     <div>
-      <div className="grid grid-cols-[80px_80px_1fr_1fr_120px] gap-0 mb-2 px-4">
-        {['GATE', '시간대', '업체명', '자재 내용', '차량'].map(h => (
-          <div key={h} className={`text-[10px] font-semibold uppercase tracking-widest py-2 ${dk ? 'text-white/30' : 'text-gray-400'}`}>{h}</div>
+      {/* ── GATE 탭 필터 ── */}
+      <div className={`flex gap-1 mb-3 pb-3 border-b ${dk ? 'border-white/8' : 'border-gray-100'} flex-wrap`}>
+        <button className={tabCls(activeGate === 'all')} onClick={() => setActiveGate('all')}>
+          전체 <span className={cntCls(activeGate === 'all')}>{gateCount('all')}</span>
+        </button>
+        {gates.map(g => (
+          <button key={g} className={tabCls(activeGate === g)} onClick={() => setActiveGate(g)}>
+            {g} <span className={cntCls(activeGate === g)}>{gateCount(g)}</span>
+          </button>
         ))}
       </div>
+
+      {/* ── Sticky 테이블 헤더 ── */}
+      <div className={`grid grid-cols-[80px_80px_1fr_1fr_120px] gap-0 px-4 sticky top-0 z-10 pt-1 pb-2 backdrop-blur-md ${dk ? 'bg-neutral-950/90' : 'bg-gray-50/95'}`}>
+        {['GATE', '시간대', '업체명', '자재 내용', '차량'].map(h => (
+          <div key={h} className={`text-[10px] font-semibold uppercase tracking-widest py-1.5 ${dk ? 'text-white/30' : 'text-gray-400'}`}>{h}</div>
+        ))}
+      </div>
+
+      {/* ── 목록 ── */}
       <div className="space-y-4">
-        {gates.map(gate => {
-          const gateItems = allReservations.filter(r => r.gate === gate).sort((a, b) => a.slot_time.localeCompare(b.slot_time))
+        {visibleGates.map(gate => {
+          const items = visibleItems(gate)
           return (
             <div key={gate}>
               <div className="flex items-center gap-2 px-4 py-1.5 mb-1">
                 <span className="text-xs font-bold text-amber-500 tracking-widest">{gate}</span>
                 <div className={`flex-1 h-px ${dk ? 'bg-amber-400/20' : 'bg-amber-200'}`} />
-                <span className={`text-xs ${dk ? 'text-white/30' : 'text-gray-400'}`}>{gateItems.length}건</span>
+                <span className={`text-xs ${dk ? 'text-white/30' : 'text-gray-400'}`}>{items.length}건</span>
               </div>
-              {gateItems.map((r, idx) => (
+              {items.length === 0 ? (
+                <div className={`flex items-center gap-2 px-4 py-6 ${dk ? 'text-white/30' : 'text-gray-400'}`}>
+                  <span>📭</span>
+                  <span className="text-sm">예정된 하역 일정이 없습니다.</span>
+                </div>
+              ) : items.map((r, idx) => (
                 <div key={idx}
                   className={`grid grid-cols-[80px_80px_1fr_1fr_120px] gap-0 px-4 py-3 border-b transition-colors ${dk ? 'border-white/5 hover:bg-white/5' : 'border-gray-100 hover:bg-gray-50'}`}>
                   <div>
@@ -1233,7 +1272,7 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
       if (e.key === 'Escape') {
         if (showNote) setShowNote(false)
         else if (isFullscreen) document.exitFullscreen?.()
-        else onClose()
+        // ESC로 회의모드 자체를 닫지 않음 — 닫으려면 상단 닫기 버튼 사용
       } else if (e.key === 'm' || e.key === 'M') setShowNote(s => !s)
       else if (e.key === 'f' || e.key === 'F') toggleFullscreen()
     }
@@ -1365,7 +1404,47 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
          }).join('')}
          </tbody></table>`
 
-    // ── 전체 HTML (5페이지 구조) ────────────────────────────
+    // ── 페이지 섹션 배열 구성 (조건에 따라 섹션 추가) ────────
+    const pageSections: string[] = []
+
+    // 지적도
+    if (pdfMapUrl) {
+      pageSections.push(
+        `<div class="sec-title">🗺️ 고위험작업 지적도 <span class="badge br">${pdfMarkers.length}개소</span></div>` +
+        `<div class="map-wrap"><img src="${pdfMapUrl}" alt="지적도">${mapMarkersHtml}</div>`
+      )
+    }
+    // 고위험 현황
+    if (filter.sections.high_risk) {
+      pageSections.push(
+        `<div class="sec-title">⚠️ 고위험 현황 <span class="badge br">${highRisk.length}건</span></div>${hrHtml}`
+      )
+    }
+    // 일반작업
+    if (filter.sections.general) {
+      pageSections.push(
+        `<div class="sec-title">📋 일반작업 내용 <span class="badge bb">${general.length}건</span></div>${genHtml}`
+      )
+    }
+    // 자재 하역/운반
+    if (filter.sections.material) {
+      pageSections.push(
+        `<div class="sec-title">🚛 자재 하역/운반 <span class="badge ba">${allRes.length}건</span></div>${matHtml}`
+      )
+    }
+    // 메모
+    if (noteText.trim()) {
+      pageSections.push(
+        `<div class="sec-title">📝 회의 메모</div><pre class="note-pre">${esc(noteText)}</pre>`
+      )
+    }
+
+    // 섹션을 page-break 구분자로 연결
+    const bodyHtml = pageSections
+      .map((sec, i) => i === 0 ? sec : `<div class="page-break">${sec}</div>`)
+      .join('\n')
+
+    // ── 전체 HTML ────────────────────────────────────────────
     const html = `<!DOCTYPE html><html lang="ko"><head>
 <meta charset="UTF-8">
 <title>DABs 회의자료_${esc(meeting.date)}</title>
@@ -1374,7 +1453,7 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
 @page{size:A4 portrait;margin:14mm 16mm}
 body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,sans-serif;font-size:11px;color:#111;background:#fff}
 /* ── 공통 ── */
-.page-break{page-break-before:always;break-before:page}
+.page-break{page-break-before:always;break-before:page;padding-top:0}
 .pg-hd{padding:0 0 10px;border-bottom:3px solid #111;margin-bottom:14px}
 .pg-title{font-size:18px;font-weight:800;letter-spacing:-.5px}
 .pg-meta{font-size:9px;color:#6b7280;margin-top:4px}
@@ -1392,7 +1471,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,
 .co-title.blue-co{border-left-color:#3b82f6;color:#1e40af}
 .gcnt{font-size:10px;color:#9ca3af;font-weight:400;margin-left:4px}
 /* 3컬럼 그리드 */
-.co-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.co-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .card{border-radius:5px;overflow:hidden;break-inside:avoid;page-break-inside:avoid;border:1px solid #e5e7eb;display:flex;flex-direction:column}
 .card-top{padding:6px 9px;flex:1}
 .card.red .card-top{background:#fef2f2;border-bottom:1px solid #fecaca}
@@ -1422,39 +1501,7 @@ td{font-size:10px;padding:5px 8px;border-bottom:1px solid #f3f4f6;vertical-align
   <div class="pg-meta">회의 일자: ${esc(meeting.date)} &nbsp;·&nbsp; 출력: ${new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric'})}</div>
 </div>
 
-${pdfMapUrl ? `
-<!-- ▌PAGE 1 — 지적도 + 마커 -->
-<div class="sec-title">🗺️ 고위험작업 지적도 <span class="badge br">${pdfMarkers.length}개소</span></div>
-<div class="map-wrap">
-  <img src="${pdfMapUrl}" alt="지적도">
-  ${mapMarkersHtml}
-</div>
-
-<!-- ▌PAGE 2 — 고위험 현황 -->
-<div class="page-break">
-` : `<!-- ▌PAGE 1 — 고위험 현황 -->`}
-<div class="sec-title">⚠️ 고위험 현황 <span class="badge br">${highRisk.length}건</span></div>
-${hrHtml}
-${pdfMapUrl ? '</div>' : ''}
-
-<!-- ▌PAGE 3(또는 2) — 일반작업 내용 -->
-<div class="page-break">
-<div class="sec-title">📋 일반작업 내용 <span class="badge bb">${general.length}건</span></div>
-${genHtml}
-</div>
-
-<!-- ▌PAGE 4(또는 3) — 자재 하역/운반 -->
-<div class="page-break">
-<div class="sec-title">🚛 자재 하역/운반 <span class="badge ba">${allRes.length}건</span></div>
-${matHtml}
-</div>
-
-${noteText.trim() ? `
-<!-- ▌PAGE 5(또는 4) — 회의 메모 -->
-<div class="page-break">
-<div class="sec-title">📝 회의 메모</div>
-<pre class="note-pre">${esc(noteText)}</pre>
-</div>` : ''}
+${bodyHtml}
 
 <script>window.addEventListener('load',function(){setTimeout(function(){window.print()},500)})</script>
 </body></html>`
@@ -1637,6 +1684,19 @@ ${noteText.trim() ? `
           {showNote && (
             <NotePanel meetingId={meetingId} onClose={() => setShowNote(false)} />
           )}
+
+          {/* 전체화면 시 플로팅 종료 버튼 */}
+          {isFullscreen && (
+            <button
+              onClick={() => document.exitFullscreen?.()}
+              className="fixed top-4 right-4 z-50 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium backdrop-blur-md bg-black/40 text-white/80 hover:bg-black/60 hover:text-white border border-white/10 transition-all shadow-lg"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />
+              </svg>
+              전체화면 종료
+            </button>
+          )}
         </div>
 
         {/* PDF 필터 모달 */}
@@ -1655,7 +1715,7 @@ ${noteText.trim() ? `
             const isActive = activeSection === section.type
             return (
               <button key={section.type}
-                onClick={() => scrollToSection(section.type)}
+                onClick={() => { setActiveSection(section.type); scrollToSection(section.type) }}
                 className={[
                   'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all duration-150',
                   isActive
@@ -1680,6 +1740,12 @@ ${noteText.trim() ? `
           <div className={`ml-auto text-[11px] shrink-0 ${dk ? 'text-white/20' : 'text-gray-300'}`}>
             M 메모 · F 전체화면 · Esc 닫기
           </div>
+          <button
+            onClick={onClose}
+            className={`ml-2 text-[11px] px-2.5 py-1 rounded-lg border transition-colors shrink-0 ${dk ? 'border-white/10 text-white/30 hover:text-white/70 hover:border-white/20' : 'border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300'}`}
+          >
+            닫기
+          </button>
         </footer>
       </div>
     </ThemeCtx.Provider>
