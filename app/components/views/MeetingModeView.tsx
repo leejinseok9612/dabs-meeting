@@ -301,7 +301,7 @@ function MeetingMapViewer({
     ? markers.filter(m => m.team_id && filterTeamIds.has(m.team_id))
     : markers
 
-  // 클릭한 마커에 연결된 작업 항목 — 3단계 매칭
+  // 클릭한 마커에 연결된 작업 항목 — 라벨 기반 매칭
   const clickedMarkerItems = useMemo(() => {
     if (!clickedMarker) return []
     const tid = clickedMarker.team_id ?? ''
@@ -310,7 +310,7 @@ function MeetingMapViewer({
     const exact = workItems.filter(w => w.team_id === tid && w.work_name === clickedMarker.label)
     if (exact.length) return exact
 
-    // 2순위: 부분 문자열 매칭
+    // 2순위: 부분 문자열 매칭 (라벨이 있을 때만)
     if (clickedMarker.label) {
       const lbl = clickedMarker.label.toLowerCase()
       const fuzzy = workItems.filter(w =>
@@ -322,13 +322,13 @@ function MeetingMapViewer({
       if (fuzzy.length) return fuzzy
     }
 
-    // 3순위: 같은 팀 + work_type (위험요인 있는 것 우선, 최대 5개)
+    // 3순위: 같은 팀 + work_type 이 정확히 1건일 때만 (모호하지 않은 경우만 표시)
     if (clickedMarker.work_type) {
-      return workItems
-        .filter(w => w.team_id === tid && w.work_type === clickedMarker.work_type)
-        .sort((a, b) => (b.risk_factors ? 1 : 0) - (a.risk_factors ? 1 : 0))
-        .slice(0, 5)
+      const typeMatches = workItems.filter(w => w.team_id === tid && w.work_type === clickedMarker.work_type)
+      if (typeMatches.length === 1) return typeMatches
     }
+
+    // 매칭 실패 → 빈 배열 (팝업에서 "라벨과 일치하는 작업 없음" 메시지 표시)
     return []
   }, [clickedMarker, workItems])
 
@@ -479,8 +479,14 @@ function MeetingMapViewer({
                 ))}
               </div>
             ) : (
-              <div className={`px-5 py-6 text-center text-sm ${dk ? 'text-white/40' : 'text-gray-400'}`}>
-                연결된 작업 항목이 없습니다
+              <div className={`px-5 py-6 text-center ${dk ? 'text-white/35' : 'text-gray-400'}`}>
+                <p className="text-2xl mb-2">🔍</p>
+                <p className="text-xs">마커 라벨과 일치하는 작업 항목이 없습니다.</p>
+                {clickedMarker.label && (
+                  <p className={`text-[10px] mt-1 ${dk ? 'text-white/20' : 'text-gray-300'}`}>
+                    라벨: &quot;{clickedMarker.label}&quot;
+                  </p>
+                )}
               </div>
             )}
 
