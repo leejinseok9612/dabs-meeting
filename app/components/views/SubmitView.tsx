@@ -105,6 +105,15 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
   const [draftSaved,  setDraftSaved]  = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // 이전 작업항목 가져오기 (모달)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importItems,     setImportItems]     = useState<WorkItem[]>([])
+  const [importDate,      setImportDate]      = useState<string | null>(null)
+  const [importTitle,     setImportTitle]     = useState<string | null>(null)
+  const [importFetching,  setImportFetching]  = useState(false)
+  const [importSelected,  setImportSelected]  = useState<Set<string>>(new Set())
+  const [importSaving,    setImportSaving]    = useState(false)
+
   // ── 초기 데이터 로드 + 임시저장 복원 ─────────────────────
   useEffect(() => {
     async function load() {
@@ -249,6 +258,59 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
       toast.success('이전 제출 내용을 불러왔습니다.')
     } catch { toast.error('이전 내용을 불러오는 중 오류가 발생했습니다.') }
     setPrevLoading(false)
+  }
+
+  // ── 이전 작업항목 불러오기 핸들러 ───────────────────────────
+  async function handleFetchPrevWorkItems() {
+    if (!meeting) return
+    setImportFetching(true)
+    try {
+      const res  = await fetch(`/api/previous-work-items?teamId=${teamId}&currentMeetingId=${meeting.id}`)
+      const data = await res.json()
+      if (!data.items || data.items.length === 0) {
+        toast.info('이전 회의에 등록한 작업항목이 없습니다.')
+        setImportFetching(false)
+        return
+      }
+      setImportItems(data.items)
+      setImportDate(data.meetingDate)
+      setImportTitle(data.meetingTitle)
+      // 기본 전체 선택
+      setImportSelected(new Set(data.items.map((i: WorkItem) => i.id)))
+      setShowImportModal(true)
+    } catch {
+      toast.error('이전 작업항목을 불러오는 중 오류가 발생했습니다.')
+    }
+    setImportFetching(false)
+  }
+
+  async function handleImportSelected() {
+    if (!meeting || importSelected.size === 0) return
+    setImportSaving(true)
+    const toImport = importItems.filter(i => importSelected.has(i.id))
+    let successCount = 0
+    for (const item of toImport) {
+      const res = await fetch('/api/work-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meeting_id:            meeting.id,
+          team_id:               teamId,
+          work_type:             item.work_type,
+          work_name:             item.work_name,
+          location:              item.location,
+          worker_count:          item.worker_count,
+          description:           item.description,
+          risk_factors:          item.risk_factors,
+          improvement_measures:  item.improvement_measures,
+        }),
+      })
+      if (res.ok) successCount++
+    }
+    reloadWorkItems(meeting.id)
+    setShowImportModal(false)
+    setImportSaving(false)
+    toast.success(`${successCount}개 작업항목을 불러왔습니다.`)
   }
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -462,6 +524,117 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
         </div>
       )}
 
+      {/* ── 이전 작업항목 가져오기 모달 ───────────────────────── */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm px-4 pb-4 sm:pb-0">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 flex flex-col max-h-[80vh]">
+            {/* 헤더 */}
+            <div className="px-5 pt-5 pb-3 shrink-0" style={{ borderBottom: '1px solid rgba(0,0,0,0.07)' }}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-900">이전 작업항목 가져오기</h2>
+                  {importDate && (
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      {importTitle ? `${importTitle} · ` : ''}{importDate}
+                    </p>
+                  )}
+                </div>
+                <button onClick={() => setShowImportModal(false)}
+                  className="text-gray-300 hover:text-gray-500 transition-colors p-0.5 shrink-0">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex items-center justify-between mt-3">
+                <span className="text-[11px] text-gray-400">{importSelected.size}/{importItems.length}개 선택됨</span>
+                <button
+                  onClick={() => {
+                    if (importSelected.size === importItems.length) setImportSelected(new Set())
+                    else setImportSelected(new Set(importItems.map(i => i.id)))
+                  }}
+                  className="text-[11px] font-medium text-blue-600 hover:text-blue-700">
+                  {importSelected.size === importItems.length ? '전체 해제' : '전체 선택'}
+                </button>
+              </div>
+            </div>
+
+            {/* 목록 */}
+            <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2">
+              {importItems.map(item => {
+                const isSelected = importSelected.has(item.id)
+                const isHighRisk = item.work_type === 'high_risk'
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => {
+                      const next = new Set(importSelected)
+                      if (isSelected) next.delete(item.id)
+                      else next.add(item.id)
+                      setImportSelected(next)
+                    }}
+                    className={[
+                      'rounded-xl px-3.5 py-3 border cursor-pointer transition-all duration-150 select-none',
+                      isSelected
+                        ? isHighRisk ? 'border-red-200 bg-red-50' : 'border-blue-200 bg-blue-50'
+                        : 'border-gray-100 bg-gray-50 opacity-50',
+                    ].join(' ')}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      {/* 체크박스 */}
+                      <div className={[
+                        'w-4 h-4 rounded border-2 shrink-0 mt-0.5 flex items-center justify-center transition-colors',
+                        isSelected
+                          ? isHighRisk ? 'border-red-500 bg-red-500' : 'border-blue-500 bg-blue-500'
+                          : 'border-gray-300 bg-white',
+                      ].join(' ')}>
+                        {isSelected && (
+                          <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </div>
+                      {/* 내용 */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`badge text-[10px] ${isHighRisk ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
+                            {isHighRisk ? '고위험' : '일반'}
+                          </span>
+                          <span className="text-xs font-semibold text-gray-800">{item.work_name}</span>
+                        </div>
+                        <div className="flex gap-3 mt-0.5 text-[11px] text-gray-400">
+                          {item.location     && <span>{item.location}</span>}
+                          {item.worker_count > 0 && <span>{item.worker_count}명</span>}
+                        </div>
+                        {item.risk_factors && (
+                          <p className="text-[11px] text-amber-700/70 mt-1 line-clamp-1">⚠ {item.risk_factors}</p>
+                        )}
+                        {item.improvement_measures && (
+                          <p className="text-[11px] text-emerald-700/70 mt-0.5 line-clamp-1">✅ {item.improvement_measures}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* 푸터 버튼 */}
+            <div className="px-5 py-4 shrink-0 flex gap-2.5" style={{ borderTop: '1px solid rgba(0,0,0,0.07)' }}>
+              <button onClick={() => setShowImportModal(false)} className="btn btn-secondary flex-1">
+                취소
+              </button>
+              <button
+                onClick={handleImportSelected}
+                disabled={importSaving || importSelected.size === 0}
+                className="btn btn-primary flex-1">
+                {importSaving ? '불러오는 중…' : `${importSelected.size}개 불러오기`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── 헤더 ───────────────────────────────────────────── */}
       <header className="bg-white/90 backdrop-blur-sm sticky top-0 z-20"
         style={{ borderBottom: '1px solid rgba(0,0,0,0.07)' }}>
@@ -610,6 +783,8 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                     pendingMarkerType={pendingHighRiskMarker?.markerType ?? null}
                     onCancelPendingMarker={() => setPendingHighRiskMarker(null)}
                     onHoverTeam={setHoveredTeamId}
+                    onImportPrev={importFetching ? undefined : handleFetchPrevWorkItems}
+                    importFetching={importFetching}
                   />
                 </div>
 
@@ -625,6 +800,8 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                     onDelete={deleteWorkItem}
                     pendingMarkerType={null}
                     onCancelPendingMarker={() => {}}
+                    onImportPrev={importFetching ? undefined : handleFetchPrevWorkItems}
+                    importFetching={importFetching}
                   />
                 </div>
 
@@ -954,7 +1131,7 @@ function SubmitTab({
 // ── 작업 항목 탭 (고위험 / 일반 공용) ─────────────────────────
 function WorkItemTab({
   workType, label, color, isClosed, items, isLoading, myTeamId, myTeamName, onAdd, onDelete,
-  pendingMarkerType, onCancelPendingMarker, onHoverTeam,
+  pendingMarkerType, onCancelPendingMarker, onHoverTeam, onImportPrev, importFetching,
 }: {
   workType: 'high_risk' | 'general'; label: string; color: 'red' | 'blue'
   isClosed: boolean; items: WorkItem[]; isLoading: boolean
@@ -964,6 +1141,8 @@ function WorkItemTab({
   pendingMarkerType?: string | null       // 마커 드롭 시 자동으로 폼 열기
   onCancelPendingMarker?: () => void      // 폼 취소 시 pending 해제
   onHoverTeam?: (teamId: string | null) => void
+  onImportPrev?: () => void               // 이전 작업항목 불러오기
+  importFetching?: boolean
 }) {
   const [showForm,    setShowForm]    = useState(false)
   const [workName,    setWorkName]    = useState('')
@@ -1011,15 +1190,36 @@ function WorkItemTab({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-2">
         <div>
           <h2 className="font-semibold text-gray-900">{label} 현황</h2>
           <p className="text-xs text-gray-500 mt-0.5">모든 협력업체가 함께 등록 · 실시간 공유</p>
         </div>
         {!isClosed && (
-          <button onClick={() => setShowForm(true)} className={`btn ${colorCls.btn} btn-sm`}>
-            + 작업 추가
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onImportPrev && (
+              <button
+                onClick={onImportPrev}
+                disabled={importFetching}
+                className="btn btn-secondary btn-sm flex items-center gap-1"
+                title="이전 회의 작업항목 불러오기"
+              >
+                {importFetching ? (
+                  <span className="w-3 h-3 border border-neutral-400 border-t-transparent rounded-full"
+                    style={{ animation: 'spin 0.8s linear infinite' }} />
+                ) : (
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round"
+                      d="M12 16v-4m0 0V8m0 4h4m-4 0H8m13 4a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+                이전 작업
+              </button>
+            )}
+            <button onClick={() => setShowForm(true)} className={`btn ${colorCls.btn} btn-sm`}>
+              + 작업 추가
+            </button>
+          </div>
         )}
       </div>
 
