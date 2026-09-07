@@ -511,7 +511,13 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                     다음 공지
                   </button>
                 ) : (
-                  <button onClick={() => setShowPopup(false)}
+                  <button onClick={() => {
+                    setShowPopup(false)
+                    // 공지 확인 후 고위험작업 안내 팝업 강제 표시
+                    // (localStorage dismiss 여부 무관 — 공지가 있을 때는 반드시 안내)
+                    try { localStorage.removeItem(HIGH_RISK_DISMISS_KEY) } catch {}
+                    setShowHighRiskGuide(true)
+                  }}
                     className="flex-1 py-2.5 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition-colors">
                     확인
                   </button>
