@@ -107,6 +107,26 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
   const [draftSaved,  setDraftSaved]  = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // 고위험작업 안내 팝업
+  const [showHighRiskGuide, setShowHighRiskGuide] = useState(false)
+  const HIGH_RISK_DISMISS_KEY = `dabs_highrisk_guide_dismiss_${teamId}`
+
+  function handleHighRiskTabClick() {
+    setActiveTab('high_risk')
+    try {
+      const until = localStorage.getItem(HIGH_RISK_DISMISS_KEY)
+      if (until && Date.now() < Number(until)) return   // 아직 1주일 안됨
+    } catch {}
+    setShowHighRiskGuide(true)
+  }
+
+  function dismissHighRiskGuide(forever: boolean) {
+    if (forever) {
+      try { localStorage.setItem(HIGH_RISK_DISMISS_KEY, String(Date.now() + 7 * 24 * 60 * 60 * 1000)) } catch {}
+    }
+    setShowHighRiskGuide(false)
+  }
+
   // 이전 작업항목 가져오기 (모달)
   const [showImportModal, setShowImportModal] = useState(false)
   const [importItems,     setImportItems]     = useState<WorkItem[]>([])
@@ -526,6 +546,64 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
         </div>
       )}
 
+      {/* ── 고위험작업 안내 팝업 ───────────────────────────────── */}
+      {showHighRiskGuide && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-gray-100 overflow-hidden animate-slide-up-fade">
+            {/* 헤더 */}
+            <div className="px-6 pt-6 pb-4" style={{ background: 'linear-gradient(135deg,#fef2f2 0%,#fff7ed 100%)' }}>
+              <div className="flex items-center gap-3 mb-1">
+                <span className="text-2xl">⚠️</span>
+                <h2 className="text-base font-bold text-red-800 tracking-tight">당사 지정 고위험작업</h2>
+              </div>
+              <p className="text-xs text-red-600/80 leading-relaxed">
+                다음 작업이 포함될 경우 고위험작업으로 등록해 주세요.
+              </p>
+            </div>
+
+            {/* 목록 */}
+            <div className="px-6 py-4">
+              <ol className="space-y-2.5">
+                {[
+                  '철골 및 비계 설치 / 해체',
+                  '외부 작업 시 사용하는 고소작업대',
+                  '달비계 / 곤돌라 작업',
+                  '터널 굴착 작업',
+                  '배관 압력 시험',
+                  '항타기 / 항발기 / 천공기 / PRD 작업',
+                  '그 외 당 현장에서 지정한 고위험작업',
+                ].map((item, idx) => (
+                  <li key={idx} className="flex items-start gap-2.5">
+                    <span className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5 ${
+                      idx < 6 ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'
+                    }`}>
+                      {idx + 1}
+                    </span>
+                    <span className={`text-sm leading-relaxed ${idx < 6 ? 'text-gray-800' : 'text-orange-700 font-medium'}`}>
+                      {item}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* 버튼 */}
+            <div className="px-6 pb-6 flex flex-col gap-2">
+              <button
+                onClick={() => dismissHighRiskGuide(false)}
+                className="btn btn-primary w-full">
+                확인했습니다
+              </button>
+              <button
+                onClick={() => dismissHighRiskGuide(true)}
+                className="text-xs text-gray-400 hover:text-gray-600 transition-colors py-1">
+                1주일간 보지 않기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── 이전 작업항목 가져오기 모달 ───────────────────────── */}
       {showImportModal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm px-4 pb-4 sm:pb-0">
@@ -713,7 +791,7 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                   { key: 'material',  label: '자재하역',   badge: null, color: null },
                   { key: 'submit',    label: '자료제출',   badge: null, color: null },
                 ] as { key: Tab; label: string; badge: string | null; color: string | null }[]).map(t => (
-                  <button key={t.key} onClick={() => setActiveTab(t.key)}
+                  <button key={t.key} onClick={() => t.key === 'high_risk' ? handleHighRiskTabClick() : setActiveTab(t.key)}
                     className={[
                       'flex items-center gap-1.5 px-4 py-3 text-xs font-medium whitespace-nowrap border-b-2 -mb-px transition-all duration-150',
                       activeTab === t.key
