@@ -523,7 +523,8 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
       )}
 
       {/* ── 고위험작업 안내 팝업 ───────────────────────────────── */}
-      {showHighRiskGuide && (
+      {/* 공지사항 팝업이 열려있으면 고위험 안내는 그 후에 순서대로 표시 */}
+      {showHighRiskGuide && !showPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-gray-100 overflow-hidden animate-slide-up-fade">
             {/* 헤더 */}
