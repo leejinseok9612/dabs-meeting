@@ -2,6 +2,7 @@
 // ============================================================
 // MapAnnotator — 지적도 위에 드래그&드롭으로 장비/작업구역 표기
 // 협력업체가 자신의 장비를 지도에 올리면 실시간으로 공유됨
+// ✅ 드롭 즉시 마커 저장 / 내 마커 드래그로 자유 이동
 // ============================================================
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -58,12 +59,13 @@ interface Props {
   onMarkerCountChange?: (count: number) => void
   workItems?: WorkItemInfo[]
   workType?: 'high_risk' | 'general'
-  /** 마커를 지도에 드롭했을 때 — 오른쪽 패널 폼을 열어주세요 */
+  /** @deprecated 드롭 즉시 저장으로 변경됨 — 더 이상 사용되지 않음 */
   onMarkerDrop?: (markerType: string, x: number, y: number) => void
   /** 마커 삭제 시 연결된 작업항목도 삭제 */
   onMarkerDelete?: (marker: MapMarker) => void
-  /** 부모가 드롭 위치를 확정한 뒤 marker label을 넘기면 여기서 저장 */
+  /** @deprecated 드롭 즉시 저장으로 변경됨 */
   pendingDrop?: { markerType: string; x: number; y: number } | null
+  /** @deprecated 드롭 즉시 저장으로 변경됨 */
   onPendingDropSaved?: () => void
   /** 작업 카드 hover 시 해당 팀 마커 강조 */
   hoveredTeamId?: string | null
@@ -71,14 +73,16 @@ interface Props {
 
 export default function MapAnnotator({
   meetingId, mapUrl, myTeamId, allTeamIds, readOnly = false, onMarkerCountChange, workItems = [],
-  workType, onMarkerDrop, onMarkerDelete, pendingDrop, onPendingDropSaved, hoveredTeamId,
+  workType, onMarkerDelete, hoveredTeamId,
 }: Props) {
-  const [markers,      setMarkers]      = useState<MapMarker[]>([])
-  const [draggingType, setDraggingType] = useState<string | null>(null)
-  const [hoverId,      setHoverId]      = useState<string | null>(null)
-  const [clickedMarker, setClickedMarker] = useState<MapMarker | null>(null)
-  const [filterTeamId, setFilterTeamId]   = useState<string | null>(null)
-  const [dropRejected, setDropRejected]   = useState(false)
+  const [markers,         setMarkers]         = useState<MapMarker[]>([])
+  const [draggingType,    setDraggingType]    = useState<string | null>(null)
+  const [draggingMarkerId, setDraggingMarkerId] = useState<string | null>(null)
+  const [hoverId,         setHoverId]         = useState<string | null>(null)
+  const [clickedMarker,   setClickedMarker]   = useState<MapMarker | null>(null)
+  const [filterTeamId,    setFilterTeamId]    = useState<string | null>(null)
+  const [dropRejected,    setDropRejected]    = useState(false)
+  const [saving,          setSaving]          = useState(false)
   const mapRef   = useRef<HTMLDivElement>(null)
   const imgRef   = useRef<HTMLImageElement>(null)
   const supabase = useMemo(() => createClient(), [])
@@ -100,8 +104,6 @@ export default function MapAnnotator({
     const res  = await fetch(`/api/map-markers?meetingId=${meetingId}`)
     const data = await res.json()
     if (Array.isArray(data)) {
-      // workType 필터: workType이 설정된 경우 해당 타입 마커만 표시
-      // (work_type이 null/undefined인 기존 마커는 workType 없을 때만 표시)
       const filtered = workType
         ? (data as MapMarker[]).filter(m => m.work_type === workType)
         : (data as MapMarker[])
@@ -129,18 +131,55 @@ export default function MapAnnotator({
     return () => { channel.unsubscribe() }
   }, [meetingId, supabase, loadMarkers, channelName])
 
-  // ── 드래그&드롭 핸들러 ────────────────────────────────────
-  function handleDragStart(type: string) { setDraggingType(type) }
-  function handleDragOver(e: React.DragEvent) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }
+  // ── 드래그 핸들러 ─────────────────────────────────────────
+  function handleDragStart(type: string) {
+    setDraggingType(type)
+    setDraggingMarkerId(null)
+  }
 
-  function handleDrop(e: React.DragEvent) {
+  function handleMarkerDragStart(e: React.DragEvent, markerId: string) {
+    e.stopPropagation()
+    setDraggingMarkerId(markerId)
+    setDraggingType(null)
+    // ghost image 최소화
+    const ghost = document.createElement('div')
+    ghost.style.opacity = '0'
+    document.body.appendChild(ghost)
+    e.dataTransfer.setDragImage(ghost, 0, 0)
+    setTimeout(() => document.body.removeChild(ghost), 0)
+  }
+
+  function handleDragOver(e: React.DragEvent) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }
+  function handleDragEnd() { setDraggingMarkerId(null); setDraggingType(null) }
+
+  async function handleDrop(e: React.DragEvent) {
     e.preventDefault()
-    if (!draggingType || !mapRef.current || readOnly) return
+    if (!mapRef.current || readOnly) return
     const rect = mapRef.current.getBoundingClientRect()
     const x = ((e.clientX - rect.left) / rect.width) * 100
     const y = ((e.clientY - rect.top) / rect.height) * 100
 
-    // ── 지적도 경계 검사: 드롭 위치 픽셀 색상 확인 ─────────
+    // ── 기존 마커 이동 ────────────────────────────────────
+    if (draggingMarkerId) {
+      const rx = Math.round(x * 10) / 10
+      const ry = Math.round(y * 10) / 10
+      // 즉시 UI 반영
+      setMarkers(prev => prev.map(m =>
+        m.id === draggingMarkerId ? { ...m, x_pct: rx, y_pct: ry } : m
+      ))
+      setDraggingMarkerId(null)
+      // API 저장
+      await fetch('/api/map-markers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: draggingMarkerId, x_pct: rx, y_pct: ry }),
+      })
+      return
+    }
+
+    if (!draggingType) return
+
+    // ── 지적도 경계 검사 ──────────────────────────────────
     const imgEl = imgRef.current
     if (imgEl && imgEl.complete && imgEl.naturalWidth > 0) {
       try {
@@ -154,7 +193,6 @@ export default function MapAnnotator({
           const py = Math.round(((e.clientY - rect.top)  / rect.height) * imgEl.naturalHeight)
           const pixel = ctx.getImageData(px, py, 1, 1).data
           const [r, g, b, a] = [pixel[0], pixel[1], pixel[2], pixel[3]]
-          // 투명하거나 흰색/밝은 회색(배경)이면 지적도 외부 → 드롭 거부
           if (a < 30 || (r > 225 && g > 225 && b > 225)) {
             setDropRejected(true)
             setTimeout(() => setDropRejected(false), 1800)
@@ -162,45 +200,50 @@ export default function MapAnnotator({
             return
           }
         }
-      } catch (_) {
-        // CORS 등 캔버스 접근 실패 시 → 제한 없이 허용
-      }
+      } catch (_) { /* CORS 등 접근 실패 → 제한 없이 허용 */ }
     }
 
-    // 폼은 오른쪽 패널(WorkItemTab)에서 표시 — 부모에게 위치만 전달
-    onMarkerDrop?.(draggingType, x, y)
-    setDraggingType(null)
-  }
-
-  // 부모가 pendingDrop + label을 확정하면 여기서 마커 저장
-  const pendingDropRef = useRef(pendingDrop)
-  pendingDropRef.current = pendingDrop
-  async function savePendingMarker(label: string) {
-    const drop = pendingDropRef.current
-    if (!drop) return
+    // ── 즉시 마커 저장 ────────────────────────────────────
     const body: Record<string, unknown> = {
       meeting_id:  meetingId,
       team_id:     myTeamId || null,
-      marker_type: drop.markerType,
-      x_pct:       Math.round(drop.x * 10) / 10,
-      y_pct:       Math.round(drop.y * 10) / 10,
-      label,
+      marker_type: draggingType,
+      x_pct:       Math.round(x * 10) / 10,
+      y_pct:       Math.round(y * 10) / 10,
+      label:       MARKER_TYPES[draggingType]?.label ?? draggingType,
     }
     if (workType) body.work_type = workType
+    setDraggingType(null)
+    setSaving(true)
     const res = await fetch('/api/map-markers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    if (res.ok) { loadMarkers(); onPendingDropSaved?.() }
+    if (res.ok) {
+      const newMarker: MapMarker = await res.json()
+      setMarkers(prev => {
+        const updated = [...prev, newMarker]
+        if (onMarkerCountChange) {
+          onMarkerCountChange(updated.filter(m => m.team_id === myTeamId).length)
+        }
+        return updated
+      })
+    }
+    setSaving(false)
   }
 
   async function deleteMarker(marker: MapMarker) {
     onMarkerDelete?.(marker)
     await fetch(`/api/map-markers?id=${marker.id}`, { method: 'DELETE' })
     setClickedMarker(null)
-    setMarkers(prev => prev.filter(m => m.id !== marker.id))
-    loadMarkers()
+    setMarkers(prev => {
+      const updated = prev.filter(m => m.id !== marker.id)
+      if (onMarkerCountChange) {
+        onMarkerCountChange(updated.filter(m => m.team_id === myTeamId).length)
+      }
+      return updated
+    })
   }
 
   function getTeamColor(teamId: string | null): string {
@@ -233,7 +276,7 @@ export default function MapAnnotator({
     const exact = workItems.filter(w => w.team_id === tid && w.work_name === clickedMarker.label)
     if (exact.length) return exact
 
-    // 2순위: label이 work_name에 포함되거나 그 반대 (부분 매칭)
+    // 2순위: 부분 매칭
     if (clickedMarker.label) {
       const lbl = clickedMarker.label.toLowerCase()
       const fuzzy = workItems.filter(w =>
@@ -245,13 +288,12 @@ export default function MapAnnotator({
       if (fuzzy.length) return fuzzy
     }
 
-    // 3순위: 같은 team + work_type이 정확히 1건일 때만 (모호하지 않은 경우만 표시)
+    // 3순위: 같은 team + work_type이 정확히 1건일 때만
     if (clickedMarker.work_type) {
       const byType = workItems.filter(w => w.team_id === tid && w.work_type === clickedMarker.work_type)
       if (byType.length === 1) return byType
     }
 
-    // 매칭 실패 → 빈 배열 (팝업에 "작업 항목이 등록되지 않았습니다" 표시)
     return []
   }, [clickedMarker, workItems])
 
@@ -261,12 +303,12 @@ export default function MapAnnotator({
       {!readOnly && (
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <p className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">
-            아이콘을 지도 위에 드래그하세요
+            아이콘을 지도 위에 드래그하세요 — 즉시 표시됩니다
             {workType === 'high_risk' && (
-              <span className="ml-2 text-red-500 normal-case font-normal">고위험 작업 장비를 표시합니다</span>
+              <span className="ml-2 text-red-500 normal-case font-normal">· 등록 후 드래그로 위치 조정 가능</span>
             )}
             {workType === 'general' && (
-              <span className="ml-2 text-blue-500 normal-case font-normal">일반 작업 장비를 표시합니다</span>
+              <span className="ml-2 text-blue-500 normal-case font-normal">· 등록 후 드래그로 위치 조정 가능</span>
             )}
           </p>
           <div className="flex flex-wrap gap-2">
@@ -275,6 +317,7 @@ export default function MapAnnotator({
                 key={type}
                 draggable
                 onDragStart={() => handleDragStart(type)}
+                onDragEnd={handleDragEnd}
                 className="flex flex-col items-center gap-1 px-3 py-2 rounded-xl border border-slate-200
                            cursor-grab active:cursor-grabbing select-none hover:shadow-md transition-all
                            hover:-translate-y-0.5"
@@ -303,9 +346,20 @@ export default function MapAnnotator({
           ].join(' ')}>
             {headerTitle}
           </h3>
-          {!readOnly && (
-            <p className="text-xs text-slate-400">마커를 클릭하면 상세 정보를 볼 수 있습니다</p>
-          )}
+          <div className="flex items-center gap-2">
+            {saving && (
+              <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                <span className="w-3 h-3 border border-slate-400 border-t-transparent rounded-full"
+                  style={{ animation: 'spin 0.8s linear infinite' }} />
+                저장 중…
+              </span>
+            )}
+            {!readOnly && (
+              <p className="text-xs text-slate-400">
+                내 마커는 드래그로 이동 · 클릭으로 상세보기
+              </p>
+            )}
+          </div>
         </div>
 
         {/* 관리자 팀 필터 */}
@@ -358,11 +412,22 @@ export default function MapAnnotator({
             crossOrigin="anonymous"
           />
 
-          {draggingType && (
+          {/* 새 마커 드롭 힌트 */}
+          {draggingType && !draggingMarkerId && (
             <div className="absolute inset-0 bg-blue-500/10 border-4 border-dashed border-blue-400
                             flex items-center justify-center pointer-events-none z-10">
               <div className="bg-white rounded-xl px-6 py-3 shadow-lg text-sm font-semibold text-blue-600">
-                {MARKER_TYPES[draggingType]?.icon} 지적도 위에 놓으세요
+                {MARKER_TYPES[draggingType]?.icon} 지적도 위에 놓으세요 — 즉시 저장됩니다
+              </div>
+            </div>
+          )}
+
+          {/* 기존 마커 이동 힌트 */}
+          {draggingMarkerId && (
+            <div className="absolute inset-0 bg-amber-400/10 border-4 border-dashed border-amber-400
+                            flex items-center justify-center pointer-events-none z-10">
+              <div className="bg-white rounded-xl px-6 py-3 shadow-lg text-sm font-semibold text-amber-700">
+                원하는 위치에 놓으세요
               </div>
             </div>
           )}
@@ -370,8 +435,7 @@ export default function MapAnnotator({
           {/* 드롭 거부 피드백 */}
           {dropRejected && (
             <div className="absolute inset-0 bg-red-500/15 border-4 border-red-400
-                            flex items-center justify-center pointer-events-none z-20
-                            animate-pulse">
+                            flex items-center justify-center pointer-events-none z-20 animate-pulse">
               <div className="bg-white rounded-xl px-6 py-3 shadow-xl text-sm font-semibold text-red-600
                               flex items-center gap-2">
                 <span className="text-lg">🚫</span>
@@ -382,43 +446,53 @@ export default function MapAnnotator({
 
           {/* 마커들 */}
           {visibleMarkers.map(marker => {
-            const typeInfo   = MARKER_TYPES[marker.marker_type]
-            const teamColor  = getTeamColor(marker.team_id ?? null)
-            const isMyMarker = myTeamId
+            const typeInfo    = MARKER_TYPES[marker.marker_type]
+            const teamColor   = getTeamColor(marker.team_id ?? null)
+            const isMyMarker  = myTeamId
               ? marker.team_id === myTeamId
               : marker.team_id === null || marker.team_id === undefined
-            const isHovered    = hoverId === marker.id
-            // 외부 hover (작업 카드에서 전달)
+            const isHovered     = hoverId === marker.id
             const isHighlighted = hoveredTeamId != null && marker.team_id === hoveredTeamId
             const isDimmed      = hoveredTeamId != null && marker.team_id !== hoveredTeamId
+            const isBeingMoved  = draggingMarkerId === marker.id
 
             return (
               <div
                 key={marker.id}
                 className="absolute"
+                draggable={isMyMarker && !readOnly}
+                onDragStart={isMyMarker && !readOnly
+                  ? (e) => handleMarkerDragStart(e, marker.id)
+                  : undefined}
+                onDragEnd={handleDragEnd}
                 style={{
                   left: `${marker.x_pct}%`,
-                  top: `${marker.y_pct}%`,
+                  top:  `${marker.y_pct}%`,
                   transform: `translate(-50%, -50%) scale(${isHighlighted ? 1.4 : 1})`,
-                  transition: 'opacity 0.15s ease, transform 0.15s ease',
-                  opacity: isDimmed ? 0.15 : 1,
+                  transition: isBeingMoved ? 'none' : 'opacity 0.15s ease, transform 0.15s ease',
+                  opacity: isBeingMoved ? 0.25 : isDimmed ? 0.15 : 1,
                   zIndex: isHighlighted ? 30 : 20,
+                  cursor: isMyMarker && !readOnly ? 'grab' : 'pointer',
                 }}
                 onMouseEnter={() => setHoverId(marker.id)}
                 onMouseLeave={() => setHoverId(null)}
-                onClick={() => setClickedMarker(marker)}
+                onClick={() => { if (!draggingMarkerId) setClickedMarker(marker) }}
               >
-                {/* 펄스 링 (외부 hover 강조) */}
+                {/* 펄스 링 */}
                 {isHighlighted && (
                   <div
                     className="absolute rounded-full animate-ping pointer-events-none"
-                    style={{
-                      inset: '-10px',
-                      background: 'rgba(250, 204, 21, 0.5)',
-                    }}
+                    style={{ inset: '-10px', background: 'rgba(250, 204, 21, 0.5)' }}
                   />
                 )}
-                <div className="relative flex flex-col items-center cursor-pointer transition-transform hover:scale-110">
+                {/* 내 마커 이동 힌트 링 */}
+                {isMyMarker && !readOnly && !isBeingMoved && (
+                  <div
+                    className="absolute rounded-full pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+                    style={{ inset: '-4px', border: '2px dashed rgba(255,255,255,0.6)', borderRadius: '50%' }}
+                  />
+                )}
+                <div className="relative flex flex-col items-center transition-transform hover:scale-110">
                   <div
                     className="w-10 h-10 rounded-full flex items-center justify-center shadow-lg text-xl border-3 border-white"
                     style={{
@@ -434,7 +508,15 @@ export default function MapAnnotator({
                     className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white"
                     style={{ background: teamColor }}
                   />
-                  {isHovered && (
+                  {/* 이동 가능 표시 (내 마커 hover 시) */}
+                  {isMyMarker && !readOnly && isHovered && !isBeingMoved && (
+                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-white rounded-full shadow flex items-center justify-center">
+                      <svg className="w-2.5 h-2.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                      </svg>
+                    </div>
+                  )}
+                  {isHovered && !isBeingMoved && (
                     <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2
                                     bg-slate-800 text-white text-xs rounded-lg px-2.5 py-1.5
                                     whitespace-nowrap shadow-xl z-30 pointer-events-none">
@@ -442,8 +524,12 @@ export default function MapAnnotator({
                         {marker.teams?.name ?? (isMyMarker ? '내 마커' : '업체')}
                       </p>
                       <p>{typeInfo?.label ?? marker.marker_type}</p>
-                      {marker.label && <p className="text-slate-300">{marker.label}</p>}
-                      <p className="text-slate-400 text-[10px] mt-0.5">클릭하여 상세보기</p>
+                      {marker.label && marker.label !== (typeInfo?.label ?? '') && (
+                        <p className="text-slate-300">{marker.label}</p>
+                      )}
+                      {isMyMarker && !readOnly && (
+                        <p className="text-slate-400 text-[10px] mt-0.5">드래그로 이동 · 클릭으로 삭제</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -497,9 +583,6 @@ export default function MapAnnotator({
                     <p className="text-sm font-medium" style={{ color: getTeamColor(clickedMarker.team_id) }}>
                       {clickedMarker.teams?.name ?? '알 수 없는 업체'}
                     </p>
-                    {clickedMarker.label && (
-                      <p className="text-xs text-gray-500 mt-0.5">{clickedMarker.label}</p>
-                    )}
                     {clickedMarker.work_type && (
                       <span className={[
                         'text-[10px] font-bold px-1.5 py-0.5 rounded mt-0.5 inline-block',
@@ -515,7 +598,7 @@ export default function MapAnnotator({
               </div>
             </div>
 
-            {/* 이 마커에 연결된 작업항목 + 위험요인/개선대책 */}
+            {/* 연결된 작업항목 */}
             {clickedTeamItems.length > 0 ? (
               <div className="px-5 py-4 space-y-3 max-h-72 overflow-y-auto">
                 {clickedTeamItems.map(item => (
@@ -523,7 +606,6 @@ export default function MapAnnotator({
                     style={{
                       border: item.work_type === 'high_risk' ? '1px solid rgba(252,165,165,0.5)' : '1px solid rgba(147,197,253,0.5)',
                     }}>
-                    {/* 작업명 + 기본 정보 */}
                     <div className="px-3.5 py-2.5"
                       style={{ background: item.work_type === 'high_risk' ? 'rgba(254,242,242,0.7)' : 'rgba(239,246,255,0.7)' }}>
                       <div className="flex items-center gap-2 mb-1">
@@ -538,14 +620,12 @@ export default function MapAnnotator({
                         <p className="text-[10px] text-neutral-400 mt-1 pl-3.5 leading-relaxed">{item.description}</p>
                       )}
                     </div>
-                    {/* 위험요인 */}
                     {item.risk_factors && (
                       <div className="px-3.5 py-2 border-t border-amber-100 bg-amber-50/60">
                         <p className="text-[10px] font-semibold text-amber-600 mb-0.5">⚠ 위험요인</p>
                         <p className="text-[11px] text-amber-800 leading-relaxed">{item.risk_factors}</p>
                       </div>
                     )}
-                    {/* 개선대책 */}
                     {item.improvement_measures && (
                       <div className="px-3.5 py-2 border-t border-emerald-100 bg-emerald-50/60">
                         <p className="text-[10px] font-semibold text-emerald-600 mb-0.5">✅ 개선대책</p>
@@ -557,11 +637,11 @@ export default function MapAnnotator({
               </div>
             ) : (
               <div className="px-5 py-4 text-center text-neutral-400 text-xs">
-                작업 항목이 등록되지 않았습니다
+                연결된 작업항목이 없습니다
               </div>
             )}
 
-            {/* 푸터: 삭제 버튼 (내 마커 + 편집 모드) */}
+            {/* 푸터 */}
             {(() => {
               const isOwn = myTeamId
                 ? clickedMarker.team_id === myTeamId

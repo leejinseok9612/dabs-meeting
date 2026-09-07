@@ -78,11 +78,6 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
   const [myGeneralCount,  setMyGeneralCount]  = useState<number>(0)
   const myMarkerCount = myHighRiskCount + myGeneralCount
 
-  // 마커 드롭 대기 상태 (마커 배치 후 폼 자동 열기)
-  type PendingDrop = { markerType: string; x: number; y: number }
-  const [pendingHighRiskMarker, setPendingHighRiskMarker] = useState<PendingDrop | null>(null)
-  const [pendingGeneralMarker,  setPendingGeneralMarker]  = useState<PendingDrop | null>(null)
-
   // 작업 카드 hover → 마커 강조
   const [hoveredTeamId, setHoveredTeamId] = useState<string | null>(null)
 
@@ -467,35 +462,6 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
     await fetch(`/api/material-slots?reservationId=${reservationId}`, { method: 'DELETE' })
   }
 
-  // ── 마커 저장 헬퍼 ────────────────────────────────────────
-  async function saveMarker(
-    markerType: string, x: number, y: number,
-    workType: 'high_risk' | 'general', label: string,
-  ) {
-    if (!meeting) return
-    await fetch('/api/map-markers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        meeting_id:  meeting.id,
-        team_id:     teamId,
-        marker_type: markerType,
-        x_pct:       Math.round(x * 10) / 10,
-        y_pct:       Math.round(y * 10) / 10,
-        label,
-        work_type:   workType,
-      }),
-    })
-  }
-
-  // ── 마커 드롭 핸들러 ─────────────────────────────────────
-  function handleHighRiskMarkerDrop(markerType: string, x: number, y: number) {
-    setPendingHighRiskMarker({ markerType, x, y })
-  }
-  function handleGeneralMarkerDrop(markerType: string, x: number, y: number) {
-    setPendingGeneralMarker({ markerType, x, y })
-  }
-
   // ── 마커 삭제 → 연결된 작업항목도 삭제 ───────────────────
   function handleHighRiskMarkerDelete(marker: MapMarker) {
     const linked = workItems.find(
@@ -781,7 +747,6 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                   readOnly={false}
                   workType="high_risk"
                   onMarkerCountChange={count => setMyHighRiskCount(count)}
-                  onMarkerDrop={handleHighRiskMarkerDrop}
                   onMarkerDelete={handleHighRiskMarkerDelete}
                   workItems={workItems}
                   hoveredTeamId={hoveredTeamId}
@@ -838,7 +803,6 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                         readOnly={false}
                         workType="high_risk"
                         onMarkerCountChange={count => setMyHighRiskCount(count)}
-                        onMarkerDrop={handleHighRiskMarkerDrop}
                         onMarkerDelete={handleHighRiskMarkerDelete}
                         workItems={workItems}
                         hoveredTeamId={hoveredTeamId}
@@ -862,16 +826,8 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                     items={workItems.filter(i => i.work_type === 'high_risk')}
                     isLoading={workLoading}
                     myTeamId={teamId} myTeamName={team.name}
-                    onAdd={async (data) => {
-                      await addWorkItem('high_risk', data)
-                      if (pendingHighRiskMarker && data.work_name) {
-                        await saveMarker(pendingHighRiskMarker.markerType, pendingHighRiskMarker.x, pendingHighRiskMarker.y, 'high_risk', data.work_name as string)
-                        setPendingHighRiskMarker(null)
-                      }
-                    }}
+                    onAdd={async (data) => { await addWorkItem('high_risk', data) }}
                     onDelete={deleteWorkItem}
-                    pendingMarkerType={pendingHighRiskMarker?.markerType ?? null}
-                    onCancelPendingMarker={() => setPendingHighRiskMarker(null)}
                     onHoverTeam={setHoveredTeamId}
                     onImportPrev={importFetching ? undefined : handleFetchPrevWorkItems}
                     importFetching={importFetching}
@@ -888,8 +844,6 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                     myTeamId={teamId} myTeamName={team.name}
                     onAdd={async (data) => { await addWorkItem('general', data) }}
                     onDelete={deleteWorkItem}
-                    pendingMarkerType={null}
-                    onCancelPendingMarker={() => {}}
                     onImportPrev={importFetching ? undefined : handleFetchPrevWorkItems}
                     importFetching={importFetching}
                   />
@@ -1222,15 +1176,13 @@ function SubmitTab({
 // ── 작업 항목 탭 (고위험 / 일반 공용) ─────────────────────────
 function WorkItemTab({
   workType, label, color, isClosed, items, isLoading, myTeamId, myTeamName, onAdd, onDelete,
-  pendingMarkerType, onCancelPendingMarker, onHoverTeam, onImportPrev, importFetching,
+  onHoverTeam, onImportPrev, importFetching,
 }: {
   workType: 'high_risk' | 'general'; label: string; color: 'red' | 'blue'
   isClosed: boolean; items: WorkItem[]; isLoading: boolean
   myTeamId: string; myTeamName: string
   onAdd: (data: Partial<WorkItem>) => Promise<void>
   onDelete: (id: string) => Promise<void>
-  pendingMarkerType?: string | null       // 마커 드롭 시 자동으로 폼 열기
-  onCancelPendingMarker?: () => void      // 폼 취소 시 pending 해제
   onHoverTeam?: (teamId: string | null) => void
   onImportPrev?: () => void               // 이전 작업항목 불러오기
   importFetching?: boolean
@@ -1243,15 +1195,6 @@ function WorkItemTab({
   const [riskFactors,       setRiskFactors]       = useState('')
   const [improveMeasures,   setImproveMeasures]   = useState('')
   const [saving,      setSaving]      = useState(false)
-
-  // 마커가 드롭되면 자동으로 폼 열기
-  useEffect(() => {
-    if (pendingMarkerType) {
-      setWorkName(''); setLocation(''); setWorkerCount('')
-      setDescription(''); setRiskFactors(''); setImproveMeasures('')
-      setShowForm(true)
-    }
-  }, [pendingMarkerType])
 
   const colorCls = color === 'red'
     ? { dot: 'bg-red-400', badge: 'bg-red-50 text-red-700', btn: 'btn-primary', border: 'rgba(0,0,0,0.08)' }
@@ -1272,12 +1215,9 @@ function WorkItemTab({
 
   function handleCancel() {
     setShowForm(false)
-    onCancelPendingMarker?.()
   }
 
   if (isLoading) return <LoadingSpinner />
-
-  const pendingLabel = pendingMarkerType ? MARKER_TYPES[pendingMarkerType]?.label : null
 
   return (
     <div className="space-y-4">
@@ -1317,17 +1257,9 @@ function WorkItemTab({
       {showForm && (
         <div className="surface p-4 animate-slide-up-fade">
           <div className="flex items-center gap-2 mb-3">
-            {pendingLabel && (
-              <span className="text-lg">{MARKER_TYPES[pendingMarkerType!]?.icon}</span>
-            )}
             <h3 className="text-xs font-semibold text-neutral-700 uppercase tracking-wider">
-              {pendingLabel ? `${pendingLabel} 작업 등록` : `새 ${label} 등록`}
+              새 {label} 등록
             </h3>
-            {pendingLabel && (
-              <span className={`badge ml-auto ${color === 'red' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
-                마커와 함께 등록
-              </span>
-            )}
           </div>
           <form onSubmit={handleAdd} className="space-y-2.5">
             <div className="space-y-1">
