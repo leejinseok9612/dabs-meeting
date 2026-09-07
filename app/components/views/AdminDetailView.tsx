@@ -48,7 +48,9 @@ interface WorkItem {
 }
 interface MaterialReservation {
   id: string; team_id: string; material_description?: string
-  quantity?: string; vehicle_type?: string; teams?: { id: string; name: string }
+  quantity?: string; vehicle_type?: string
+  unloading_location?: string; contact_person?: string
+  teams?: { id: string; name: string }
 }
 interface MaterialSlot {
   id: string; slot_time: string; max_teams: number; gate: string
@@ -754,8 +756,8 @@ function MaterialSection({ slots, onDeleteReservation }: {
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-neutral-50/80 border-b border-neutral-100">
-                {(activeGate === ALL_KEY ? ['GATE','시간대','업체명','자재 내용','수량/규격','차량 종류','관리']
-                                         : ['시간대','업체명','자재 내용','수량/규격','차량 종류','관리']
+                {(activeGate === ALL_KEY ? ['GATE','시간대','업체명','자재 내용','수량/규격','차량 종류','하역장소','담당자(연락처)','관리']
+                                         : ['시간대','업체명','자재 내용','수량/규격','차량 종류','하역장소','담당자(연락처)','관리']
                 ).map(h => (
                   <th key={h} className="text-left px-4 py-2.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider">{h}</th>
                 ))}
@@ -777,6 +779,12 @@ function MaterialSection({ slots, onDeleteReservation }: {
                     {r.vehicle_type
                       ? <span className="badge bg-neutral-100 text-neutral-600">{r.vehicle_type}</span>
                       : <span className="text-neutral-300">—</span>}
+                  </td>
+                  <td className="px-4 py-2.5 text-neutral-500 max-w-[120px] truncate" title={r.unloading_location}>
+                    {r.unloading_location || <span className="text-neutral-300">—</span>}
+                  </td>
+                  <td className="px-4 py-2.5 text-neutral-500 whitespace-nowrap">
+                    {r.contact_person || <span className="text-neutral-300">—</span>}
                   </td>
                   <td className="px-3 py-2">
                     <button onClick={() => handleDelete(r.id)} disabled={deleting === r.id}
