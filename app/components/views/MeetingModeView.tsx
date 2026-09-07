@@ -88,16 +88,30 @@ function weatherIcon(pty: number | null): string {
 function WeatherWidget() {
   const theme = useTheme()
   const dk = theme === 'dark'
-  const [weather, setWeather] = useState<WeatherData | null>(null)
+  const [weather,      setWeather]      = useState<WeatherData | null>(null)
+  const [fetchFailed,  setFetchFailed]  = useState(false)
 
   useEffect(() => {
-    fetch('/api/weather').then(r => r.json()).then(setWeather).catch(() => {})
+    fetch('/api/weather')
+      .then(r => { if (!r.ok) throw new Error('weather fetch failed'); return r.json() })
+      .then((d: WeatherData) => setWeather(d))
+      .catch(() => setFetchFailed(true))
   }, [])
 
-  if (!weather) {
+  // 로딩 중 스켈레톤
+  if (!weather && !fetchFailed) {
     return (
       <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${dk ? 'bg-white/10' : 'bg-black/8'}`}>
         <div className={`w-20 h-4 rounded animate-pulse ${dk ? 'bg-white/20' : 'bg-black/10'}`} />
+      </div>
+    )
+  }
+
+  // fetch 완전 실패 시 최소 안내 표시 (컴포넌트 크래시 방지)
+  if (fetchFailed || !weather) {
+    return (
+      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs ${dk ? 'bg-white/10 text-white/30' : 'bg-black/6 text-gray-400'}`}>
+        🌤 날씨 정보 없음
       </div>
     )
   }
@@ -1699,11 +1713,13 @@ ${bodyHtml}
             <NotePanel meetingId={meetingId} onClose={() => setShowNote(false)} />
           )}
 
-          {/* 전체화면 시 플로팅 종료 버튼 */}
+          {/* 전체화면 시 플로팅 종료 버튼
+              absolute 사용: overflow-hidden 부모 안이지만 z-50으로 시각적 최상위 보장.
+              fullscreen 컨텍스트에서 fixed는 브라우저별 동작 차이가 있어 absolute 권장. */}
           {isFullscreen && (
             <button
               onClick={() => document.exitFullscreen?.()}
-              className="fixed top-4 right-4 z-50 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium backdrop-blur-md bg-black/40 text-white/80 hover:bg-black/60 hover:text-white border border-white/10 transition-all shadow-lg"
+              className="absolute top-4 right-4 z-50 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium backdrop-blur-md bg-black/40 text-white/80 hover:bg-black/60 hover:text-white border border-white/10 transition-all shadow-lg"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />

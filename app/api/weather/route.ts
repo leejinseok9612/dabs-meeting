@@ -82,7 +82,11 @@ export async function GET() {
       url.searchParams.set('nx',         KMA_NX)
       url.searchParams.set('ny',         KMA_NY)
 
-      const res  = await fetch(url.toString(), { next: { revalidate: 600 }, cache: 'no-store' })
+      // 5초 타임아웃 — 기상청 응답 지연 시 Open-Meteo로 자동 폴백
+      const res  = await fetch(url.toString(), {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(5000),
+      })
       const json = await res.json() as {
         response?: {
           header?: { resultCode?: string }
@@ -99,11 +103,9 @@ export async function GET() {
           return found ? parseFloat(found.obsrValue) : null
         }
 
-        const tmp = get('T1H')          // 기온 (°C)
-        const wsd = get('WSD')          // 풍속 (m/s)
-        const pty = Math.round(get('PTY') ?? 0)  // 강수형태
-
-        console.log(`[weather/kma] base=${base_date} ${base_time} tmp=${tmp} wsd=${wsd} pty=${pty}`)
+        const tmp = get('T1H')                       // 기온 (°C)
+        const wsd = get('WSD')                       // 풍속 (m/s)
+        const pty = Math.round(get('PTY') ?? 0)      // 강수형태
 
         return NextResponse.json({
           sky: null, pty, wsd, tmp,
@@ -115,7 +117,7 @@ export async function GET() {
         })
       }
 
-      console.warn(`[weather/kma] resultCode=${code} items=${items.length} — 폴백`)
+      console.warn(`[weather/kma] resultCode=${code} items=${items.length} — Open-Meteo 폴백`)
     } catch (err) {
       console.error('[weather/kma] 오류, Open-Meteo로 폴백:', err)
     }
@@ -126,14 +128,17 @@ export async function GET() {
   // ──────────────────────────────────────────────────────
   try {
     const url = new URL('https://api.open-meteo.com/v1/forecast')
-    url.searchParams.set('latitude',      String(LAT))
-    url.searchParams.set('longitude',     String(LNG))
-    url.searchParams.set('current',       'temperature_2m,wind_speed_10m,precipitation,weather_code')
+    url.searchParams.set('latitude',        String(LAT))
+    url.searchParams.set('longitude',       String(LNG))
+    url.searchParams.set('current',         'temperature_2m,wind_speed_10m,precipitation,weather_code')
     url.searchParams.set('wind_speed_unit', 'ms')
-    url.searchParams.set('timezone',      'Asia/Seoul')
-    url.searchParams.set('forecast_days', '1')
+    url.searchParams.set('timezone',        'Asia/Seoul')
+    url.searchParams.set('forecast_days',   '1')
 
-    const res  = await fetch(url.toString(), { next: { revalidate: 600 } })
+    const res  = await fetch(url.toString(), {
+      next: { revalidate: 600 },
+      signal: AbortSignal.timeout(5000),
+    })
     const data = await res.json() as {
       current?: {
         temperature_2m?: number
@@ -151,8 +156,6 @@ export async function GET() {
     const wmo = cur.weather_code   ?? 0
     const pty = wmoCodToPty(wmo)
 
-    console.log(`[weather/open-meteo] tmp=${tmp} wsd=${wsd} wmo=${wmo} pty=${pty}`)
-
     return NextResponse.json({
       sky: null, pty, wsd, tmp,
       skyLabel: skyLabel(null), ptyLabel: ptyLabel(pty),
@@ -162,7 +165,7 @@ export async function GET() {
       source: 'open-meteo',
     })
   } catch (err) {
-    console.error('[weather] Open-Meteo 실패:', err)
+    console.error('[weather] Open-Meteo 실패, mock 폴백:', err)
   }
 
   // ──────────────────────────────────────────────────────

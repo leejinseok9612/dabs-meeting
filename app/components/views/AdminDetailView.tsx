@@ -821,12 +821,54 @@ function SubmissionsSection({ sorted, meeting }: { sorted: SubmissionRow[]; meet
   const submittedCount = sorted.filter(s => s.status === 'submitted').length
   const pendingCount   = sorted.filter(s => s.status === 'pending').length
 
+  // ── CSV 내보내기 (UTF-8 BOM — Windows Excel 한글 깨짐 방지) ──
+  function downloadCSV() {
+    const dateStr = meeting?.date ?? new Date().toISOString().slice(0, 10)
+    const headers = ['#', '업체명', '투입인원', '작업공정', '투입장비', '제출파일', '제출시간', '상태', '검토상태']
+    const statusLabel = (s: SubmissionRow) =>
+      s.status === 'submitted' ? '제출완료' : '미제출'
+    const reviewLabel = (s: SubmissionRow) =>
+      s.reviewed_status === 'approved'           ? '검토완료'
+      : s.reviewed_status === 'revision_requested' ? '보완요청'
+      : '미검토'
+    const rows = filtered.map((s, i) => [
+      String(i + 1),
+      s.teams?.name ?? '',
+      s.personnel_count != null ? String(s.personnel_count) : '',
+      s.work_process ?? '',
+      s.equipment    ?? '',
+      s.file_name    ?? '',
+      s.submitted_at ? new Date(s.submitted_at).toLocaleString('ko-KR') : '',
+      statusLabel(s),
+      reviewLabel(s),
+    ])
+    const escape = (v: string) => `"${v.replace(/"/g, '""')}"`
+    const csv = [headers, ...rows].map(r => r.map(escape).join(',')).join('\r\n')
+    // UTF-8 BOM(\uFEFF) 추가 — Windows Excel 한글 인식
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `DABs_제출현황_${dateStr}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <>
       <section className="surface overflow-hidden">
         <div className="px-5 py-3.5 border-b border-neutral-100 space-y-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <h2 className="text-sm font-semibold text-neutral-900 tracking-tight">업체별 제출 현황</h2>
+            <button onClick={downloadCSV}
+              className="btn btn-secondary btn-sm flex items-center gap-1.5"
+              title="현재 목록을 CSV로 내보내기 (Excel 호환)">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round"
+                  d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              CSV 내보내기
+            </button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative flex-1 min-w-[160px] max-w-56">
