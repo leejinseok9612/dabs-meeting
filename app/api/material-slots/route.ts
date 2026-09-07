@@ -46,7 +46,8 @@ export async function GET(req: NextRequest) {
     .select(`
       *,
       material_reservations(
-        id, team_id, material_description, quantity, vehicle_type, created_at,
+        id, team_id, material_description, quantity, vehicle_type,
+        unloading_location, contact_person, created_at,
         teams(id, name)
       )
     `)
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest) {
 
 // POST /api/material-slots — 예약
 export async function POST(req: NextRequest) {
-  const { slotId, teamId, materialDescription, quantity, vehicleType } = await req.json()
+  const { slotId, teamId, materialDescription, quantity, vehicleType, unloadingLocation, contactPerson } = await req.json()
   const supabase = await createServerSupabase()
 
   const { data: slot } = await supabase
@@ -78,7 +79,13 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabase
     .from('material_reservations')
-    .insert({ slot_id: slotId, team_id: teamId, material_description: materialDescription, quantity, vehicle_type: vehicleType })
+    .insert({
+      slot_id: slotId, team_id: teamId,
+      material_description: materialDescription,
+      quantity, vehicle_type: vehicleType,
+      unloading_location: unloadingLocation,
+      contact_person:     contactPerson,
+    })
     .select('*, teams(id, name)')
     .single()
 

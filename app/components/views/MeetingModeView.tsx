@@ -35,7 +35,9 @@ interface WorkItem {
 }
 interface MaterialReservation {
   id: string; team_id: string; material_description?: string
-  quantity?: string; vehicle_type?: string; teams?: { id: string; name: string }
+  quantity?: string; vehicle_type?: string
+  unloading_location?: string; contact_person?: string
+  teams?: { id: string; name: string }
 }
 interface MaterialSlot {
   id: string; slot_time: string; max_teams: number; gate: string
@@ -959,8 +961,8 @@ function MaterialSlide({ slots }: { slots: MaterialSlot[] }) {
       </div>
 
       {/* ── Sticky 테이블 헤더 ── */}
-      <div className={`grid grid-cols-[80px_80px_1fr_1fr_120px] gap-0 px-4 sticky top-0 z-10 pt-1 pb-2 backdrop-blur-md ${dk ? 'bg-neutral-950/90' : 'bg-gray-50/95'}`}>
-        {['GATE', '시간대', '업체명', '자재 내용', '차량'].map(h => (
+      <div className={`grid grid-cols-[64px_72px_1fr_1fr_auto] gap-x-3 px-4 sticky top-0 z-10 pt-1 pb-2 backdrop-blur-md ${dk ? 'bg-neutral-950/90' : 'bg-gray-50/95'}`}>
+        {['GATE', '시간대', '업체명', '자재명', '차량/대수'].map(h => (
           <div key={h} className={`text-[10px] font-semibold uppercase tracking-widest py-1.5 ${dk ? 'text-white/30' : 'text-gray-400'}`}>{h}</div>
         ))}
       </div>
@@ -983,24 +985,34 @@ function MaterialSlide({ slots }: { slots: MaterialSlot[] }) {
                 </div>
               ) : items.map((r, idx) => (
                 <div key={idx}
-                  className={`grid grid-cols-[80px_80px_1fr_1fr_120px] gap-0 px-4 py-3 border-b transition-colors ${dk ? 'border-white/5 hover:bg-white/5' : 'border-gray-100 hover:bg-gray-50'}`}>
-                  <div>
-                    <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${dk ? 'bg-white/10 text-white/60' : 'bg-gray-100 text-gray-500'}`}>
-                      {r.gate}
-                    </span>
-                  </div>
-                  <div className={`text-sm font-semibold tabular-nums self-center ${dk ? 'text-white' : 'text-gray-800'}`}>
-                    {r.slot_time?.slice(0, 5)}
-                  </div>
-                  <div className={`text-sm self-center ${dk ? 'text-white/70' : 'text-gray-600'}`}>{r.teams?.name ?? '미지정'}</div>
-                  <div className={`text-sm self-center ${dk ? 'text-white/80' : 'text-gray-700'}`}>{r.material_description ?? '—'}</div>
-                  <div className="self-center">
-                    {r.vehicle_type && (
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${dk ? 'bg-white/10 text-white/60' : 'bg-gray-100 text-gray-500'}`}>
-                        {r.vehicle_type}
+                  className={`px-4 py-2.5 border-b transition-colors ${dk ? 'border-white/5 hover:bg-white/5' : 'border-gray-100 hover:bg-gray-50'}`}>
+                  {/* 1행: GATE · 시간 · 업체명 · 자재명 · 차량/대수 */}
+                  <div className={`grid grid-cols-[64px_72px_1fr_1fr_auto] gap-x-3 items-center`}>
+                    <div>
+                      <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${dk ? 'bg-white/10 text-white/60' : 'bg-gray-100 text-gray-500'}`}>
+                        {r.gate}
                       </span>
-                    )}
+                    </div>
+                    <div className={`text-sm font-semibold tabular-nums ${dk ? 'text-white' : 'text-gray-800'}`}>
+                      {r.slot_time?.slice(0, 5)}
+                    </div>
+                    <div className={`text-sm truncate ${dk ? 'text-white/70' : 'text-gray-600'}`}>{r.teams?.name ?? '미지정'}</div>
+                    <div className={`text-sm truncate ${dk ? 'text-white/80' : 'text-gray-700'}`}>{r.material_description ?? '—'}</div>
+                    <div className="shrink-0">
+                      {r.quantity && (
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${dk ? 'bg-white/10 text-white/60' : 'bg-gray-100 text-gray-500'}`}>
+                          {r.quantity}
+                        </span>
+                      )}
+                    </div>
                   </div>
+                  {/* 2행: 하역장소 · 담당자 */}
+                  {(r.unloading_location || r.contact_person) && (
+                    <div className={`flex gap-4 mt-1 pl-[136px] text-[11px] ${dk ? 'text-white/35' : 'text-gray-400'}`}>
+                      {r.unloading_location && <span>📍 {r.unloading_location}</span>}
+                      {r.contact_person     && <span>📞 {r.contact_person}</span>}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1391,15 +1403,17 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
     // ── 자재 테이블 ─────────────────────────────────────────
     const gates = [...new Set(allRes.map(r => r.gate))].sort()
     const matHtml = allRes.length === 0
-      ? '<p class="empty">등록된 자재 예약이 없습니다.</p>'
-      : `<table><thead><tr><th>GATE</th><th>시간</th><th>업체</th><th>자재 내용</th><th>차량</th></tr></thead><tbody>
+      ? '<p class="empty">등록된 자재 신청이 없습니다.</p>'
+      : `<table><thead><tr><th>GATE</th><th>시간</th><th>업체</th><th>자재명</th><th>차량/대수</th><th>하역장소</th><th>담당자(연락처)</th></tr></thead><tbody>
          ${gates.flatMap(gate => {
            const rows = allRes.filter(r => r.gate === gate).sort((a,b) => a.slot_time.localeCompare(b.slot_time))
            return [
-             `<tr><td colspan="5" class="gate-hd">${esc(gate)}</td></tr>`,
+             `<tr><td colspan="7" class="gate-hd">${esc(gate)}</td></tr>`,
              ...rows.map(r => `<tr><td>${esc(r.gate)}</td><td class="mono">${(r.slot_time??'').slice(0,5)}</td>
                <td>${esc(r.teams?.name??'미지정')}</td><td>${esc(r.material_description??'—')}</td>
-               <td>${esc(r.vehicle_type??'—')}</td></tr>`)
+               <td>${esc(r.quantity??'—')}</td>
+               <td>${esc(r.unloading_location??'—')}</td>
+               <td>${esc(r.contact_person??'—')}</td></tr>`)
            ]
          }).join('')}
          </tbody></table>`

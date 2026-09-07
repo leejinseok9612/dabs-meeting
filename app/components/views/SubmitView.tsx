@@ -22,7 +22,9 @@ interface WorkItem {
 }
 interface MaterialReservation {
   id: string; team_id: string; material_description?: string
-  quantity?: string; vehicle_type?: string; teams?: { id: string; name: string }
+  quantity?: string; vehicle_type?: string
+  unloading_location?: string; contact_person?: string
+  teams?: { id: string; name: string }
 }
 interface MaterialSlot {
   id: string; slot_time: string; max_teams: number; gate: string
@@ -416,11 +418,11 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
   }
 
   // ── 자재 예약 핸들러 ─────────────────────────────────────
-  async function reserveSlot(slotId: string, desc: string, qty: string, vehicle: string) {
+  async function reserveSlot(slotId: string, desc: string, qty: string, vehicle: string, unloadingLocation: string, contactPerson: string) {
     const res = await fetch('/api/material-slots', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slotId, teamId, materialDescription: desc, quantity: qty, vehicleType: vehicle }),
+      body: JSON.stringify({ slotId, teamId, materialDescription: desc, quantity: qty, vehicleType: vehicle, unloadingLocation, contactPerson }),
     })
     if (!res.ok) {
       const err = await res.json()
@@ -812,7 +814,8 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                     slots={slots}
                     isLoading={slotsLoading}
                     myTeamId={teamId} myTeamName={team.name}
-                    onReserve={reserveSlot}
+                    onReserve={(slotId, desc, qty, vehicle, unloadingLocation, contactPerson) =>
+                      reserveSlot(slotId, desc, qty, vehicle, unloadingLocation, contactPerson)}
                     onCancel={cancelReservation}
                   />
                 </div>
@@ -1360,20 +1363,23 @@ function MaterialTab({
 }: {
   isClosed: boolean; slots: MaterialSlot[]; isLoading: boolean
   myTeamId: string; myTeamName: string
-  onReserve: (slotId: string, desc: string, qty: string, vehicle: string) => Promise<void>
+  onReserve: (slotId: string, desc: string, qty: string, vehicle: string, unloadingLocation: string, contactPerson: string) => Promise<void>
   onCancel: (reservationId: string) => Promise<void>
 }) {
-  const [selectedGate, setSelectedGate] = useState<string | null>(null)
-  const [openSlotId,   setOpenSlotId]   = useState<string | null>(null)
-  const [desc,         setDesc]         = useState('')
-  const [qty,          setQty]          = useState('')
-  const [vehicle,      setVehicle]      = useState('')
-  const [submitting,   setSubmitting]   = useState(false)
+  const [selectedGate,      setSelectedGate]      = useState<string | null>(null)
+  const [openSlotId,        setOpenSlotId]        = useState<string | null>(null)
+  const [desc,              setDesc]              = useState('')
+  const [qty,               setQty]               = useState('')
+  const [vehicle,           setVehicle]           = useState('')
+  const [vehicleCount,      setVehicleCount]      = useState('')
+  const [unloadingLocation, setUnloadingLocation] = useState('')
+  const [contactPerson,     setContactPerson]     = useState('')
+  const [submitting,        setSubmitting]        = useState(false)
   const matComposingRef = useRef(false)
 
   if (isLoading) return <LoadingSpinner />
 
-  const gates    = [...new Set(slots.map(s => s.gate))].sort()
+  const gates     = [...new Set(slots.map(s => s.gate))].sort()
   const gateSlots = selectedGate ? slots.filter(s => s.gate === selectedGate) : []
 
   const myResByGate = gates.reduce<Record<string, MaterialReservation | undefined>>((acc, gate) => {
@@ -1382,18 +1388,28 @@ function MaterialTab({
     return acc
   }, {})
 
+  function resetForm() {
+    setDesc(''); setQty(''); setVehicle(''); setVehicleCount('')
+    setUnloadingLocation(''); setContactPerson('')
+  }
+
   async function handleReserve(slotId: string) {
-    if (!desc.trim()) { toast.error('자재 내용을 입력해주세요'); return }
+    if (!desc.trim()) { toast.error('자재명을 입력해주세요'); return }
     setSubmitting(true)
-    await onReserve(slotId, desc, qty, vehicle)
-    setOpenSlotId(null); setDesc(''); setQty(''); setVehicle('')
+    // 차량/대수를 "차량종류 N대" 형태로 qty에 합산
+    const vehicleStr = vehicle
+      ? vehicleCount ? `${vehicle} ${vehicleCount}대` : vehicle
+      : vehicleCount ? `${vehicleCount}대` : ''
+    await onReserve(slotId, desc, vehicleStr, vehicle, unloadingLocation, contactPerson)
+    setOpenSlotId(null)
+    resetForm()
     setSubmitting(false)
   }
 
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-sm font-semibold text-neutral-800 tracking-tight">자재 하역/운반 시간 예약</h2>
+        <h2 className="text-sm font-semibold text-neutral-800 tracking-tight">자재 반입 / 반출 현황</h2>
         <p className="text-xs text-neutral-400 mt-0.5">GATE를 선택한 후 시간대를 신청하세요 · 시간대당 최대 5개 업체</p>
       </div>
 
@@ -1418,8 +1434,8 @@ function MaterialTab({
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-neutral-800 tracking-tight">{gate}</p>
-                  <p className="text-[11px] text-neutral-400 mt-0.5">{totalRes}건 예약됨</p>
-                  {myRes && <p className="text-[11px] text-emerald-600 font-medium mt-1">내 예약 있음</p>}
+                  <p className="text-[11px] text-neutral-400 mt-0.5">{totalRes}건 신청됨</p>
+                  {myRes && <p className="text-[11px] text-emerald-600 font-medium mt-1">내 신청 있음</p>}
                 </div>
               </button>
             )
@@ -1428,7 +1444,7 @@ function MaterialTab({
       ) : (
         <div className="space-y-3">
           <button
-            onClick={() => { setSelectedGate(null); setOpenSlotId(null) }}
+            onClick={() => { setSelectedGate(null); setOpenSlotId(null); resetForm() }}
             className="btn btn-ghost btn-sm"
           >
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -1444,7 +1460,7 @@ function MaterialTab({
             </svg>
             <div>
               <p className="text-xs font-semibold text-white tracking-tight">{selectedGate}</p>
-              <p className="text-[11px] text-neutral-400 mt-0.5">시간대를 선택하여 예약하세요</p>
+              <p className="text-[11px] text-neutral-400 mt-0.5">시간대를 선택하여 신청하세요</p>
             </div>
           </div>
 
@@ -1472,35 +1488,41 @@ function MaterialTab({
                       <span className="badge bg-neutral-100 text-neutral-500">마감</span>
                     ) : myRes ? (
                       <button onClick={() => onCancel(myRes.id)}
-                        className="text-[11px] font-medium text-red-500 hover:text-red-600 transition-colors duration-150">예약취소</button>
+                        className="text-[11px] font-medium text-red-500 hover:text-red-600 transition-colors duration-150">신청취소</button>
                     ) : !isClosed ? (
-                      <button onClick={() => setOpenSlotId(isOpen ? null : slot.id)}
+                      <button onClick={() => { setOpenSlotId(isOpen ? null : slot.id); if (isOpen) resetForm() }}
                         className={`btn btn-sm ${isOpen ? 'btn-secondary' : 'btn-primary'}`}>
                         {isOpen ? '닫기' : '신청'}
                       </button>
                     ) : null}
                   </div>
 
+                  {/* ── 신청 폼 ── */}
                   {isOpen && !myRes && !isFull && (
                     <div className="space-y-3 px-4 py-4"
                       style={{ borderTop: '1px solid rgba(0,0,0,0.06)', background: '#fafafa' }}>
+
+                      {/* 업체명 (자동) */}
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-neutral-100">
+                        <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest shrink-0">업체명</span>
+                        <span className="text-xs font-medium text-neutral-700">{myTeamName}</span>
+                      </div>
+
+                      {/* 자재명 */}
                       <div className="space-y-1.5">
-                        <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-widest">자재 내용 <span className="text-red-400">*</span></label>
-                        <input type="text" placeholder="예) 철근 20톤" value={desc}
+                        <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-widest">
+                          자재명 <span className="text-red-400">*</span>
+                        </label>
+                        <input type="text" placeholder="예) 철근, 레미콘, 거푸집"
+                          value={desc}
                           onCompositionStart={() => { matComposingRef.current = true }}
                           onCompositionEnd={e => { matComposingRef.current = false; setDesc((e.target as HTMLInputElement).value) }}
                           onChange={e => { if (!matComposingRef.current) setDesc(e.target.value) }}
                           className={inputCls} />
                       </div>
+
+                      {/* 차량 종류 / 대수 */}
                       <div className="grid grid-cols-2 gap-2.5">
-                        <div className="space-y-1.5">
-                          <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-widest">수량/규격</label>
-                          <input type="text" placeholder="예) 20톤" value={qty}
-                            onCompositionStart={() => { matComposingRef.current = true }}
-                            onCompositionEnd={e => { matComposingRef.current = false; setQty((e.target as HTMLInputElement).value) }}
-                            onChange={e => { if (!matComposingRef.current) setQty(e.target.value) }}
-                            className={inputCls} />
-                        </div>
                         <div className="space-y-1.5">
                           <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-widest">차량 종류</label>
                           <select value={vehicle} onChange={e => setVehicle(e.target.value)} className={`${inputCls} select`}>
@@ -1508,33 +1530,68 @@ function MaterialTab({
                             {VEHICLE_LIST.map(v => <option key={v} value={v}>{v}</option>)}
                           </select>
                         </div>
+                        <div className="space-y-1.5">
+                          <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-widest">대수</label>
+                          <input type="number" min="1" placeholder="대" value={vehicleCount}
+                            onChange={e => setVehicleCount(e.target.value)}
+                            className={inputCls} />
+                        </div>
                       </div>
+
+                      {/* 하역 장소 */}
+                      <div className="space-y-1.5">
+                        <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-widest">하역 장소</label>
+                        <input type="text" placeholder="예) A동 앞 적치장"
+                          value={unloadingLocation}
+                          onCompositionStart={() => { matComposingRef.current = true }}
+                          onCompositionEnd={e => { matComposingRef.current = false; setUnloadingLocation((e.target as HTMLInputElement).value) }}
+                          onChange={e => { if (!matComposingRef.current) setUnloadingLocation(e.target.value) }}
+                          className={inputCls} />
+                      </div>
+
+                      {/* 하역물 담당자 (연락처) */}
+                      <div className="space-y-1.5">
+                        <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-widest">담당자 (연락처)</label>
+                        <input type="text" placeholder="예) 홍길동 010-1234-5678"
+                          value={contactPerson}
+                          onCompositionStart={() => { matComposingRef.current = true }}
+                          onCompositionEnd={e => { matComposingRef.current = false; setContactPerson((e.target as HTMLInputElement).value) }}
+                          onChange={e => { if (!matComposingRef.current) setContactPerson(e.target.value) }}
+                          className={inputCls} />
+                      </div>
+
                       <button onClick={() => handleReserve(slot.id)} disabled={submitting}
                         className="btn btn-primary btn-lg w-full">
                         {submitting
                           ? <><span className="w-3.5 h-3.5 border-[2px] border-white/30 border-t-white rounded-full"
                               style={{ animation: 'spin 0.7s linear infinite' }} />신청 중...</>
-                          : '예약 신청'}
+                          : '신청하기'}
                       </button>
                     </div>
                   )}
 
+                  {/* ── 예약 목록 ── */}
                   {reservations.length > 0 && (
                     <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
                       {reservations.map((r, idx) => (
                         <div key={r.id} className={[
-                          'flex items-center gap-2.5 px-4 py-2 text-[11px]',
+                          'px-4 py-2.5 text-[11px]',
                           idx > 0 ? 'border-t border-neutral-100/80' : '',
                           r.team_id === myTeamId ? 'bg-emerald-50/60' : '',
                         ].join(' ')}>
-                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${r.team_id === myTeamId ? 'bg-emerald-400' : 'bg-neutral-300'}`} />
-                          <span className="font-semibold text-neutral-700">{r.teams?.name ?? '업체'}</span>
-                          {r.material_description && <span className="text-neutral-500">{r.material_description}</span>}
-                          {r.quantity && <span className="text-neutral-400">· {r.quantity}</span>}
-                          {r.vehicle_type && <span className="text-neutral-400">· {r.vehicle_type}</span>}
-                          {r.team_id === myTeamId && (
-                            <span className="ml-auto badge bg-emerald-50 text-emerald-700">내 예약</span>
-                          )}
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${r.team_id === myTeamId ? 'bg-emerald-400' : 'bg-neutral-300'}`} />
+                            <span className="font-semibold text-neutral-700">{r.teams?.name ?? '업체'}</span>
+                            {r.material_description && <span className="text-neutral-500">· {r.material_description}</span>}
+                            {r.team_id === myTeamId && (
+                              <span className="ml-auto badge bg-emerald-50 text-emerald-700 shrink-0">내 신청</span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-3.5 text-neutral-400">
+                            {r.quantity      && <span>🚛 {r.quantity}</span>}
+                            {r.unloading_location && <span>📍 {r.unloading_location}</span>}
+                            {r.contact_person     && <span>📞 {r.contact_person}</span>}
+                          </div>
                         </div>
                       ))}
                     </div>
