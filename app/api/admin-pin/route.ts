@@ -48,7 +48,11 @@ export async function POST(req: NextRequest) {
     .eq('key', 'admin_pin')
     .single()
 
-  const correctPin = data?.value ?? '1234'
+  // PIN이 DB에 없으면 인증 거부 (하드코딩 기본값 제거)
+  if (!data?.value) {
+    return NextResponse.json({ ok: false, error: '관리자 PIN이 설정되지 않았습니다.' }, { status: 403 })
+  }
+  const correctPin = data.value
 
   if (String(pin) === correctPin) {
     ipAttempts.delete(ip)   // 성공 시 카운터 리셋
