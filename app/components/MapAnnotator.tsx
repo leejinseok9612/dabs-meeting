@@ -245,15 +245,13 @@ export default function MapAnnotator({
       if (fuzzy.length) return fuzzy
     }
 
-    // 3순위: 같은 team + work_type 전체 (최대 5개, 위험요인 있는 것 우선)
+    // 3순위: 같은 team + work_type이 정확히 1건일 때만 (모호하지 않은 경우만 표시)
     if (clickedMarker.work_type) {
-      const byType = workItems
-        .filter(w => w.team_id === tid && w.work_type === clickedMarker.work_type)
-        .sort((a, b) => (b.risk_factors ? 1 : 0) - (a.risk_factors ? 1 : 0))
-        .slice(0, 5)
-      return byType
+      const byType = workItems.filter(w => w.team_id === tid && w.work_type === clickedMarker.work_type)
+      if (byType.length === 1) return byType
     }
 
+    // 매칭 실패 → 빈 배열 (팝업에 "작업 항목이 등록되지 않았습니다" 표시)
     return []
   }, [clickedMarker, workItems])
 
