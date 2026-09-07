@@ -151,6 +151,16 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
       }
       setLoading(false)
 
+      // 고위험작업 안내 팝업 — 로그인 시 자동 표시 (1주일 dismiss 미적용 시)
+      try {
+        const until = localStorage.getItem(`dabs_highrisk_guide_dismiss_${teamId}`)
+        if (!until || Date.now() >= Number(until)) {
+          setShowHighRiskGuide(true)
+        }
+      } catch {
+        setShowHighRiskGuide(true)
+      }
+
       // localStorage 임시저장 복원
       try {
         const raw = localStorage.getItem(DRAFT_KEY(teamId))
