@@ -69,11 +69,13 @@ interface Props {
   onPendingDropSaved?: () => void
   /** 작업 카드 hover 시 해당 팀 마커 강조 */
   hoveredTeamId?: string | null
+  /** 새 마커가 저장된 직후 호출 — 작업항목 추가 폼 자동 오픈에 사용 */
+  onMarkerDropped?: (marker: MapMarker) => void
 }
 
 export default function MapAnnotator({
   meetingId, mapUrl, myTeamId, allTeamIds, readOnly = false, onMarkerCountChange, workItems = [],
-  workType, onMarkerDelete, hoveredTeamId,
+  workType, onMarkerDelete, hoveredTeamId, onMarkerDropped,
 }: Props) {
   const [markers,         setMarkers]         = useState<MapMarker[]>([])
   const [draggingType,    setDraggingType]    = useState<string | null>(null)
@@ -229,6 +231,8 @@ export default function MapAnnotator({
         }
         return updated
       })
+      // 새 마커 저장 성공 → 작업항목 추가 폼 자동 오픈 트리거
+      onMarkerDropped?.(newMarker)
     }
     setSaving(false)
   }

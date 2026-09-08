@@ -81,6 +81,9 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
   // 작업 카드 hover → 마커 강조
   const [hoveredTeamId, setHoveredTeamId] = useState<string | null>(null)
 
+  // 마커 드롭 → 작업항목 폼 자동 오픈 (마커 라벨을 작업명으로 pre-fill)
+  const [pendingMarkerLabel, setPendingMarkerLabel] = useState<string | null>(null)
+
   // ── 자료제출 폼 상태 ─────────────────────────────────────
   const [personnel, setPersonnel] = useState({
     elderly: '', superElderly: '', foreign: '', female: '', diseased: '', total: '',
@@ -757,6 +760,7 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                   onMarkerDelete={handleHighRiskMarkerDelete}
                   workItems={workItems}
                   hoveredTeamId={hoveredTeamId}
+                  onMarkerDropped={marker => setPendingMarkerLabel(MARKER_TYPES[marker.marker_type]?.label ?? marker.marker_type)}
                 />
               </div>
             )}
@@ -813,6 +817,7 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                         onMarkerDelete={handleHighRiskMarkerDelete}
                         workItems={workItems}
                         hoveredTeamId={hoveredTeamId}
+                        onMarkerDropped={marker => setPendingMarkerLabel(MARKER_TYPES[marker.marker_type]?.label ?? marker.marker_type)}
                       />
                     </div>
                   )}
@@ -838,6 +843,8 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                     onHoverTeam={setHoveredTeamId}
                     onImportPrev={importFetching ? undefined : handleFetchPrevWorkItems}
                     importFetching={importFetching}
+                    autoOpenWith={pendingMarkerLabel}
+                    onAutoOpenHandled={() => setPendingMarkerLabel(null)}
                   />
                 </div>
 
@@ -1183,7 +1190,7 @@ function SubmitTab({
 // ── 작업 항목 탭 (고위험 / 일반 공용) ─────────────────────────
 function WorkItemTab({
   workType, label, color, isClosed, items, isLoading, myTeamId, myTeamName, onAdd, onDelete,
-  onHoverTeam, onImportPrev, importFetching,
+  onHoverTeam, onImportPrev, importFetching, autoOpenWith, onAutoOpenHandled,
 }: {
   workType: 'high_risk' | 'general'; label: string; color: 'red' | 'blue'
   isClosed: boolean; items: WorkItem[]; isLoading: boolean
@@ -1193,6 +1200,10 @@ function WorkItemTab({
   onHoverTeam?: (teamId: string | null) => void
   onImportPrev?: () => void               // 이전 작업항목 불러오기
   importFetching?: boolean
+  /** 마커 드롭 시 자동으로 폼을 열고 작업명을 채워줌 */
+  autoOpenWith?: string | null
+  /** 자동 오픈 처리 완료 후 부모에게 알림 */
+  onAutoOpenHandled?: () => void
 }) {
   const [showForm,    setShowForm]    = useState(false)
   const [workName,    setWorkName]    = useState('')
@@ -1202,6 +1213,15 @@ function WorkItemTab({
   const [riskFactors,       setRiskFactors]       = useState('')
   const [improveMeasures,   setImproveMeasures]   = useState('')
   const [saving,      setSaving]      = useState(false)
+
+  // 마커 드롭 → 폼 자동 오픈 + 작업명 자동 입력
+  useEffect(() => {
+    if (autoOpenWith && !isClosed) {
+      setWorkName(autoOpenWith)
+      setShowForm(true)
+      onAutoOpenHandled?.()
+    }
+  }, [autoOpenWith, isClosed, onAutoOpenHandled])
 
   const colorCls = color === 'red'
     ? { dot: 'bg-red-400', badge: 'bg-red-50 text-red-700', btn: 'btn-primary', border: 'rgba(0,0,0,0.08)' }
