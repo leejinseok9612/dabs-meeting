@@ -2,9 +2,27 @@
 // lib/pdf/generateCover.ts
 // 표지 PDF 생성 — A4 가로 (Landscape)
 // SVG → PNG (sharp) → PDF (pdf-lib)
+//
+// ※ 한글 폰트 내장 방식:
+//    public/fonts/NanumGothic.ttf 가 있으면 base64로 SVG에 embed
+//    없으면 시스템 sans-serif 폴백 (서버에 한글 폰트 없으면 깨짐)
 // ============================================================
 import sharp            from 'sharp'
 import { PDFDocument }  from 'pdf-lib'
+import * as fs          from 'fs'
+import * as path        from 'path'
+
+// 서버 실행 시 1회 폰트 로드 (없으면 null)
+function loadKoreanFontB64(): string | null {
+  try {
+    const fontPath = path.join(process.cwd(), 'public', 'fonts', 'NanumGothic.ttf')
+    if (fs.existsSync(fontPath)) {
+      return fs.readFileSync(fontPath).toString('base64')
+    }
+  } catch {}
+  return null
+}
+const KOREAN_FONT_B64 = loadKoreanFontB64()
 
 export interface PersonnelDetail {
   elderly:      number   // 고령자
@@ -49,7 +67,10 @@ function totalEquipment(rows: CoverRow[]): string {
 const W = 1123
 const H = 794
 
-const KR_FONT = 'Apple SD Gothic Neo, AppleSDGothicNeo-Medium, Malgun Gothic, NanumGothic, sans-serif'
+// 폰트가 내장되면 NanumGothic 우선, 아니면 시스템 폴백
+const KR_FONT = KOREAN_FONT_B64
+  ? 'NanumGothic, sans-serif'
+  : 'Apple SD Gothic Neo, Malgun Gothic, NanumGothic, sans-serif'
 
 function escXml(s: string): string {
   return s
@@ -242,6 +263,20 @@ function buildSvg(rows: CoverRow[], dateStr: string, totalEquip: string): string
   const badge_h = 30
   const badge_x = COL_X[2] + (COL_W[2] - badge_w) / 2
 
+  // 한글 폰트 base64 embed (서버에 폰트 없으면 □□□ 방지)
+  const fontFace = KOREAN_FONT_B64
+    ? `@font-face {
+        font-family: 'NanumGothic';
+        src: url('data:font/truetype;base64,${KOREAN_FONT_B64}') format('truetype');
+        font-weight: 400;
+      }
+      @font-face {
+        font-family: 'NanumGothic';
+        src: url('data:font/truetype;base64,${KOREAN_FONT_B64}') format('truetype');
+        font-weight: 700;
+      }`
+    : ''
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
 
@@ -249,6 +284,7 @@ function buildSvg(rows: CoverRow[], dateStr: string, totalEquip: string): string
   <rect width="${W}" height="${H}" fill="#FFFFFF"/>
 
   <defs>
+    ${fontFace ? `<style>${fontFace}</style>` : ''}
     <linearGradient id="gTop" x1="0" y1="0" x2="${W}" y2="0" gradientUnits="userSpaceOnUse">
       <stop offset="0%"   stop-color="#1E3A5F"/>
       <stop offset="50%"  stop-color="#2563EB"/>
