@@ -14,11 +14,13 @@ const useTheme = () => useContext(ThemeCtx)
 // ── 팀 색상 ───────────────────────────────────────────────
 const TEAM_COLORS = ['#3B82F6','#F97316','#22C55E','#8B5CF6','#EF4444','#EC4899']
 
-// ── 마커 아이콘 ───────────────────────────────────────────
+// ── 마커 아이콘 (MapAnnotator.tsx 의 MARKER_TYPES 와 동기화 유지) ──
 const MARKER_ICONS: Record<string, string> = {
-  excavator: '🚜', small_exc: '🔧', crane: '🏗️', dump_truck: '🚛',
-  pump_car: '🚰', roller: '🛞', pile_driver: '⚙️', loader: '🔄',
-  forklift: '🏋️', work_zone: '⚠️', personnel: '👷', material: '📦',
+  excavator: '⛏️', small_exc: '🛠️', crane: '🏗️', tower_crane: '🗼',
+  dump_truck: '🚛', pump_car: '💧', concrete_mixer: '🔄',
+  roller: '🛞', pile_driver: '🔨', loader: '🪣',
+  forklift: '📤', aerial_lift: '🚒', scaffold: '🪜',
+  work_zone: '🚧', welder: '🔥', personnel: '👷', material: '📦',
 }
 
 // ── 타입 ─────────────────────────────────────────────────

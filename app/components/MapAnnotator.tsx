@@ -9,18 +9,24 @@ import { createClient } from '@/lib/supabase/client'
 
 // ── 마커 타입 정의 ──────────────────────────────────────────
 export const MARKER_TYPES: Record<string, { icon: string; label: string; bg: string }> = {
-  excavator:   { icon: '🚜', label: '굴착기',      bg: '#FEF3C7' },
-  small_exc:   { icon: '🔧', label: '소형굴착기',  bg: '#FEF3C7' },
-  crane:       { icon: '🏗️', label: '크레인',      bg: '#DBEAFE' },
-  dump_truck:  { icon: '🚛', label: '덤프트럭',    bg: '#F3F4F6' },
-  pump_car:    { icon: '🚰', label: '펌프카',      bg: '#DCFCE7' },
-  roller:      { icon: '🛞', label: '롤러',        bg: '#F3E8FF' },
-  pile_driver: { icon: '⚙️', label: '항타기',      bg: '#FFE4E6' },
-  loader:      { icon: '🔄', label: '로더',        bg: '#FEF9C3' },
-  forklift:    { icon: '🏋️', label: '지게차',      bg: '#E0F2FE' },
-  work_zone:   { icon: '⚠️', label: '작업구역',    bg: '#FEF08A' },
-  personnel:   { icon: '👷', label: '인원배치',    bg: '#D1FAE5' },
-  material:    { icon: '📦', label: '자재',        bg: '#E0E7FF' },
+  // ── 기존 장비 (이모지 개선) ───────────────────────────────
+  excavator:      { icon: '⛏️', label: '굴착기',       bg: '#FEF3C7' },
+  small_exc:      { icon: '🛠️', label: '소형굴착기',   bg: '#FEF3C7' },
+  crane:          { icon: '🏗️', label: '크레인',       bg: '#DBEAFE' },
+  tower_crane:    { icon: '🗼', label: '타워크레인',   bg: '#E0E7FF' },
+  dump_truck:     { icon: '🚛', label: '덤프트럭',     bg: '#F3F4F6' },
+  pump_car:       { icon: '💧', label: '펌프카',       bg: '#DCFCE7' },
+  concrete_mixer: { icon: '🔄', label: '레미콘',       bg: '#E2E8F0' },
+  roller:         { icon: '🛞', label: '롤러',         bg: '#F3E8FF' },
+  pile_driver:    { icon: '🔨', label: '항타기',       bg: '#FFE4E6' },
+  loader:         { icon: '🪣', label: '로더',         bg: '#FEF9C3' },
+  forklift:       { icon: '📤', label: '지게차',       bg: '#E0F2FE' },
+  aerial_lift:    { icon: '🚒', label: '고소작업차',   bg: '#FEE2E2' },
+  scaffold:       { icon: '🪜', label: '비계',         bg: '#FEFCE8' },
+  work_zone:      { icon: '🚧', label: '작업구역',     bg: '#FEF08A' },
+  welder:         { icon: '🔥', label: '용접/절단',    bg: '#FFF7ED' },
+  personnel:      { icon: '👷', label: '인원배치',     bg: '#D1FAE5' },
+  material:       { icon: '📦', label: '자재',         bg: '#E0E7FF' },
 }
 
 // 팀 번호에 따라 색상 배정 (최대 6팀)
