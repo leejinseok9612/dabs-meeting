@@ -84,6 +84,14 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
   // 마커 드롭 → 작업항목 폼 자동 오픈 (마커 라벨을 작업명으로 pre-fill)
   const [pendingMarkerLabel, setPendingMarkerLabel] = useState<string | null>(null)
 
+  // 자재하역 이전 내역 불러오기
+  const [prevMaterialData,    setPrevMaterialData]    = useState<{
+    desc: string; vehicle: string; vehicleCount: string;
+    unloadingLocation: string; contactPerson: string;
+  } | null>(null)
+  const [prevMaterialLoading, setPrevMaterialLoading] = useState(false)
+  const [prevMaterialLoaded,  setPrevMaterialLoaded]  = useState(false)
+
   // ── 자료제출 폼 상태 ─────────────────────────────────────
   const [personnel, setPersonnel] = useState({
     elderly: '', superElderly: '', foreign: '', female: '', diseased: '', total: '',
@@ -341,6 +349,41 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
     setShowImportModal(false)
     setImportSaving(false)
     toast.success(`${successCount}개 작업항목을 불러왔습니다.`)
+  }
+
+  // ── 자재하역 이전 내역 불러오기 핸들러 ─────────────────────
+  async function handleLoadPrevMaterial() {
+    if (!meeting) return
+    setPrevMaterialLoading(true)
+    try {
+      const res  = await fetch(`/api/previous-material-reservations?teamId=${teamId}&currentMeetingId=${meeting.id}`)
+      const data = await res.json()
+      if (!data.previous) {
+        toast.info('이전 회의에 등록한 자재 반입 내역이 없습니다.')
+        setPrevMaterialLoading(false)
+        return
+      }
+      const prev = data.previous
+      // quantity 파싱: "덤프트럭 2대" → vehicle + vehicleCount
+      let vehicle = prev.vehicle_type ?? ''
+      let vehicleCount = ''
+      if (prev.quantity) {
+        const m = (prev.quantity as string).match(/^(.+?)\s+(\d+)대$/)
+        if (m) { vehicle = m[1].trim(); vehicleCount = m[2] }
+      }
+      setPrevMaterialData({
+        desc: prev.material_description ?? '',
+        vehicle,
+        vehicleCount,
+        unloadingLocation: prev.unloading_location ?? '',
+        contactPerson:     prev.contact_person    ?? '',
+      })
+      setPrevMaterialLoaded(true)
+      toast.success('이전 자재 내역을 불러왔습니다. GATE와 시간대를 선택해 신청하세요.')
+    } catch {
+      toast.error('이전 자재 내역을 불러오는 중 오류가 발생했습니다.')
+    }
+    setPrevMaterialLoading(false)
   }
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -873,6 +916,10 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                     onReserve={(slotId, desc, qty, vehicle, unloadingLocation, contactPerson) =>
                       reserveSlot(slotId, desc, qty, vehicle, unloadingLocation, contactPerson)}
                     onCancel={cancelReservation}
+                    prevMaterial={prevMaterialData}
+                    onLoadPrevMaterial={prevMaterialLoading ? undefined : handleLoadPrevMaterial}
+                    prevMaterialLoading={prevMaterialLoading}
+                    prevMaterialLoaded={prevMaterialLoaded}
                   />
                 </div>
 
@@ -1254,32 +1301,26 @@ function WorkItemTab({
           <p className="text-xs text-gray-500 mt-0.5">모든 협력업체가 함께 등록 · 실시간 공유</p>
         </div>
         {!isClosed && (
-          <div className="flex items-center gap-1.5 shrink-0">
-            {onImportPrev && (
-              <button
-                onClick={onImportPrev}
-                disabled={importFetching}
-                className="btn btn-secondary btn-sm flex items-center gap-1"
-                title="이전 회의 작업항목 불러오기"
-              >
-                {importFetching ? (
-                  <span className="w-3 h-3 border border-neutral-400 border-t-transparent rounded-full"
-                    style={{ animation: 'spin 0.8s linear infinite' }} />
-                ) : (
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round"
-                      d="M12 16v-4m0 0V8m0 4h4m-4 0H8m13 4a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                )}
-                이전 작업
-              </button>
-            )}
-            <button onClick={() => setShowForm(true)} className={`btn ${colorCls.btn} btn-sm`}>
-              + 작업 추가
-            </button>
-          </div>
+          <button onClick={() => setShowForm(true)} className={`btn ${colorCls.btn} btn-sm shrink-0`}>
+            + 작업 추가
+          </button>
         )}
       </div>
+
+      {/* ── 이전 작업항목 불러오기 카드 ─────────────────────── */}
+      {!isClosed && onImportPrev && (
+        <div className="flex items-center justify-between bg-neutral-50 rounded-lg px-3.5 py-3"
+          style={{ border: '1px solid rgba(0,0,0,0.08)' }}>
+          <div>
+            <p className="text-xs font-medium text-neutral-800">이전 작업항목 불러오기</p>
+            <p className="text-[11px] text-neutral-400 mt-0.5">이전 회의 등록 항목을 선택해서 가져올 수 있습니다</p>
+          </div>
+          <button onClick={onImportPrev} disabled={importFetching}
+            className="btn btn-primary btn-sm shrink-0">
+            {importFetching ? '조회 중…' : '불러오기'}
+          </button>
+        </div>
+      )}
 
       {showForm && (
         <div className="surface p-4 animate-slide-up-fade">
@@ -1407,11 +1448,17 @@ function WorkItemTab({
 // ── 자재 하역/운반 탭 (GATE 선택 → 시간 선택) ─────────────────
 function MaterialTab({
   isClosed, slots, isLoading, myTeamId, myTeamName, onReserve, onCancel,
+  prevMaterial, onLoadPrevMaterial, prevMaterialLoading, prevMaterialLoaded,
 }: {
   isClosed: boolean; slots: MaterialSlot[]; isLoading: boolean
   myTeamId: string; myTeamName: string
   onReserve: (slotId: string, desc: string, qty: string, vehicle: string, unloadingLocation: string, contactPerson: string) => Promise<void>
   onCancel: (reservationId: string) => Promise<void>
+  /** 이전 자재 내역 (불러왔을 때 폼 자동 입력) */
+  prevMaterial?: { desc: string; vehicle: string; vehicleCount: string; unloadingLocation: string; contactPerson: string } | null
+  onLoadPrevMaterial?: () => void
+  prevMaterialLoading?: boolean
+  prevMaterialLoaded?: boolean
 }) {
   const [selectedGate,      setSelectedGate]      = useState<string | null>(null)
   const [openSlotId,        setOpenSlotId]        = useState<string | null>(null)
@@ -1423,6 +1470,17 @@ function MaterialTab({
   const [contactPerson,     setContactPerson]     = useState('')
   const [submitting,        setSubmitting]        = useState(false)
   const matComposingRef = useRef(false)
+
+  // 이전 자재 내역 불러왔을 때 폼 자동 입력
+  useEffect(() => {
+    if (prevMaterial) {
+      setDesc(prevMaterial.desc)
+      setVehicle(prevMaterial.vehicle)
+      setVehicleCount(prevMaterial.vehicleCount)
+      setUnloadingLocation(prevMaterial.unloadingLocation)
+      setContactPerson(prevMaterial.contactPerson)
+    }
+  }, [prevMaterial])
 
   if (isLoading) return <LoadingSpinner />
 
@@ -1459,6 +1517,24 @@ function MaterialTab({
         <h2 className="text-sm font-semibold text-neutral-800 tracking-tight">자재 반입 / 반출 현황</h2>
         <p className="text-xs text-neutral-400 mt-0.5">GATE를 선택한 후 시간대를 신청하세요 · 시간대당 최대 5개 업체</p>
       </div>
+
+      {/* ── 이전 자재 내역 불러오기 카드 ──────────────────────── */}
+      {!isClosed && onLoadPrevMaterial && (
+        <div className="flex items-center justify-between bg-neutral-50 rounded-lg px-3.5 py-3"
+          style={{ border: '1px solid rgba(0,0,0,0.08)' }}>
+          <div>
+            <p className="text-xs font-medium text-neutral-800">이전 자재 반입 내역 불러오기</p>
+            {prevMaterialLoaded
+              ? <p className="text-[11px] text-emerald-600 mt-0.5">✓ 불러옴 — GATE·시간대를 선택하면 자동 입력됩니다</p>
+              : <p className="text-[11px] text-neutral-400 mt-0.5">이전 회의 자재명·차량·하역장소를 폼에 자동 입력합니다</p>
+            }
+          </div>
+          <button onClick={onLoadPrevMaterial} disabled={prevMaterialLoading}
+            className="btn btn-primary btn-sm shrink-0">
+            {prevMaterialLoading ? '조회 중…' : prevMaterialLoaded ? '다시 불러오기' : '불러오기'}
+          </button>
+        </div>
+      )}
 
       {!selectedGate ? (
         <div className="grid grid-cols-2 gap-2.5">
