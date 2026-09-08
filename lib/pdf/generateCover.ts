@@ -12,17 +12,18 @@ import { PDFDocument }  from 'pdf-lib'
 import * as fs          from 'fs'
 import * as path        from 'path'
 
-// 서버 실행 시 1회 폰트 로드 — 현대하모니체 M(본문) / B(굵게)
-function loadFontB64(filename: string): string | null {
+// 서버 실행 시 1회 폰트 경로 확인 — 현대하모니체 M(본문) / B(굵게)
+// ※ sharp/librsvg 는 data:URI 방식을 지원하지 않으므로 file:// 절대경로를 사용
+function getFontPath(filename: string): string | null {
   try {
     const fontPath = path.join(process.cwd(), 'public', 'fonts', filename)
-    if (fs.existsSync(fontPath)) return fs.readFileSync(fontPath).toString('base64')
+    if (fs.existsSync(fontPath)) return fontPath
   } catch {}
   return null
 }
-const FONT_MEDIUM_B64 = loadFontB64('HyundaiHarmony-Medium.ttf')
-const FONT_BOLD_B64   = loadFontB64('HyundaiHarmony-Bold.ttf')
-const KOREAN_FONT_B64 = FONT_MEDIUM_B64 // 폰트 로드 여부 판단용
+const FONT_MEDIUM_PATH = getFontPath('HyundaiHarmony-Medium.ttf')
+const FONT_BOLD_PATH   = getFontPath('HyundaiHarmony-Bold.ttf')
+const HAS_KOREAN_FONT  = !!FONT_MEDIUM_PATH   // 폰트 존재 여부 판단용
 
 export interface PersonnelDetail {
   elderly:      number   // 고령자
@@ -67,8 +68,8 @@ function totalEquipment(rows: CoverRow[]): string {
 const W = 1123
 const H = 794
 
-// 폰트가 내장되면 현대하모니체 우선, 아니면 시스템 폴백
-const KR_FONT = KOREAN_FONT_B64
+// 폰트 파일이 있으면 현대하모니체 우선, 아니면 시스템 폴백
+const KR_FONT = HAS_KOREAN_FONT
   ? 'HyundaiFont, sans-serif'
   : 'Apple SD Gothic Neo, Malgun Gothic, NanumGothic, sans-serif'
 
@@ -263,16 +264,16 @@ function buildSvg(rows: CoverRow[], dateStr: string, totalEquip: string): string
   const badge_h = 30
   const badge_x = COL_X[2] + (COL_W[2] - badge_w) / 2
 
-  // 한글 폰트 base64 embed (서버에 폰트 없으면 □□□ 방지)
-  const fontFace = KOREAN_FONT_B64
+  // 한글 폰트 — librsvg 는 file:// URL 방식만 지원 (base64 data URI 미지원)
+  const fontFace = HAS_KOREAN_FONT
     ? `@font-face {
         font-family: 'HyundaiFont';
-        src: url('data:font/truetype;base64,${FONT_MEDIUM_B64}') format('truetype');
+        src: url('file://${FONT_MEDIUM_PATH}') format('truetype');
         font-weight: 400;
       }
       @font-face {
         font-family: 'HyundaiFont';
-        src: url('data:font/truetype;base64,${FONT_BOLD_B64 ?? FONT_MEDIUM_B64}') format('truetype');
+        src: url('file://${FONT_BOLD_PATH ?? FONT_MEDIUM_PATH}') format('truetype');
         font-weight: 700;
       }`
     : ''
