@@ -12,30 +12,17 @@ import { PDFDocument }  from 'pdf-lib'
 import * as fs          from 'fs'
 import * as path        from 'path'
 
-// 서버 실행 시 1회 폰트 로드 (없으면 null)
-// 현대하모니체 Regular → Bold 순으로 탐색
-function loadKoreanFontB64(): string | null {
-  const candidates = [
-    'HyundaiSansHead-Regular.ttf',
-    'HyundaiSansHead-Medium.ttf',
-    'HyundaiSansText-Regular.ttf',
-    'HyundaiFontHead-Regular.ttf',
-    'HyundaiFontText-Regular.ttf',
-    'hyundai_sans_head_regular.ttf',
-    'hyundai_sans_text_regular.ttf',
-  ]
+// 서버 실행 시 1회 폰트 로드 — 현대하모니체 M(본문) / B(굵게)
+function loadFontB64(filename: string): string | null {
   try {
-    const fontsDir = path.join(process.cwd(), 'public', 'fonts')
-    for (const name of candidates) {
-      const fontPath = path.join(fontsDir, name)
-      if (fs.existsSync(fontPath)) {
-        return fs.readFileSync(fontPath).toString('base64')
-      }
-    }
+    const fontPath = path.join(process.cwd(), 'public', 'fonts', filename)
+    if (fs.existsSync(fontPath)) return fs.readFileSync(fontPath).toString('base64')
   } catch {}
   return null
 }
-const KOREAN_FONT_B64 = loadKoreanFontB64()
+const FONT_MEDIUM_B64 = loadFontB64('HyundaiHarmony-Medium.ttf')
+const FONT_BOLD_B64   = loadFontB64('HyundaiHarmony-Bold.ttf')
+const KOREAN_FONT_B64 = FONT_MEDIUM_B64 // 폰트 로드 여부 판단용
 
 export interface PersonnelDetail {
   elderly:      number   // 고령자
@@ -280,12 +267,12 @@ function buildSvg(rows: CoverRow[], dateStr: string, totalEquip: string): string
   const fontFace = KOREAN_FONT_B64
     ? `@font-face {
         font-family: 'HyundaiFont';
-        src: url('data:font/truetype;base64,${KOREAN_FONT_B64}') format('truetype');
+        src: url('data:font/truetype;base64,${FONT_MEDIUM_B64}') format('truetype');
         font-weight: 400;
       }
       @font-face {
         font-family: 'HyundaiFont';
-        src: url('data:font/truetype;base64,${KOREAN_FONT_B64}') format('truetype');
+        src: url('data:font/truetype;base64,${FONT_BOLD_B64 ?? FONT_MEDIUM_B64}') format('truetype');
         font-weight: 700;
       }`
     : ''
