@@ -890,7 +890,7 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
                     onDrop={handleDrop}
                     onFileChange={f => validateAndSetFile(f)}
                     onSubmit={handleSubmit}
-                    onGoToHighRisk={() => setActiveTab('high_risk')}
+                    onGoToHighRisk={handleHighRiskTabClick}
                   />
                 </div>
               </div>
