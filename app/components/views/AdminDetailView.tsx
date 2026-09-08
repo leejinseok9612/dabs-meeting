@@ -56,6 +56,9 @@ interface MaterialSlot {
   id: string; slot_time: string; max_teams: number; gate: string
   material_reservations: MaterialReservation[]
 }
+interface InspectionPhoto {
+  id: string; meeting_id: string; image_url: string; caption: string; sort_order: number; created_at: string
+}
 
 // ── SELECT query ───────────────────────────────────────────────
 const SUB_SELECT = 'id,meeting_id,team_id,status,personnel_count,personnel_detail,equipment,work_process,file_name,submitted_at,admin_notes,reviewed_status,reviewed_at,teams(id,name,department)'
@@ -91,6 +94,13 @@ export function AdminDetailView({
   const [slots,        setSlots]        = useState<MaterialSlot[]>([])
   const mapInputRef = useRef<HTMLInputElement>(null)
 
+  // ── 부적합 사진 ──────────────────────────────────────────
+  const [inspectionPhotos,   setInspectionPhotos]   = useState<InspectionPhoto[]>([])
+  const [inspectionOpen,     setInspectionOpen]     = useState(false)
+  const [photoUploading,     setPhotoUploading]     = useState(false)
+  const [newCaption,         setNewCaption]         = useState('')
+  const photoInputRef = useRef<HTMLInputElement>(null)
+
   const loadWorkItems = useCallback(() => {
     fetch(`/api/work-items?meetingId=${meetingId}`)
       .then(r => r.json()).then(d => Array.isArray(d) && setWorkItems(d)).catch(() => {})
@@ -99,6 +109,11 @@ export function AdminDetailView({
   const loadSlots = useCallback(() => {
     fetch(`/api/material-slots?meetingId=${meetingId}`)
       .then(r => r.json()).then(d => Array.isArray(d) && setSlots(d)).catch(() => {})
+  }, [meetingId])
+
+  const loadInspectionPhotos = useCallback(() => {
+    fetch(`/api/inspection-photos?meetingId=${meetingId}`)
+      .then(r => r.json()).then(d => Array.isArray(d) && setInspectionPhotos(d)).catch(() => {})
   }, [meetingId])
 
   // ── 통계 ──────────────────────────────────────────────────
@@ -136,10 +151,10 @@ export function AdminDetailView({
 
   useEffect(() => {
     if (pinVerified) {
-      loadData(); loadWorkItems(); loadSlots()
+      loadData(); loadWorkItems(); loadSlots(); loadInspectionPhotos()
       fetch('/api/teams').then(r => r.json()).then(d => Array.isArray(d) && setAllTeams(d)).catch(() => {})
     }
-  }, [loadData, loadWorkItems, loadSlots, pinVerified])
+  }, [loadData, loadWorkItems, loadSlots, loadInspectionPhotos, pinVerified])
 
   // ── Realtime ───────────────────────────────────────────────
   useEffect(() => {
@@ -257,6 +272,48 @@ export function AdminDetailView({
       else { const err = await res.json().catch(() => ({})); setMapError(err.error ?? '업로드에 실패했습니다.') }
     } catch { setMapError('네트워크 오류가 발생했습니다.') }
     setMapUploading(false)
+  }
+
+  // ── 부적합 사진 핸들러 ────────────────────────────────────
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (!f || !meeting) return
+    setPhotoUploading(true)
+    try {
+      // 1. 스토리지 업로드
+      const fd = new FormData(); fd.append('file', f); fd.append('meetingId', meeting.id)
+      const upRes = await fetch('/api/upload-inspection-photo', { method: 'POST', body: fd })
+      if (!upRes.ok) { const d = await upRes.json().catch(() => ({})); toast.error(d.error ?? '업로드 실패'); return }
+      const { url } = await upRes.json()
+      // 2. DB에 레코드 저장
+      await fetch('/api/inspection-photos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meeting_id: meeting.id, image_url: url, caption: newCaption.trim(), sort_order: inspectionPhotos.length }),
+      })
+      setNewCaption('')
+      loadInspectionPhotos()
+      toast.success('사진이 등록됐습니다.')
+    } catch { toast.error('오류가 발생했습니다.') }
+    setPhotoUploading(false)
+    // input 초기화
+    if (photoInputRef.current) photoInputRef.current.value = ''
+  }
+
+  async function handlePhotoDelete(id: string) {
+    if (!confirm('이 사진을 삭제하시겠습니까?')) return
+    await fetch(`/api/inspection-photos?id=${id}`, { method: 'DELETE' })
+    loadInspectionPhotos()
+    toast.success('사진이 삭제됐습니다.')
+  }
+
+  async function handleCaptionSave(id: string, caption: string) {
+    await fetch(`/api/inspection-photos?id=${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caption }),
+    })
+    loadInspectionPhotos()
   }
 
   if (!pinVerified) return <PinGate onSuccess={() => setPinVerified(true)} />
@@ -501,6 +558,74 @@ export function AdminDetailView({
           )
         })}
 
+        {/* ── 부적합 사진 ─────────────────────────────────── */}
+        <section className="surface overflow-hidden">
+          <button
+            className="w-full flex items-center justify-between px-5 py-3.5 transition-colors duration-150 hover:bg-neutral-50/80"
+            onClick={() => setInspectionOpen(prev => !prev)}
+          >
+            <div className="flex items-center gap-3">
+              <span className="w-2 h-2 rounded-full bg-orange-400" />
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-neutral-900 tracking-tight">부적합 사진</h2>
+                <span className={['badge text-[10px]', inspectionPhotos.length > 0 ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-500'].join(' ')}>
+                  {inspectionPhotos.length}장
+                </span>
+              </div>
+            </div>
+            <svg className={['w-4 h-4 text-neutral-400 transition-transform duration-150', inspectionOpen ? 'rotate-180' : ''].join(' ')}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {inspectionOpen && (
+            <div className="border-t border-neutral-100 animate-accordion-down">
+              {/* 업로드 폼 */}
+              <div className="px-5 pt-4 pb-3 space-y-2.5" style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+                <p className="text-[10px] font-medium text-neutral-400 uppercase tracking-wider">사진 추가</p>
+                <div className="flex gap-2">
+                  <input
+                    value={newCaption} onChange={e => setNewCaption(e.target.value)}
+                    placeholder="사진 설명 (선택)"
+                    className="input flex-1 text-sm"
+                  />
+                  <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+                  <button
+                    onClick={() => photoInputRef.current?.click()} disabled={photoUploading}
+                    className="btn btn-primary btn-sm shrink-0 gap-1.5">
+                    {photoUploading
+                      ? <><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />업로드 중</>
+                      : <>
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                          </svg>
+                          사진 추가
+                        </>
+                    }
+                  </button>
+                </div>
+              </div>
+
+              {/* 사진 목록 */}
+              {inspectionPhotos.length === 0 ? (
+                <div className="px-5 py-8 text-center text-xs text-neutral-400">등록된 부적합 사진이 없습니다.</div>
+              ) : (
+                <div className="p-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                  {inspectionPhotos.map(photo => (
+                    <InspectionPhotoCard
+                      key={photo.id}
+                      photo={photo}
+                      onDelete={handlePhotoDelete}
+                      onCaptionSave={handleCaptionSave}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
         {/* ── 제출 현황 테이블 ─────────────────────────────── */}
         <SubmissionsSection sorted={sorted} meeting={meeting} />
 
@@ -510,6 +635,101 @@ export function AdminDetailView({
 }
 
 // ── 서브 컴포넌트 ──────────────────────────────────────────────
+
+// ── 부적합 사진 카드 ─────────────────────────────────────────────
+function InspectionPhotoCard({
+  photo, onDelete, onCaptionSave,
+}: {
+  photo: InspectionPhoto
+  onDelete:      (id: string) => Promise<void>
+  onCaptionSave: (id: string, caption: string) => Promise<void>
+}) {
+  const [editing,   setEditing]   = useState(false)
+  const [caption,   setCaption]   = useState(photo.caption)
+  const [saving,    setSaving]    = useState(false)
+  const [deleting,  setDeleting]  = useState(false)
+  const [lightbox,  setLightbox]  = useState(false)
+
+  async function handleSave() {
+    setSaving(true)
+    await onCaptionSave(photo.id, caption)
+    setSaving(false)
+    setEditing(false)
+  }
+
+  async function handleDelete() {
+    setDeleting(true)
+    await onDelete(photo.id)
+    // 컴포넌트 언마운트될 수 있으므로 상태 복구 생략
+  }
+
+  return (
+    <>
+      <div className="group relative rounded-lg overflow-hidden bg-neutral-100"
+        style={{ border: '1px solid rgba(0,0,0,0.07)', aspectRatio: '4/3' }}>
+        {/* 이미지 */}
+        <img
+          src={photo.image_url} alt={photo.caption || '부적합 사진'}
+          className="w-full h-full object-cover cursor-zoom-in"
+          onClick={() => setLightbox(true)}
+        />
+        {/* 삭제 버튼 */}
+        <button
+          onClick={handleDelete} disabled={deleting}
+          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-white/90 flex items-center justify-center text-neutral-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 shadow-sm"
+          title="삭제">
+          {deleting
+            ? <span className="w-3 h-3 border-2 border-neutral-300 border-t-red-400 rounded-full animate-spin" />
+            : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+          }
+        </button>
+      </div>
+
+      {/* 캡션 */}
+      <div className="mt-1.5 px-0.5">
+        {editing ? (
+          <div className="flex gap-1">
+            <input
+              value={caption} onChange={e => setCaption(e.target.value)}
+              className="input text-xs flex-1 py-1" autoFocus
+              onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false) }}
+            />
+            <button onClick={handleSave} disabled={saving}
+              className="btn btn-primary btn-sm text-[10px] px-2 shrink-0">저장</button>
+          </div>
+        ) : (
+          <p
+            className="text-[11px] text-neutral-600 cursor-pointer hover:text-neutral-900 transition-colors leading-tight truncate"
+            onClick={() => setEditing(true)}
+            title={caption || '클릭하여 설명 추가'}>
+            {caption || <span className="text-neutral-300 italic">설명 없음</span>}
+          </p>
+        )}
+      </div>
+
+      {/* 라이트박스 */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 animate-fade-in"
+          style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}
+          onClick={() => setLightbox(false)}>
+          <img
+            src={photo.image_url} alt={photo.caption || '부적합 사진'}
+            className="max-w-full max-h-[90vh] rounded-xl shadow-2xl object-contain"
+            onClick={e => e.stopPropagation()}
+          />
+          {photo.caption && (
+            <p className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white/80 text-sm bg-black/40 rounded-full px-4 py-1.5 backdrop-blur-sm">
+              {photo.caption}
+            </p>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
 
 // ── 고위험/일반 작업 현황 ────────────────────────────────────────
 function WorkItemSection({

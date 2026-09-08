@@ -57,12 +57,18 @@ interface WeatherData {
 }
 
 // ── 섹션 정의 ─────────────────────────────────────────────
-type SectionType = 'high_risk' | 'work_general' | 'material'
+type SectionType = 'high_risk' | 'work_general' | 'material' | 'inspection'
 const SECTIONS: { type: SectionType; label: string; icon: string }[] = [
   { type: 'high_risk',    label: '고위험 현황',     icon: '⚠️' },
   { type: 'work_general', label: '일반작업 내용',   icon: '📋' },
   { type: 'material',     label: '자재 하역/운반',  icon: '🚛' },
+  { type: 'inspection',   label: '부적합 사진',     icon: '📸' },
 ]
+
+// ── 부적합 사진 타입 ───────────────────────────────────────
+interface InspectionPhoto {
+  id: string; meeting_id: string; image_url: string; caption: string; sort_order: number; created_at: string
+}
 
 const noteKey = (meetingId: string) => `dabs_note_${meetingId}`
 
@@ -1119,6 +1125,103 @@ function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }
 }
 
 // ────────────────────────────────────────────────────────
+// InspectionSlide — 부적합 사진 뷰어
+// ────────────────────────────────────────────────────────
+function InspectionSlide({ photos }: { photos: InspectionPhoto[] }) {
+  const theme = useTheme()
+  const dk    = theme === 'dark'
+  const [lightbox, setLightbox] = useState<InspectionPhoto | null>(null)
+
+  if (photos.length === 0) {
+    return (
+      <div className={`rounded-xl py-16 text-center ${dk ? 'bg-white/5' : 'bg-gray-100'}`}>
+        <p className="text-4xl mb-3">📸</p>
+        <p className={`text-sm ${dk ? 'text-white/30' : 'text-gray-400'}`}>등록된 부적합 사진이 없습니다.</p>
+        <p className={`text-xs mt-1 ${dk ? 'text-white/20' : 'text-gray-300'}`}>관리자 화면에서 사진을 추가하면 여기에 표시됩니다.</p>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+        {photos.map((photo, idx) => (
+          <div key={photo.id} className="group cursor-pointer" onClick={() => setLightbox(photo)}>
+            <div className={`relative rounded-xl overflow-hidden ${dk ? 'bg-white/10' : 'bg-gray-100'}`}
+              style={{ aspectRatio: '4/3' }}>
+              <img
+                src={photo.image_url} alt={photo.caption || `부적합 사진 ${idx + 1}`}
+                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+              />
+              {/* 오버레이 */}
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200 flex items-center justify-center">
+                <svg className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607zM10.5 7.5v6m3-3h-6" />
+                </svg>
+              </div>
+            </div>
+            {photo.caption && (
+              <p className={`mt-1.5 text-xs leading-snug px-0.5 ${dk ? 'text-white/60' : 'text-gray-600'}`}>
+                {photo.caption}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* 라이트박스 */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-[60] flex flex-col items-center justify-center animate-fade-in"
+          style={{ background: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(12px)' }}
+          onClick={() => setLightbox(null)}>
+          <img
+            src={lightbox.image_url} alt={lightbox.caption || '부적합 사진'}
+            className="max-w-[90vw] max-h-[80vh] rounded-2xl shadow-2xl object-contain"
+            onClick={e => e.stopPropagation()}
+          />
+          {lightbox.caption && (
+            <p className="mt-4 text-white/80 text-sm bg-white/10 rounded-full px-5 py-2 backdrop-blur-sm text-center max-w-lg">
+              {lightbox.caption}
+            </p>
+          )}
+          <button
+            onClick={() => setLightbox(null)}
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          {/* 이전/다음 화살표 */}
+          {photos.length > 1 && (() => {
+            const curIdx = photos.findIndex(p => p.id === lightbox.id)
+            return (
+              <>
+                <button
+                  onClick={e => { e.stopPropagation(); setLightbox(photos[(curIdx - 1 + photos.length) % photos.length]) }}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <button
+                  onClick={e => { e.stopPropagation(); setLightbox(photos[(curIdx + 1) % photos.length]) }}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </>
+            )
+          })()}
+        </div>
+      )}
+    </>
+  )
+}
+
+// ────────────────────────────────────────────────────────
 // PdfFilterModal — PDF 출력 전 섹션/업체 필터
 // ────────────────────────────────────────────────────────
 interface PdfFilter {
@@ -1248,11 +1351,12 @@ function PdfFilterModal({ workItems, onConfirm, onCancel }: {
 // MeetingModeView — 메인 컴포넌트
 // ────────────────────────────────────────────────────────
 export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onClose: () => void }) {
-  const [meeting,    setMeeting]    = useState<Meeting | null>(null)
-  const [workItems,  setWorkItems]  = useState<WorkItem[]>([])
-  const [slots,      setSlots]      = useState<MaterialSlot[]>([])
-  const [allTeamIds, setAllTeamIds] = useState<string[]>([])
-  const [loading,    setLoading]    = useState(true)
+  const [meeting,          setMeeting]          = useState<Meeting | null>(null)
+  const [workItems,        setWorkItems]        = useState<WorkItem[]>([])
+  const [slots,            setSlots]            = useState<MaterialSlot[]>([])
+  const [allTeamIds,       setAllTeamIds]       = useState<string[]>([])
+  const [inspectionPhotos, setInspectionPhotos] = useState<InspectionPhoto[]>([])
+  const [loading,          setLoading]          = useState(true)
   const [activeSection, setActiveSection] = useState<SectionType>('high_risk')
   const [showNote,      setShowNote]      = useState(false)
   const [isFullscreen,  setIsFullscreen]  = useState(false)
@@ -1270,11 +1374,13 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
       fetch(`/api/work-items?meetingId=${meetingId}`).then(r => r.json()).catch(() => []),
       fetch(`/api/material-slots?meetingId=${meetingId}`).then(r => r.json()).catch(() => []),
       fetch('/api/teams').then(r => r.json()).catch(() => []),
-    ]).then(([mtgData, wiData, slotsData, teamsData]) => {
+      fetch(`/api/inspection-photos?meetingId=${meetingId}`).then(r => r.json()).catch(() => []),
+    ]).then(([mtgData, wiData, slotsData, teamsData, photosData]) => {
       if (mtgData?.meeting) setMeeting(mtgData.meeting)
       if (Array.isArray(wiData)) setWorkItems(wiData)
       if (Array.isArray(slotsData)) setSlots(slotsData)
       if (Array.isArray(teamsData)) setAllTeamIds(teamsData.map((t: { id: string }) => t.id))
+      if (Array.isArray(photosData)) setInspectionPhotos(photosData)
       setLoading(false)
     })
   }, [meetingId])
@@ -1557,7 +1663,8 @@ ${bodyHtml}
   const sectionCount = (type: SectionType) => {
     if (type === 'high_risk')    return highRiskItems.length
     if (type === 'work_general') return generalItems.length
-    return materialCount
+    if (type === 'material')     return materialCount
+    return inspectionPhotos.length
   }
 
   if (loading) {
@@ -1696,7 +1803,7 @@ ${bodyHtml}
             <div className="mx-8 border-t" style={dividerStyle} />
 
             {/* ③ 자재 하역/운반 */}
-            <section id="section-material" className="px-8 pt-6 pb-10">
+            <section id="section-material" className="px-8 pt-6 pb-8">
               <div className="flex items-center gap-2 mb-4">
                 <span className="text-lg">🚛</span>
                 <h2 className={`text-base font-bold ${dk ? 'text-white/90' : 'text-gray-900'}`}>자재 하역/운반</h2>
@@ -1707,6 +1814,22 @@ ${bodyHtml}
                 )}
               </div>
               <MaterialSlide slots={slots} />
+            </section>
+
+            <div className="mx-8 border-t" style={dividerStyle} />
+
+            {/* ④ 부적합 사진 */}
+            <section id="section-inspection" className="px-8 pt-6 pb-10">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-lg">📸</span>
+                <h2 className={`text-base font-bold ${dk ? 'text-white/90' : 'text-gray-900'}`}>부적합 사진</h2>
+                {inspectionPhotos.length > 0 && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${dk ? 'bg-orange-900/60 text-orange-300' : 'bg-orange-100 text-orange-700'}`}>
+                    {inspectionPhotos.length}장
+                  </span>
+                )}
+              </div>
+              <InspectionSlide photos={inspectionPhotos} />
             </section>
           </div>
 
