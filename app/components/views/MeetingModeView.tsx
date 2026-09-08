@@ -1472,9 +1472,11 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
     const mapMarkersHtml = pdfMarkers.map(m => {
       const color = pdfColorMap[m.team_id ?? ''] ?? '#6B7280'
       const icon  = MARKER_ICONS[m.marker_type] ?? '📍'
-      return `<div style="position:absolute;left:${m.x_pct}%;top:${m.y_pct}%;transform:translate(-50%,-100%);z-index:10;pointer-events:none;">
-        <div style="width:26px;height:26px;border-radius:50%;background:${color};border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.35);">${icon}</div>
-        ${m.label ? `<div style="font-size:8px;background:rgba(0,0,0,0.65);color:white;padding:1px 3px;border-radius:2px;margin-top:1px;max-width:58px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;">${esc(m.label)}</div>` : ''}
+      // transform: 마커 원형 중앙이 (x_pct, y_pct) 좌표에 정확히 위치하도록
+      // 원형(26px) 중앙 → -50% X, -50% Y → 라벨은 원형 아래에 위치
+      return `<div style="position:absolute;left:${m.x_pct}%;top:${m.y_pct}%;transform:translate(-50%,-50%);z-index:10;pointer-events:none;display:flex;flex-direction:column;align-items:center;">
+        <div style="width:26px;height:26px;border-radius:50%;background:${color};border:2.5px solid white;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.45);flex-shrink:0;">${icon}</div>
+        ${m.label ? `<div style="font-size:7.5px;background:rgba(0,0,0,0.72);color:white;padding:1px 4px;border-radius:2px;margin-top:2px;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;line-height:1.4;">${esc(m.label)}</div>` : ''}
       </div>`
     }).join('')
 
@@ -1599,7 +1601,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,
 .empty{color:#9ca3af;padding:10px 0;font-size:11px}
 /* ── 지적도 ── */
 .map-wrap{position:relative;display:block;width:100%;line-height:0}
-.map-wrap img{width:100%;height:auto;display:block;max-height:215mm;object-fit:contain}
+.map-wrap img{width:100%;height:auto;display:block}
 /* ── 작업 카드 (3컬럼 그리드) ── */
 .co-grp{margin-bottom:18px}
 .co-title{font-size:12px;font-weight:800;color:#111;background:#f3f4f6;border-radius:5px;padding:5px 10px;margin-bottom:6px;display:flex;align-items:center;gap:6px;letter-spacing:-.3px;border-left:3px solid #9ca3af}
