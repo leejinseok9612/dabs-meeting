@@ -1,11 +1,25 @@
 // ============================================================
 // app/api/merge-range/route.ts
-// 기간별 병합 PDF 일괄 다운로드
-// 각 회의의 최신 merged PDF를 합쳐서 하나의 PDF로 반환
+// 기간별 PDF 일괄 병합 — 중간 저장 없이 직접 생성
+//
+// 흐름:
+//   1. 날짜 범위 내 회의 조회
+//   2. 각 회의의 제출 완료 PDF 조회
+//   3. 회의별 표지(generateCoverPdf) 생성
+//   4. 표지 + 본문 순으로 합쳐서 하나의 PDF 반환
+//   → merged_pdfs 테이블 사전 저장 불필요
 // ============================================================
-import { NextRequest, NextResponse } from 'next/server'
-import { PDFDocument }               from 'pdf-lib'
-import { adminSupabase }             from '@/lib/supabase/admin'
+import { NextRequest, NextResponse }         from 'next/server'
+import { PDFDocument }                        from 'pdf-lib'
+import { adminSupabase }                      from '@/lib/supabase/admin'
+import { generateCoverPdf, CoverRow }         from '@/lib/pdf/generateCover'
+
+const COMPANY_ORDER = ['천호엔지니어링', '참마루건설', '지디건설']
+
+function makeDateStr(dateIso: string): string {
+  const d = new Date(dateIso)
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,7 +35,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '시작일이 종료일보다 늦을 수 없습니다.' }, { status: 400 })
     }
 
-    // ── 1. 기간 내 회의 목록 조회 (날짜 오름차순) ──────────
+    // ── 1. 기간 내 회의 목록 (날짜 오름차순) ───────────────
     const { data: meetings, error: mtgErr } = await adminSupabase
       .from('meetings')
       .select('id, date, title')
@@ -29,70 +43,79 @@ export async function POST(req: NextRequest) {
       .lte('date', endDate)
       .order('date', { ascending: true })
 
-    if (mtgErr) {
-      return NextResponse.json({ error: mtgErr.message }, { status: 500 })
-    }
+    if (mtgErr) return NextResponse.json({ error: mtgErr.message }, { status: 500 })
     if (!meetings || meetings.length === 0) {
       return NextResponse.json({ error: '해당 기간에 등록된 회의가 없습니다.' }, { status: 400 })
     }
 
-    // ── 2. 각 회의의 최신 병합 PDF 경로 수집 ───────────────
-    const targets: { date: string; title: string; filePath: string }[] = []
+    const finalDoc    = await PDFDocument.create()
+    let   mergedCount = 0
 
     for (const meeting of meetings) {
-      const { data: merged } = await adminSupabase
-        .from('merged_pdfs')
-        .select('file_path, created_at')
+      // ── 2. 회의별 제출 완료 목록 조회 ─────────────────────
+      const { data: submissions } = await adminSupabase
+        .from('submissions')
+        .select('id, file_path, file_name, work_process, personnel_count, personnel_detail, equipment, teams(name)')
         .eq('meeting_id', meeting.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
+        .eq('status', 'submitted')
 
-      if (merged && merged.length > 0) {
-        targets.push({
-          date:     meeting.date,
-          title:    meeting.title,
-          filePath: merged[0].file_path,
-        })
+      if (!submissions || submissions.length === 0) continue  // 제출 없는 회의 스킵
+
+      // ── 3. 고정 순서 정렬 ──────────────────────────────────
+      submissions.sort((a, b) => {
+        const aName = (a.teams as { name: string }[] | null)?.[0]?.name ?? ''
+        const bName = (b.teams as { name: string }[] | null)?.[0]?.name ?? ''
+        return (COMPANY_ORDER.indexOf(aName) === -1 ? 99 : COMPANY_ORDER.indexOf(aName))
+             - (COMPANY_ORDER.indexOf(bName) === -1 ? 99 : COMPANY_ORDER.indexOf(bName))
+      })
+
+      // ── 4. 표지 생성 ───────────────────────────────────────
+      const coverRows: CoverRow[] = submissions.map(s => ({
+        teamName:        (s.teams as { name: string }[] | null)?.[0]?.name ?? '—',
+        workProcess:     s.work_process    ?? '',
+        personnelCount:  s.personnel_count ?? null,
+        personnelDetail: (s.personnel_detail as CoverRow['personnelDetail']) ?? null,
+        equipment:       s.equipment       ?? '',
+      }))
+
+      try {
+        const coverBytes = await generateCoverPdf(coverRows, makeDateStr(meeting.date))
+        const coverDoc   = await PDFDocument.load(coverBytes)
+        const [coverPage] = await finalDoc.copyPages(coverDoc, [0])
+        finalDoc.addPage(coverPage)
+      } catch {
+        // 표지 생성 실패 시 본문만 포함
       }
+
+      // ── 5. 본문 PDF 병합 ───────────────────────────────────
+      for (const sub of submissions) {
+        if (!sub.file_path) continue
+        try {
+          const { data: fileData, error: dlErr } = await adminSupabase
+            .storage.from('documents').download(sub.file_path)
+          if (dlErr || !fileData) continue
+
+          const buf   = new Uint8Array(await fileData.arrayBuffer())
+          const doc   = await PDFDocument.load(buf)
+          const pages = await finalDoc.copyPages(doc, doc.getPageIndices())
+          pages.forEach(p => finalDoc.addPage(p))
+        } catch {
+          // 개별 파일 실패 시 건너뜀
+          continue
+        }
+      }
+
+      mergedCount++
     }
 
-    if (targets.length === 0) {
+    if (finalDoc.getPageCount() === 0) {
       return NextResponse.json(
-        { error: '해당 기간에 병합된 PDF가 없습니다. 각 회의에서 먼저 병합을 실행해주세요.' },
+        { error: '해당 기간에 제출된 자료가 없습니다. 업체 제출 여부를 확인해주세요.' },
         { status: 400 }
       )
     }
 
-    // ── 3. 각 PDF 다운로드 후 합치기 ───────────────────────
-    const finalDoc = await PDFDocument.create()
-
-    for (const target of targets) {
-      const { data: fileData, error: dlErr } = await adminSupabase
-        .storage
-        .from('merged')
-        .download(target.filePath)
-
-      if (dlErr || !fileData) {
-        console.warn(`[merge-range] 파일 다운로드 실패: ${target.filePath}`, dlErr?.message)
-        continue  // 실패한 파일은 건너뜀
-      }
-
-      try {
-        const buf  = new Uint8Array(await fileData.arrayBuffer())
-        const doc  = await PDFDocument.load(buf)
-        const pages = await finalDoc.copyPages(doc, doc.getPageIndices())
-        pages.forEach(p => finalDoc.addPage(p))
-      } catch (e) {
-        console.warn(`[merge-range] PDF 파싱 실패: ${target.filePath}`, e)
-        continue
-      }
-    }
-
-    if (finalDoc.getPageCount() === 0) {
-      return NextResponse.json({ error: 'PDF 파일을 불러올 수 없습니다.' }, { status: 500 })
-    }
-
-    // ── 4. 바이너리 응답 ────────────────────────────────────
+    // ── 6. PDF 반환 ────────────────────────────────────────
     const bytes    = await finalDoc.save()
     const filename = `DABs_${startDate}_${endDate}.pdf`
 
@@ -100,7 +123,7 @@ export async function POST(req: NextRequest) {
       headers: {
         'Content-Type':        'application/pdf',
         'Content-Disposition': `attachment; filename="${filename}"`,
-        'X-Merged-Count':      String(targets.length),
+        'X-Merged-Count':      String(mergedCount),
         'X-Date-Range':        `${startDate} ~ ${endDate}`,
       },
     })
