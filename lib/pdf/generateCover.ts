@@ -13,11 +13,24 @@ import * as fs          from 'fs'
 import * as path        from 'path'
 
 // 서버 실행 시 1회 폰트 로드 (없으면 null)
+// 현대하모니체 Regular → Bold 순으로 탐색
 function loadKoreanFontB64(): string | null {
+  const candidates = [
+    'HyundaiSansHead-Regular.ttf',
+    'HyundaiSansHead-Medium.ttf',
+    'HyundaiSansText-Regular.ttf',
+    'HyundaiFontHead-Regular.ttf',
+    'HyundaiFontText-Regular.ttf',
+    'hyundai_sans_head_regular.ttf',
+    'hyundai_sans_text_regular.ttf',
+  ]
   try {
-    const fontPath = path.join(process.cwd(), 'public', 'fonts', 'NanumGothic.ttf')
-    if (fs.existsSync(fontPath)) {
-      return fs.readFileSync(fontPath).toString('base64')
+    const fontsDir = path.join(process.cwd(), 'public', 'fonts')
+    for (const name of candidates) {
+      const fontPath = path.join(fontsDir, name)
+      if (fs.existsSync(fontPath)) {
+        return fs.readFileSync(fontPath).toString('base64')
+      }
     }
   } catch {}
   return null
@@ -67,9 +80,9 @@ function totalEquipment(rows: CoverRow[]): string {
 const W = 1123
 const H = 794
 
-// 폰트가 내장되면 NanumGothic 우선, 아니면 시스템 폴백
+// 폰트가 내장되면 현대하모니체 우선, 아니면 시스템 폴백
 const KR_FONT = KOREAN_FONT_B64
-  ? 'NanumGothic, sans-serif'
+  ? 'HyundaiFont, sans-serif'
   : 'Apple SD Gothic Neo, Malgun Gothic, NanumGothic, sans-serif'
 
 function escXml(s: string): string {
@@ -266,12 +279,12 @@ function buildSvg(rows: CoverRow[], dateStr: string, totalEquip: string): string
   // 한글 폰트 base64 embed (서버에 폰트 없으면 □□□ 방지)
   const fontFace = KOREAN_FONT_B64
     ? `@font-face {
-        font-family: 'NanumGothic';
+        font-family: 'HyundaiFont';
         src: url('data:font/truetype;base64,${KOREAN_FONT_B64}') format('truetype');
         font-weight: 400;
       }
       @font-face {
-        font-family: 'NanumGothic';
+        font-family: 'HyundaiFont';
         src: url('data:font/truetype;base64,${KOREAN_FONT_B64}') format('truetype');
         font-weight: 700;
       }`
