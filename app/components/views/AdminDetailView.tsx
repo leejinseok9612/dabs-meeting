@@ -80,6 +80,9 @@ export function AdminDetailView({
   const [mapName,      setMapName]      = useState<string | null>(null)
   const [mapUploading, setMapUploading] = useState(false)
   const [mapError,     setMapError]     = useState<string | null>(null)
+  const [merging,      setMerging]      = useState(false)
+  const [mergeUrl,     setMergeUrl]     = useState<string | null>(null)
+  const [mergeError,   setMergeError]   = useState<string | null>(null)
   const [openMapSection,  setOpenMapSection]  = useState<'high_risk' | 'general' | null>(null)
   const [openWorkSection, setOpenWorkSection] = useState<'high_risk' | 'general' | 'material' | null>(null)
   const [hoveredTeamId,   setHoveredTeamId]   = useState<string | null>(null)
@@ -224,6 +227,25 @@ export function AdminDetailView({
     loadSlots()
   }
 
+  async function handleMergePdf() {
+    if (!meeting) return
+    setMerging(true); setMergeError(null); setMergeUrl(null)
+    try {
+      const res = await fetch('/api/merge', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ meetingId: meeting.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? '병합 실패')
+      setMergeUrl(data.downloadUrl)
+      toast.success('PDF 병합이 완료됐습니다. 다운로드 버튼을 클릭하세요.')
+    } catch (e) {
+      setMergeError(e instanceof Error ? e.message : '병합 중 오류가 발생했습니다.')
+    }
+    setMerging(false)
+  }
+
   async function handleMapUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f || !meeting) return
@@ -289,6 +311,38 @@ export function AdminDetailView({
               ].join(' ')} />
               {meeting?.status === 'open' ? '접수중' : '마감'}
             </span>
+            {/* PDF 병합 버튼 */}
+            {mergeUrl ? (
+              <a href={mergeUrl} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.98] transition-all duration-150">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                PDF 다운로드
+              </a>
+            ) : (
+              <button onClick={handleMergePdf} disabled={merging}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150"
+                title={mergeError ?? 'PDF 병합 후 기간별 다운로드 가능'}>
+                {merging ? (
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                ) : (
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                  </svg>
+                )}
+                {merging ? '병합 중…' : mergeError ? 'PDF 병합 재시도' : 'PDF 병합'}
+              </button>
+            )}
+            {mergeError && (
+              <span className="text-xs text-red-500 max-w-[140px] truncate" title={mergeError}>
+                ⚠ {mergeError}
+              </span>
+            )}
+
             {onMeetingMode && (
               <button
                 onClick={() => onMeetingMode(meetingId)}
