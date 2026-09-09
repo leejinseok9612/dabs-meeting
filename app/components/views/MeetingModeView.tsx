@@ -1227,6 +1227,7 @@ function InspectionSlide({ photos }: { photos: InspectionPhoto[] }) {
 interface PdfFilter {
   sections: { high_risk: boolean; general: boolean; material: boolean }
   companies: Set<string> // 빈 Set = 전체
+  format: 'pdf' | 'png' | 'jpg'
 }
 function PdfFilterModal({ workItems, onConfirm, onCancel }: {
   workItems: WorkItem[]
@@ -1244,6 +1245,7 @@ function PdfFilterModal({ workItems, onConfirm, onCancel }: {
 
   const [sections, setSections] = useState({ high_risk: true, general: true, material: true })
   const [companies, setCompanies] = useState<Set<string>>(new Set()) // 빈 = 전체
+  const [format,    setFormat]    = useState<'pdf' | 'png' | 'jpg'>('pdf')
 
   const toggleSection = (k: keyof typeof sections) =>
     setSections(p => ({ ...p, [k]: !p[k] }))
@@ -1278,13 +1280,34 @@ function PdfFilterModal({ workItems, onConfirm, onCancel }: {
         {/* 헤더 */}
         <div className={`px-5 py-4 border-b flex items-center justify-between ${dk ? 'border-white/10' : 'border-gray-200'}`}>
           <div>
-            <p className={`text-[10px] font-semibold uppercase tracking-widest ${dk ? 'text-white/40' : 'text-gray-400'}`}>PDF 출력 설정</p>
+            <p className={`text-[10px] font-semibold uppercase tracking-widest ${dk ? 'text-white/40' : 'text-gray-400'}`}>내보내기 설정</p>
             <p className={`text-sm font-bold mt-0.5 ${dk ? 'text-white' : 'text-gray-900'}`}>출력할 항목 선택</p>
           </div>
           <button onClick={onCancel} className={`p-1.5 rounded-lg ${dk ? 'text-white/40 hover:text-white/80 hover:bg-white/8' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'}`}>✕</button>
         </div>
 
         <div className="px-5 py-4 space-y-4">
+          {/* 포맷 선택 */}
+          <div>
+            <p className={`text-[11px] font-semibold mb-2 ${dk ? 'text-white/50' : 'text-gray-500'}`}>저장 형식</p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {([
+                { key: 'pdf' as const, icon: '📄', label: 'PDF' },
+                { key: 'png' as const, icon: '🖼️', label: 'PNG' },
+                { key: 'jpg' as const, icon: '📷', label: 'JPG' },
+              ]).map(({ key, icon, label }) => (
+                <button key={key} onClick={() => setFormat(key)}
+                  className={[
+                    'py-2 rounded-xl text-sm font-semibold border transition-all',
+                    format === key
+                      ? 'bg-blue-600 border-blue-600 text-white'
+                      : dk ? 'border-white/10 text-white/50 hover:border-white/20 hover:text-white/80' : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700',
+                  ].join(' ')}>
+                  {icon} {label}
+                </button>
+              ))}
+            </div>
+          </div>
           {/* 섹션 */}
           <div>
             <p className={`text-[11px] font-semibold mb-2 ${dk ? 'text-white/50' : 'text-gray-500'}`}>섹션 선택</p>
@@ -1335,11 +1358,11 @@ function PdfFilterModal({ workItems, onConfirm, onCancel }: {
         <div className={`px-5 pb-5 pt-2 flex gap-2 border-t ${dk ? 'border-white/10' : 'border-gray-200'}`}>
           <button onClick={onCancel} className={`flex-1 py-2.5 rounded-xl text-sm border transition-colors ${dk ? 'border-white/10 text-white/60 hover:bg-white/5' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>취소</button>
           <button
-            onClick={() => onConfirm({ sections, companies })}
+            onClick={() => onConfirm({ sections, companies, format })}
             disabled={!sections.high_risk && !sections.general && !sections.material}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            📄 PDF 생성
+            {{ pdf: '📄 PDF 생성', png: '🖼️ PNG 저장', jpg: '📷 JPG 저장' }[format]}
           </button>
         </div>
       </div>
@@ -1436,7 +1459,7 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
 
   // PDF 다운로드 — 새 창 HTML + 브라우저 인쇄
   // 구조: [지적도+마커] [고위험/업체별 3열] [일반작업/업체별 3열] [자재] [메모]
-  const downloadPDF = useCallback(async (filter: PdfFilter) => {
+  const downloadContent = useCallback(async (filter: PdfFilter) => {
     if (!meeting) return
     setPdfLoading(true)
     setPdfFilterOpen(false)
@@ -1641,7 +1664,37 @@ td{font-size:10px;padding:5px 8px;border-bottom:1px solid #f3f4f6;vertical-align
 
 ${bodyHtml}
 
-<script>window.addEventListener('load',function(){setTimeout(function(){window.print()},500)})</script>
+<script>${
+  filter.format === 'pdf'
+    ? `window.addEventListener('load',function(){setTimeout(function(){window.print()},500)})`
+    : (() => {
+        const mime    = filter.format === 'jpg' ? 'image/jpeg' : 'image/png'
+        const ext     = filter.format
+        const quality = filter.format === 'jpg' ? ',0.92' : ''
+        const fname   = `DABs_${esc(meeting.date)}.${ext}`
+        return `window.addEventListener('load',function(){
+  setTimeout(function(){
+    var s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    document.head.appendChild(s);
+    s.onload=function(){
+      document.body.style.background='#fff';
+      html2canvas(document.body,{
+        scale:2,useCORS:true,logging:false,
+        backgroundColor:'#ffffff',
+        windowWidth:1100
+      }).then(function(canvas){
+        var a=document.createElement('a');
+        a.download='${fname}';
+        a.href=canvas.toDataURL('${mime}'${quality});
+        a.click();
+        setTimeout(function(){window.close()},800);
+      });
+    };
+  },600);
+});`
+      })()
+}</script>
 </body></html>`
 
     // ── 새 창에 출력 ─────────────────────────────────────────
@@ -1860,7 +1913,7 @@ ${bodyHtml}
         {pdfFilterOpen && (
           <PdfFilterModal
             workItems={workItems}
-            onConfirm={filter => downloadPDF(filter)}
+            onConfirm={filter => downloadContent(filter)}
             onCancel={() => setPdfFilterOpen(false)}
           />
         )}
