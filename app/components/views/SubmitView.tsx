@@ -337,7 +337,20 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
   async function handleImportSelected() {
     if (!meeting || importSelected.size === 0) return
     setImportSaving(true)
-    const toImport = importItems.filter(i => importSelected.has(i.id))
+
+    // 이미 오늘 등록된 내 작업항목 (work_name + work_type 조합)
+    const existing = new Set(
+      workItems
+        .filter(w => w.team_id === teamId)
+        .map(w => `${w.work_type}::${w.work_name}`)
+    )
+
+    const toImport = importItems.filter(i =>
+      importSelected.has(i.id) &&
+      !existing.has(`${i.work_type}::${i.work_name}`)   // 중복 제외
+    )
+    const skipped = importSelected.size - toImport.length
+
     let successCount = 0
     for (const item of toImport) {
       const res = await fetch('/api/work-items', {
@@ -360,7 +373,13 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
     reloadWorkItems(meeting.id)
     setShowImportModal(false)
     setImportSaving(false)
-    toast.success(`${successCount}개 작업항목을 불러왔습니다.`)
+    if (skipped > 0 && successCount === 0) {
+      toast.info('이미 등록된 항목이라 추가되지 않았습니다.')
+    } else if (skipped > 0) {
+      toast.success(`${successCount}개 불러왔습니다. (중복 ${skipped}개 건너뜀)`)
+    } else {
+      toast.success(`${successCount}개 작업항목을 불러왔습니다.`)
+    }
   }
 
   // ── 자재하역 이전 내역 불러오기 핸들러 ─────────────────────
