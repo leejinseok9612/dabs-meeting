@@ -31,13 +31,25 @@ interface MaterialSlot {
   material_reservations: MaterialReservation[]
 }
 
-type Tab       = 'high_risk' | 'general' | 'material' | 'submit'
+type Tab        = 'high_risk' | 'general' | 'material' | 'submit'
 type UploadStep = 'idle' | 'uploading' | 'saving' | 'done' | 'error'
+type ExportFmt  = 'pdf' | 'png' | 'jpg'
+
+interface MapMarkerData {
+  id: string; team_id: string | null; marker_type: string
+  x_pct: number; y_pct: number; label?: string; work_type?: string
+}
 
 // ── 상수 ────────────────────────────────────────────────────
 const MAX_FILE_MB    = 10
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024
 const DRAFT_KEY      = (teamId: string) => `dabs_draft_${teamId}`
+
+const TEAM_COLORS = ['#3B82F6','#F97316','#22C55E','#8B5CF6','#EF4444','#EC4899']
+const MARKER_ICONS: Record<string, string> = {
+  excavator: '⛏️', small_exc: '🛠️', crane: '🏗️', tower_crane: '🗼',
+  dump_truck: '🚛', pump_car: '💧', concrete_mixer: '🔄',
+}
 
 const EQUIPMENT_LIST = [
   '굴착기', '소형굴착기', '로더', '불도저', '모터그레이더',
@@ -525,6 +537,199 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
   const isClosed = meeting?.status === 'closed'
   const hasMap   = !!meeting?.map_file_url
 
+  // ── 회의자료 출력 ──────────────────────────────────────────
+  const [exportOpen,    setExportOpen]    = useState(false)
+  const [exportLoading, setExportLoading] = useState(false)
+
+  const handleExport = useCallback(async (format: ExportFmt) => {
+    if (!meeting) return
+    setExportOpen(false)
+    setExportLoading(true)
+
+    const esc = (s: string) =>
+      (s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+
+    // 마커 fetch
+    let pdfMarkers: MapMarkerData[] = []
+    try {
+      const res = await fetch(`/api/map-markers?meetingId=${meeting.id}`)
+      const data = await res.json()
+      if (Array.isArray(data)) pdfMarkers = (data as MapMarkerData[]).filter(m => m.work_type === 'high_risk')
+    } catch { /* ignore */ }
+
+    // 팀 컬러 맵
+    const pdfColorMap: Record<string, string> = {}
+    allTeams.forEach((t, idx) => { pdfColorMap[t.id] = TEAM_COLORS[idx % TEAM_COLORS.length] })
+
+    const highRisk = workItems.filter(w => w.work_type === 'high_risk')
+    const general  = workItems.filter(w => w.work_type === 'general')
+    const allRes   = slots.flatMap(s => (s.material_reservations ?? []).map(r => ({ ...r, slot_time: s.slot_time, gate: s.gate })))
+    const pdfMapUrl = meeting.map_file_url ?? null
+
+    // 마커 HTML
+    const mapMarkersHtml = pdfMarkers.map(m => {
+      const color = pdfColorMap[m.team_id ?? ''] ?? '#6B7280'
+      const icon  = MARKER_ICONS[m.marker_type] ?? '📍'
+      return `<div style="position:absolute;left:${m.x_pct}%;top:${m.y_pct}%;transform:translate(-50%,-50%);z-index:10;pointer-events:none;display:flex;flex-direction:column;align-items:center;">
+        <div style="width:26px;height:26px;border-radius:50%;background:${color};border:2.5px solid white;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.45);flex-shrink:0;">${icon}</div>
+        ${m.label ? `<div style="font-size:7.5px;background:rgba(0,0,0,0.72);color:white;padding:1px 4px;border-radius:2px;margin-top:2px;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;line-height:1.4;">${esc(m.label)}</div>` : ''}
+      </div>`
+    }).join('')
+
+    // 카드 HTML
+    const cardHtml = (item: WorkItem, color: 'red' | 'blue') => {
+      const metaRow = [
+        item.location     ? `📍${esc(item.location)}` : '',
+        item.worker_count > 0 ? `👷${item.worker_count}명` : '',
+      ].filter(Boolean).join(' · ')
+      return `
+      <div class="card ${color}">
+        <div class="card-top">
+          <div class="ctitle">${esc(item.work_name)}</div>
+          ${metaRow ? `<div class="cmeta">${metaRow}</div>` : ''}
+          ${item.description ? `<div class="cdesc">${esc(item.description)}</div>` : ''}
+        </div>
+        ${item.risk_factors ? `<div class="risk"><span class="lbl">⚠ 위험요인</span>${esc(item.risk_factors)}</div>` : ''}
+        ${item.improvement_measures ? `<div class="impr"><span class="lbl">✓ 개선대책</span>${esc(item.improvement_measures)}</div>` : ''}
+      </div>`
+    }
+
+    const groupBy = (items: WorkItem[]) => {
+      const g: Record<string, WorkItem[]> = {}
+      items.forEach(item => { const n = item.teams?.name ?? '미지정'; if (!g[n]) g[n] = []; g[n].push(item) })
+      return g
+    }
+    const renderGrouped = (grouped: Record<string, WorkItem[]>, color: 'red' | 'blue') =>
+      Object.entries(grouped).map(([co, items]) =>
+        `<div class="co-grp">
+          <div class="co-title ${color}-co">${esc(co)} <span class="gcnt">${items.length}건</span></div>
+          <div class="co-cards">${items.map(i => cardHtml(i, color)).join('')}</div>
+        </div>`
+      ).join('')
+
+    const hrHtml  = highRisk.length === 0 ? '<p class="empty">등록된 고위험작업이 없습니다.</p>' : renderGrouped(groupBy(highRisk), 'red')
+    const genHtml = general.length  === 0 ? '<p class="empty">등록된 일반작업이 없습니다.</p>'  : renderGrouped(groupBy(general),  'blue')
+
+    const gates  = [...new Set(allRes.map(r => r.gate))].sort()
+    const matHtml = allRes.length === 0
+      ? '<p class="empty">등록된 자재 신청이 없습니다.</p>'
+      : `<table><thead><tr><th>GATE</th><th>시간</th><th>업체</th><th>자재명</th><th>차량/대수</th><th>하역장소</th><th>담당자(연락처)</th></tr></thead><tbody>
+         ${gates.flatMap(gate => {
+           const rows = allRes.filter(r => r.gate === gate).sort((a,b) => a.slot_time.localeCompare(b.slot_time))
+           return [
+             `<tr><td colspan="7" class="gate-hd">${esc(gate)}</td></tr>`,
+             ...rows.map(r => `<tr><td>${esc(r.gate)}</td><td class="mono">${(r.slot_time??'').slice(0,5)}</td>
+               <td>${esc(r.teams?.name??'미지정')}</td><td>${esc(r.material_description??'—')}</td>
+               <td>${esc(r.quantity??'—')}</td>
+               <td>${esc(r.unloading_location??'—')}</td>
+               <td>${esc(r.contact_person??'—')}</td></tr>`)
+           ]
+         }).join('')}
+         </tbody></table>`
+
+    const pageSections: string[] = []
+    if (pdfMapUrl) {
+      pageSections.push(
+        `<div class="sec-title">🗺️ 고위험작업 지적도 <span class="badge br">${pdfMarkers.length}개소</span></div>` +
+        `<div class="map-wrap"><img src="${pdfMapUrl}" alt="지적도">${mapMarkersHtml}</div>`
+      )
+    }
+    pageSections.push(`<div class="sec-title">⚠️ 고위험 현황 <span class="badge br">${highRisk.length}건</span></div>${hrHtml}`)
+    pageSections.push(`<div class="sec-title">📋 일반작업 내용 <span class="badge bb">${general.length}건</span></div>${genHtml}`)
+    pageSections.push(`<div class="sec-title">🚛 자재 하역/운반 <span class="badge ba">${allRes.length}건</span></div>${matHtml}`)
+
+    const bodyHtml = pageSections.map((sec, i) => i === 0 ? sec : `<div class="page-break">${sec}</div>`).join('\n')
+
+    const mime    = format === 'jpg' ? 'image/jpeg' : 'image/png'
+    const ext     = format
+    const quality = format === 'jpg' ? ',0.92' : ''
+    const fname   = `DABs_${esc(meeting.date)}.${ext}`
+
+    const html = `<!DOCTYPE html><html lang="ko"><head>
+<meta charset="UTF-8">
+<title>DABs 회의자료_${esc(meeting.date)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+@page{size:A4 portrait;margin:14mm 16mm}
+body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,sans-serif;font-size:11px;color:#111;background:#fff}
+.page-break{page-break-before:always;break-before:page;padding-top:0}
+.pg-hd{padding:0 0 10px;border-bottom:3px solid #111;margin-bottom:14px}
+.pg-title{font-size:18px;font-weight:800;letter-spacing:-.5px}
+.pg-meta{font-size:9px;color:#6b7280;margin-top:4px}
+.sec-title{font-size:13px;font-weight:700;margin-bottom:11px;padding-bottom:6px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;gap:7px}
+.badge{display:inline-block;padding:2px 7px;border-radius:9px;font-size:9px;font-weight:700}
+.br{background:#fef2f2;color:#dc2626}.bb{background:#eff6ff;color:#2563eb}.ba{background:#fffbeb;color:#b45309}
+.empty{color:#9ca3af;padding:10px 0;font-size:11px}
+.map-wrap{position:relative;display:block;width:100%;line-height:0}
+.map-wrap img{width:100%;height:auto;display:block}
+.co-grp{margin-bottom:18px}
+.co-title{font-size:12px;font-weight:800;color:#111;background:#f3f4f6;border-radius:5px;padding:5px 10px;margin-bottom:6px;display:flex;align-items:center;gap:6px;letter-spacing:-.3px;border-left:3px solid #9ca3af}
+.co-title.red-co{border-left-color:#ef4444;color:#991b1b}
+.co-title.blue-co{border-left-color:#3b82f6;color:#1e40af}
+.gcnt{font-size:10px;color:#9ca3af;font-weight:400;margin-left:4px}
+.co-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.card{border-radius:5px;overflow:hidden;break-inside:avoid;page-break-inside:avoid;border:1px solid #e5e7eb;display:flex;flex-direction:column}
+.card-top{padding:6px 9px;flex:1}
+.card.red .card-top{background:#fef2f2;border-bottom:1px solid #fecaca}
+.card.blue .card-top{background:#eff6ff;border-bottom:1px solid #bfdbfe}
+.ctitle{font-size:10px;font-weight:700;line-height:1.35;margin-bottom:2px}
+.cmeta{font-size:8px;color:#6b7280;line-height:1.3}
+.cdesc{font-size:8px;color:#6b7280;margin-top:2px;line-height:1.3}
+.risk{padding:3px 9px;background:#fffbeb;border-top:1px solid #fde68a;font-size:9px;color:#78350f;line-height:1.4}
+.impr{padding:3px 9px;background:#f0fdf4;border-top:1px solid #bbf7d0;font-size:9px;color:#14532d;line-height:1.4}
+.lbl{display:inline;font-size:8px;font-weight:700;margin-right:4px}
+.risk .lbl{color:#b45309}.impr .lbl{color:#16a34a}
+table{width:100%;border-collapse:collapse}
+th{font-size:9px;font-weight:700;color:#6b7280;text-align:left;padding:5px 8px;border-bottom:2px solid #e5e7eb;background:#f9fafb}
+td{font-size:10px;padding:5px 8px;border-bottom:1px solid #f3f4f6;vertical-align:top}
+.gate-hd{font-weight:700;color:#b45309;background:#fffbeb;border-top:1px solid #fde68a;border-bottom:1px solid #fde68a;font-size:9px;letter-spacing:.5px}
+.mono{font-variant-numeric:tabular-nums;font-weight:600}
+@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head><body>
+
+<div class="pg-hd">
+  <div class="pg-title">📋 ${esc(meeting.title || 'DABs 회의 자료')}</div>
+  <div class="pg-meta">회의 일자: ${esc(meeting.date)} &nbsp;·&nbsp; 출력: ${new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric'})}</div>
+</div>
+
+${bodyHtml}
+
+<script>${
+  format === 'pdf'
+    ? `window.addEventListener('load',function(){setTimeout(function(){window.print()},500)})`
+    : `window.addEventListener('load',function(){
+  setTimeout(function(){
+    var s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    document.head.appendChild(s);
+    s.onload=function(){
+      document.body.style.background='#fff';
+      html2canvas(document.body,{scale:2,useCORS:true,logging:false,backgroundColor:'#ffffff',windowWidth:1100})
+      .then(function(canvas){
+        var a=document.createElement('a');
+        a.download='${fname}';
+        a.href=canvas.toDataURL('${mime}'${quality});
+        a.click();
+        setTimeout(function(){window.close()},800);
+      });
+    };
+  },600);
+});`
+}</script>
+</body></html>`
+
+    const pw = window.open('', '_blank', 'width=1100,height=850')
+    if (!pw) {
+      alert('팝업이 차단되어 있습니다.\n브라우저 주소창에서 팝업을 허용한 후 다시 시도해주세요.')
+      setExportLoading(false)
+      return
+    }
+    pw.document.open()
+    pw.document.write(html)
+    pw.document.close()
+    setExportLoading(false)
+  }, [meeting, workItems, slots, allTeams])
+
   // ── 로딩 / 오류 상태 ─────────────────────────────────────
   if (loading) return <FullPageSpinner />
   if (!team)   return <ErrorPage message="업체 정보를 찾을 수 없습니다." />
@@ -744,6 +949,35 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
         </div>
       )}
 
+      {/* ── 회의자료 출력 포맷 모달 ──────────────────────────── */}
+      {exportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.45)' }}
+          onClick={() => setExportOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-5"
+            onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-gray-900 mb-1">회의자료 출력</h3>
+            <p className="text-xs text-gray-400 mb-4">저장 형식을 선택하세요</p>
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              {([
+                { key: 'pdf' as const, icon: '📄', label: 'PDF' },
+                { key: 'png' as const, icon: '🖼️', label: 'PNG' },
+                { key: 'jpg' as const, icon: '📷', label: 'JPG' },
+              ]).map(({ key, icon, label }) => (
+                <button key={key}
+                  onClick={() => handleExport(key)}
+                  className="flex flex-col items-center gap-1.5 py-4 rounded-xl border-2 border-gray-100 hover:border-blue-400 hover:bg-blue-50 transition-all text-sm font-medium text-gray-700">
+                  <span className="text-xl">{icon}</span>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setExportOpen(false)}
+              className="btn btn-secondary btn-sm w-full">취소</button>
+          </div>
+        </div>
+      )}
+
       {/* ── 헤더 ───────────────────────────────────────────── */}
       <header className="bg-white/90 backdrop-blur-sm sticky top-0 z-20"
         style={{ borderBottom: '1px solid rgba(0,0,0,0.07)' }}>
@@ -764,6 +998,19 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-live-pulse" />
               실시간 공유 중
             </span>
+          )}
+          {meeting && (
+            <button
+              onClick={() => setExportOpen(true)}
+              disabled={exportLoading}
+              className="btn btn-ghost btn-sm shrink-0 gap-1.5"
+              title="회의자료 출력">
+              {exportLoading
+                ? <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                : <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+              }
+              {exportLoading ? '생성 중…' : '출력'}
+            </button>
           )}
           <button
             onClick={onBack}
