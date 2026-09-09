@@ -346,14 +346,15 @@ function MeetingMapViewer({
       if (fuzzy.length) return fuzzy
     }
 
-    // 3순위: 같은 팀 + work_type 이 정확히 1건일 때만 (모호하지 않은 경우만 표시)
+    // 3순위: 같은 팀 + work_type 전체 표시 (라벨 매칭 실패 시 폴백)
     if (clickedMarker.work_type) {
       const typeMatches = workItems.filter(w => w.team_id === tid && w.work_type === clickedMarker.work_type)
-      if (typeMatches.length === 1) return typeMatches
+      if (typeMatches.length > 0) return typeMatches
     }
 
-    // 매칭 실패 → 빈 배열 (팝업에서 "라벨과 일치하는 작업 없음" 메시지 표시)
-    return []
+    // 4순위: 같은 팀 작업항목 전체
+    const teamMatches = workItems.filter(w => w.team_id === tid)
+    return teamMatches
   }, [clickedMarker, workItems])
 
   // 헤더/캔버스 테마
