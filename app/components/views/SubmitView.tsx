@@ -129,11 +129,13 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
   const [showHighRiskGuide, setShowHighRiskGuide] = useState(false)
   const HIGH_RISK_DISMISS_KEY = `dabs_highrisk_guide_dismiss_${teamId}`
 
-  // 오늘 자정까지 dismiss 여부 확인
+  // 오늘 날짜 문자열 (YYYY-MM-DD) — 타임스탬프 대신 날짜 문자열로 비교해
+  // 기존에 저장된 타임스탬프 값을 자동으로 무효화
+  const todayStr = () => new Date().toISOString().split('T')[0]
+
   function isHighRiskDismissedToday() {
     try {
-      const until = localStorage.getItem(HIGH_RISK_DISMISS_KEY)
-      return !!until && Date.now() < Number(until)
+      return localStorage.getItem(HIGH_RISK_DISMISS_KEY) === todayStr()
     } catch { return false }
   }
 
@@ -145,9 +147,7 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
   function dismissHighRiskGuide(untilTomorrow: boolean) {
     if (untilTomorrow) {
       try {
-        // 오늘 자정(00:00)까지
-        const midnight = new Date(); midnight.setHours(24, 0, 0, 0)
-        localStorage.setItem(HIGH_RISK_DISMISS_KEY, String(midnight.getTime()))
+        localStorage.setItem(HIGH_RISK_DISMISS_KEY, todayStr())
       } catch {}
     }
     setShowHighRiskGuide(false)
