@@ -129,18 +129,26 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
   const [showHighRiskGuide, setShowHighRiskGuide] = useState(false)
   const HIGH_RISK_DISMISS_KEY = `dabs_highrisk_guide_dismiss_${teamId}`
 
-  function handleHighRiskTabClick() {
-    setActiveTab('high_risk')
+  // 오늘 자정까지 dismiss 여부 확인
+  function isHighRiskDismissedToday() {
     try {
       const until = localStorage.getItem(HIGH_RISK_DISMISS_KEY)
-      if (until && Date.now() < Number(until)) return   // 아직 1주일 안됨
-    } catch {}
-    setShowHighRiskGuide(true)
+      return !!until && Date.now() < Number(until)
+    } catch { return false }
   }
 
-  function dismissHighRiskGuide(forever: boolean) {
-    if (forever) {
-      try { localStorage.setItem(HIGH_RISK_DISMISS_KEY, String(Date.now() + 7 * 24 * 60 * 60 * 1000)) } catch {}
+  function handleHighRiskTabClick() {
+    setActiveTab('high_risk')
+    if (!isHighRiskDismissedToday()) setShowHighRiskGuide(true)
+  }
+
+  function dismissHighRiskGuide(untilTomorrow: boolean) {
+    if (untilTomorrow) {
+      try {
+        // 오늘 자정(00:00)까지
+        const midnight = new Date(); midnight.setHours(24, 0, 0, 0)
+        localStorage.setItem(HIGH_RISK_DISMISS_KEY, String(midnight.getTime()))
+      } catch {}
     }
     setShowHighRiskGuide(false)
   }
@@ -169,13 +177,8 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
       }
       setLoading(false)
 
-      // 고위험작업 안내 팝업 — 로그인 시 자동 표시 (1주일 dismiss 미적용 시)
-      try {
-        const until = localStorage.getItem(`dabs_highrisk_guide_dismiss_${teamId}`)
-        if (!until || Date.now() >= Number(until)) {
-          setShowHighRiskGuide(true)
-        }
-      } catch {
+      // 고위험작업 안내 팝업 — 오늘 dismiss 안 했으면 로그인 시 자동 표시
+      if (!isHighRiskDismissedToday()) {
         setShowHighRiskGuide(true)
       }
 
@@ -850,7 +853,7 @@ ${bodyHtml}
               <button
                 onClick={() => dismissHighRiskGuide(true)}
                 className="text-xs text-gray-400 hover:text-gray-600 transition-colors py-1">
-                1주일간 보지 않기
+                오늘 하루 보지 않기
               </button>
             </div>
           </div>
