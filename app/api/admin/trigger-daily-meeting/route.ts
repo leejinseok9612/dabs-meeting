@@ -15,10 +15,10 @@ export async function POST() {
     day:      '2-digit',
   }).format(new Date()).replace(/\. /g, '-').replace('.', '')
 
-  // ── 평일 여부 확인 ─────────────────────────────────────────
+  // ── 일요일만 제외 (토요일은 회의 생성) ───────────────────────
   const dayOfWeek = new Date(today).getDay()
-  if (dayOfWeek === 0 || dayOfWeek === 6) {
-    return NextResponse.json({ message: '주말이라 회의를 생성하지 않습니다.', date: today })
+  if (dayOfWeek === 0) {
+    return NextResponse.json({ message: '일요일이라 회의를 생성하지 않습니다.', date: today })
   }
 
   // ── 오늘 회의 중복 확인 ────────────────────────────────────

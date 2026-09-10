@@ -21,10 +21,10 @@ export async function GET(req: NextRequest) {
     day:      '2-digit',
   }).format(new Date()).replace(/\. /g, '-').replace('.', '') // YYYY-MM-DD
 
-  // ── 3. 오늘이 평일인지 확인 (토·일 제외) ─────────────────
+  // ── 3. 일요일만 제외 (토요일은 회의 생성) ────────────────
   const dayOfWeek = new Date(today).getDay() // 0=일, 6=토
-  if (dayOfWeek === 0 || dayOfWeek === 6) {
-    return NextResponse.json({ message: '주말이라 회의를 생성하지 않습니다.', date: today })
+  if (dayOfWeek === 0) {
+    return NextResponse.json({ message: '일요일이라 회의를 생성하지 않습니다.', date: today })
   }
 
   // ── 4. 오늘 회의가 이미 있는지 확인 ──────────────────────
