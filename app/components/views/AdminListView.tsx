@@ -64,6 +64,39 @@ export function AdminListView({ onEnterMeeting, onBack }: { onEnterMeeting: (id:
   const [rangeDownloading, setRangeDownloading] = useState(false)
   const [rangeError,       setRangeError]       = useState('')
 
+  // 업체 관리
+  const [showTeamForm,   setShowTeamForm]   = useState(false)
+  const [newTeamName,    setNewTeamName]    = useState('')
+  const [newTeamDept,    setNewTeamDept]    = useState('')
+  const [teamSubmitting, setTeamSubmitting] = useState(false)
+  const [deletingTeamId, setDeletingTeamId] = useState<string | null>(null)
+
+  async function handleAddTeam() {
+    if (!newTeamName.trim()) return
+    setTeamSubmitting(true)
+    const res = await fetch('/api/teams', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newTeamName.trim(), department: newTeamDept.trim() }),
+    })
+    if (res.ok) {
+      const added = await res.json()
+      setTeams(prev => [...prev, added].sort((a, b) => a.name.localeCompare(b.name)))
+      setNewTeamName('')
+      setNewTeamDept('')
+      setShowTeamForm(false)
+    }
+    setTeamSubmitting(false)
+  }
+
+  async function handleDeleteTeam(id: string, name: string) {
+    if (!confirm(`"${name}" 업체를 삭제하시겠습니까?\n삭제 후에는 복구할 수 없습니다.`)) return
+    setDeletingTeamId(id)
+    await fetch(`/api/teams?id=${id}`, { method: 'DELETE' })
+    setTeams(prev => prev.filter(t => t.id !== id))
+    setDeletingTeamId(null)
+  }
+
   // 공지사항 관리
   const [announcements,    setAnnouncements]    = useState<{id: string; title: string; content: string; is_active: boolean}[]>([])
   const [showAnnoForm,     setShowAnnoForm]     = useState(false)
@@ -350,10 +383,51 @@ export function AdminListView({ onEnterMeeting, onBack }: { onEnterMeeting: (id:
           </section>
         )}
 
-        {/* ── 업체 고정 제출 링크 ──────────────────────────── */}
-        {teams.length > 0 && (
-          <section>
-            <SectionLabel label="업체 고정 제출 링크" badge="복사해서 공유" />
+        {/* ── 업체 관리 ────────────────────────────────────── */}
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <SectionLabel label="업체 관리" badge="고정 제출 링크" />
+            <button
+              onClick={() => setShowTeamForm(v => !v)}
+              className="btn btn-primary btn-sm">
+              + 업체 추가
+            </button>
+          </div>
+
+          {/* 업체 추가 폼 */}
+          {showTeamForm && (
+            <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-4 mb-3 space-y-3">
+              <p className="text-xs font-semibold text-blue-700">새 업체 추가</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="업체명 *"
+                  value={newTeamName}
+                  onChange={e => setNewTeamName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddTeam()}
+                  className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="text"
+                  placeholder="공종 (선택)"
+                  value={newTeamDept}
+                  onChange={e => setNewTeamDept(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddTeam()}
+                  className="w-32 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={handleAddTeam} disabled={teamSubmitting || !newTeamName.trim()}
+                  className="btn btn-primary btn-sm">
+                  {teamSubmitting ? '추가 중…' : '추가'}
+                </button>
+                <button onClick={() => { setShowTeamForm(false); setNewTeamName(''); setNewTeamDept('') }}
+                  className="btn btn-secondary btn-sm">취소</button>
+              </div>
+            </div>
+          )}
+
+          {teams.length > 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
               {teams.map(t => {
                 const url = typeof window !== 'undefined'
@@ -361,30 +435,45 @@ export function AdminListView({ onEnterMeeting, onBack }: { onEnterMeeting: (id:
                   : `/submit/${t.id}`
                 return (
                   <div key={t.id} className="flex items-center justify-between px-5 py-3.5 gap-4 hover:bg-gray-50 transition-colors">
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-gray-900">{t.name}</p>
                       <p className="text-xs text-gray-400 truncate">/submit/{t.id}</p>
                     </div>
-                    <button
-                      onClick={() => copyLink(t.id)}
-                      className={[
-                        'shrink-0 px-2 py-1 rounded-md text-xs border transition-all',
-                        copiedId === t.id
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : 'border-gray-200 text-gray-600 hover:bg-gray-50',
-                      ].join(' ')}
-                    >
-                      {copiedId === t.id ? '복사됨!' : '링크 복사'}
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => copyLink(t.id)}
+                        className={[
+                          'px-2 py-1 rounded-md text-xs border transition-all',
+                          copiedId === t.id
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'border-gray-200 text-gray-600 hover:bg-gray-50',
+                        ].join(' ')}
+                      >
+                        {copiedId === t.id ? '복사됨!' : '링크 복사'}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTeam(t.id, t.name)}
+                        disabled={deletingTeamId === t.id}
+                        className="p-1.5 text-gray-300 hover:text-red-500 transition-colors disabled:opacity-40"
+                        title="업체 삭제">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 )
               })}
             </div>
-            <p className="text-xs text-gray-400 mt-2 px-1">
-              이 링크는 영구적으로 유효합니다. 업체 담당자에게 한 번만 공유하세요.
-            </p>
-          </section>
-        )}
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-200 px-5 py-6 text-center text-sm text-gray-400">
+              등록된 업체가 없습니다. 위에서 추가해주세요.
+            </div>
+          )}
+          <p className="text-xs text-gray-400 mt-2 px-1">
+            이 링크는 영구적으로 유효합니다. 업체 담당자에게 한 번만 공유하세요.
+          </p>
+        </section>
 
         {/* ── 기간별 PDF 일괄 다운로드 ─────────────────────── */}
         <section>
