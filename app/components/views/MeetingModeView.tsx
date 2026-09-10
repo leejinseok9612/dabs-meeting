@@ -1387,6 +1387,11 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
   const [theme,         setTheme]         = useState<Theme>('dark')
   const [pdfLoading,    setPdfLoading]    = useState(false)
   const [pdfFilterOpen, setPdfFilterOpen] = useState(false)
+  const [fontScale,     setFontScale]     = useState(100) // 80 ~ 130, 단위: %
+
+  const FONT_SCALE_MIN = 80
+  const FONT_SCALE_MAX = 130
+  const FONT_SCALE_STEP = 10
 
   const containerRef  = useRef<HTMLDivElement>(null)
   const scrollBodyRef = useRef<HTMLDivElement>(null)
@@ -1767,6 +1772,27 @@ ${bodyHtml}
             <div className={`w-px h-5 ${dk ? 'bg-white/10' : 'bg-gray-200'}`} />
             <ThemeToggle theme={theme} onToggle={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} />
             <div className={`w-px h-5 ${dk ? 'bg-white/10' : 'bg-gray-200'}`} />
+            {/* 글자 크기 */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setFontScale(s => Math.max(FONT_SCALE_MIN, s - FONT_SCALE_STEP))}
+                disabled={fontScale <= FONT_SCALE_MIN}
+                className={`w-7 h-7 flex items-center justify-center rounded-lg text-base font-bold transition-colors disabled:opacity-30 ${dk ? 'text-white/50 hover:text-white/80 hover:bg-white/10' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
+                title="글자 축소">
+                A<span className="text-[10px] -ml-0.5">−</span>
+              </button>
+              <span className={`text-[11px] w-8 text-center tabular-nums ${dk ? 'text-white/30' : 'text-gray-400'}`}>
+                {fontScale}%
+              </span>
+              <button
+                onClick={() => setFontScale(s => Math.min(FONT_SCALE_MAX, s + FONT_SCALE_STEP))}
+                disabled={fontScale >= FONT_SCALE_MAX}
+                className={`w-7 h-7 flex items-center justify-center rounded-lg text-base font-bold transition-colors disabled:opacity-30 ${dk ? 'text-white/50 hover:text-white/80 hover:bg-white/10' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
+                title="글자 확대">
+                A<span className="text-[10px] -ml-0.5">+</span>
+              </button>
+            </div>
+            <div className={`w-px h-5 ${dk ? 'bg-white/10' : 'bg-gray-200'}`} />
             {/* PDF 다운로드 */}
             <button
               onClick={() => setPdfFilterOpen(true)}
@@ -1825,6 +1851,7 @@ ${bodyHtml}
               'absolute inset-0 overflow-y-auto transition-[right] duration-300',
               showNote ? 'right-72' : 'right-0',
             ].join(' ')}
+            style={{ fontSize: `${fontScale}%` }}
           >
             {/* ① 고위험 현황 */}
             <section id="section-high_risk" className="px-8 pt-6 pb-8">
