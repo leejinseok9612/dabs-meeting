@@ -64,6 +64,28 @@ export function AdminListView({ onEnterMeeting, onBack }: { onEnterMeeting: (id:
   const [rangeDownloading, setRangeDownloading] = useState(false)
   const [rangeError,       setRangeError]       = useState('')
 
+  // 계정 관리
+  interface AuthUser { id: string; email: string; created_at: string; last_sign_in: string | null; confirmed: boolean }
+  const [authUsers,       setAuthUsers]       = useState<AuthUser[]>([])
+  const [usersLoading,    setUsersLoading]    = useState(false)
+  const [showUsers,       setShowUsers]       = useState(false)
+  const [deletingUserId,  setDeletingUserId]  = useState<string | null>(null)
+
+  async function loadAuthUsers() {
+    setUsersLoading(true)
+    const res = await fetch('/api/admin/users')
+    if (res.ok) setAuthUsers(await res.json())
+    setUsersLoading(false)
+  }
+
+  async function handleDeleteUser(id: string, email: string) {
+    if (!confirm(`"${email}" 계정을 삭제하시겠습니까?\n삭제 후에는 복구할 수 없습니다.`)) return
+    setDeletingUserId(id)
+    await fetch(`/api/admin/users?id=${id}`, { method: 'DELETE' })
+    setAuthUsers(prev => prev.filter(u => u.id !== id))
+    setDeletingUserId(null)
+  }
+
   // 업체 관리
   const [showTeamForm,   setShowTeamForm]   = useState(false)
   const [newTeamName,    setNewTeamName]    = useState('')
@@ -473,6 +495,59 @@ export function AdminListView({ onEnterMeeting, onBack }: { onEnterMeeting: (id:
           <p className="text-xs text-gray-400 mt-2 px-1">
             이 링크는 영구적으로 유효합니다. 업체 담당자에게 한 번만 공유하세요.
           </p>
+        </section>
+
+        {/* ── 계정 관리 ────────────────────────────────────── */}
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <SectionLabel label="계정 관리" badge="가입된 사용자" />
+            <button
+              onClick={() => { setShowUsers(v => !v); if (!showUsers) loadAuthUsers() }}
+              className="btn btn-secondary btn-sm">
+              {showUsers ? '숨기기' : '계정 목록 보기'}
+            </button>
+          </div>
+
+          {showUsers && (
+            usersLoading ? (
+              <div className="bg-white rounded-xl border border-gray-200 px-5 py-6 text-center text-sm text-gray-400">
+                불러오는 중…
+              </div>
+            ) : authUsers.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 px-5 py-6 text-center text-sm text-gray-400">
+                가입된 계정이 없습니다.
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                {authUsers.sort((a, b) => a.email.localeCompare(b.email)).map(u => (
+                  <div key={u.id} className="flex items-center justify-between px-5 py-3.5 gap-4 hover:bg-gray-50 transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-gray-900">{u.email}</p>
+                        {u.confirmed
+                          ? <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-100 rounded px-1.5 py-0.5 font-medium">인증됨</span>
+                          : <span className="text-[10px] bg-amber-50 text-amber-600 border border-amber-100 rounded px-1.5 py-0.5 font-medium">미인증</span>
+                        }
+                      </div>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        가입: {new Date(u.created_at).toLocaleDateString('ko-KR')}
+                        {u.last_sign_in && ` · 최근 로그인: ${new Date(u.last_sign_in).toLocaleDateString('ko-KR')}`}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteUser(u.id, u.email)}
+                      disabled={deletingUserId === u.id}
+                      className="p-1.5 text-gray-300 hover:text-red-500 transition-colors disabled:opacity-40 shrink-0"
+                      title="계정 삭제">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
         </section>
 
         {/* ── 기간별 PDF 일괄 다운로드 ─────────────────────── */}
