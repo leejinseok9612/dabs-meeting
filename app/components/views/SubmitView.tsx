@@ -61,7 +61,7 @@ const DIRECT_INPUT_VALUE = '__직접입력__'
 const VEHICLE_LIST = ['덤프트럭', '트레일러', '카고트럭', '지게차', '크레인차', '탱크로리', '기타']
 
 // ── 메인 컴포넌트 ─────────────────────────────────────────
-export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => void }) {
+export function SubmitView({ teamId, meetingId, onBack }: { teamId: string; meetingId: string; onBack: () => void }) {
   const supabase = useMemo(() => createClient(), [])
 
   // 공통
@@ -165,7 +165,7 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
   // ── 초기 데이터 로드 + 임시저장 복원 ─────────────────────
   useEffect(() => {
     async function load() {
-      const res  = await fetch(`/api/submit-info?teamId=${teamId}`)
+      const res  = await fetch(`/api/submit-info?teamId=${teamId}&meetingId=${meetingId}`)
       if (res.status === 404) { setLoading(false); return }
       const data = await res.json()
       if (!data.team) { setLoading(false); return }
@@ -1041,10 +1041,9 @@ ${bodyHtml}
             onClick={onBack}
             className="btn btn-ghost btn-sm shrink-0 gap-1.5">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round"
-                d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
             </svg>
-            전환
+            회의 목록
           </button>
         </div>
       </header>

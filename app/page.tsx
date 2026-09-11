@@ -15,7 +15,8 @@ import { MeetingModeView } from '@/app/components/views/MeetingModeView'
 type View =
   | { name: 'login' }
   | { name: 'select'; email: string }
-  | { name: 'submit'; teamId: string }
+  | { name: 'contractor-meetings'; teamId: string }
+  | { name: 'submit'; teamId: string; meetingId: string }
   | { name: 'admin-list' }
   | { name: 'admin-detail'; meetingId: string }
   | { name: 'meeting-mode'; meetingId: string }
@@ -27,7 +28,7 @@ const DABS_VIEW_KEY = 'dabs_view'
 
 function saveView(v: View) {
   try {
-    // login / select는 저장 안 함 (인증 후 항상 재확인)
+    // login / select / contractor-meetings 는 저장 안 함 (인증 후 항상 재확인)
     if (v.name === 'submit' || v.name === 'admin-list' || v.name === 'admin-detail' || v.name === 'meeting-mode') {
       localStorage.setItem(DABS_VIEW_KEY, JSON.stringify(v))
     } else {
@@ -90,9 +91,7 @@ export default function RootPage() {
               .maybeSingle()
               .then(({ data: assigned }) => {
                 if (assigned?.team_id) {
-                  const v: View = { name: 'submit', teamId: assigned.team_id }
-                  setView(v)
-                  saveView(v)
+                  setView({ name: 'contractor-meetings', teamId: assigned.team_id })
                 }
               })
           } else {
@@ -116,8 +115,18 @@ export default function RootPage() {
     return (
       <SelectPanel
         email={view.email}
-        onSubmit={(teamId) => navigate({ name: 'submit', teamId })}
+        onSubmit={(teamId) => navigate({ name: 'contractor-meetings', teamId })}
         onAdmin={() => navigate({ name: 'admin-list' })}
+        onSignOut={() => navigate({ name: 'login' })}
+      />
+    )
+
+  if (view.name === 'contractor-meetings')
+    return (
+      <ContractorMeetingsPanel
+        teamId={view.teamId}
+        onEnter={(meetingId) => navigate({ name: 'submit', teamId: view.teamId, meetingId })}
+        onBack={() => navigate({ name: 'select', email: userEmail })}
         onSignOut={() => navigate({ name: 'login' })}
       />
     )
@@ -126,7 +135,8 @@ export default function RootPage() {
     return (
       <SubmitView
         teamId={view.teamId}
-        onBack={() => navigate({ name: 'select', email: userEmail })}
+        meetingId={view.meetingId}
+        onBack={() => navigate({ name: 'contractor-meetings', teamId: view.teamId })}
       />
     )
 
@@ -156,6 +166,114 @@ export default function RootPage() {
     )
 
   return null
+}
+
+// ── 협력업체 회의 목록 패널 ─────────────────────────────────
+interface OpenMeeting { id: string; title: string; date: string; status: string; submitted: boolean }
+
+function ContractorMeetingsPanel({
+  teamId, onEnter, onBack, onSignOut,
+}: {
+  teamId: string
+  onEnter: (meetingId: string) => void
+  onBack: () => void
+  onSignOut: () => void
+}) {
+  const supabase = useMemo(() => createClient(), [])
+  const [meetings,  setMeetings]  = useState<OpenMeeting[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [loggingOut, setLoggingOut] = useState(false)
+
+  useEffect(() => {
+    fetch(`/api/open-meetings?teamId=${teamId}`)
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setMeetings(data) })
+      .finally(() => setLoading(false))
+  }, [teamId])
+
+  async function handleSignOut() {
+    setLoggingOut(true)
+    await supabase.auth.signOut()
+    onSignOut()
+  }
+
+  function formatDate(dateStr: string) {
+    const d = new Date(dateStr + 'T00:00:00')
+    const days = ['일', '월', '화', '수', '목', '금', '토']
+    return `${d.getMonth() + 1}월 ${d.getDate()}일 (${days[d.getDay()]})`
+  }
+
+  function isToday(dateStr: string) {
+    return dateStr === new Date().toISOString().split('T')[0]
+  }
+
+  function isTomorrow(dateStr: string) {
+    const t = new Date(); t.setDate(t.getDate() + 1)
+    return dateStr === t.toISOString().split('T')[0]
+  }
+
+  return (
+    <AuthShell>
+      <div className="space-y-4">
+        <div>
+          <p className="text-sm font-semibold text-gray-900">회의 목록</p>
+          <p className="text-xs text-gray-500 mt-0.5">제출할 회의를 선택하세요</p>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-6">
+            <div className="w-6 h-6 border-2 border-gray-900 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : meetings.length === 0 ? (
+          <div className="text-center py-6 text-sm text-gray-500">
+            현재 진행 중인 회의가 없습니다.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {meetings.map(m => (
+              <button
+                key={m.id}
+                onClick={() => onEnter(m.id)}
+                className="w-full flex items-center justify-between px-4 py-3.5 rounded-xl border border-gray-200 bg-white hover:border-gray-400 hover:bg-gray-50 text-left transition-all"
+              >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-gray-900">{formatDate(m.date)}</span>
+                    {isToday(m.date) && (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">오늘</span>
+                    )}
+                    {isTomorrow(m.date) && (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">내일</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {m.submitted ? '✓ 제출 완료' : '미제출'}
+                  </p>
+                </div>
+                <ChevronIcon />
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="border-t border-gray-100 pt-3 flex items-center justify-between">
+          <button
+            onClick={onBack}
+            className="text-xs text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            ← 돌아가기
+          </button>
+          <button
+            onClick={handleSignOut}
+            disabled={loggingOut}
+            className="text-xs text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50"
+          >
+            {loggingOut ? '로그아웃 중...' : '로그아웃'}
+          </button>
+        </div>
+      </div>
+    </AuthShell>
+  )
 }
 
 // ── 업체 선택 / 역할 선택 패널 ───────────────────────────────

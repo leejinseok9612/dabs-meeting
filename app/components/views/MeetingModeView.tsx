@@ -1851,7 +1851,7 @@ ${bodyHtml}
               'absolute inset-0 overflow-y-auto transition-[right] duration-300',
               showNote ? 'right-72' : 'right-0',
             ].join(' ')}
-            style={{ fontSize: `${fontScale}%` }}
+            style={{ zoom: fontScale / 100 }}
           >
             {/* ① 고위험 현황 */}
             <section id="section-high_risk" className="px-8 pt-6 pb-8">

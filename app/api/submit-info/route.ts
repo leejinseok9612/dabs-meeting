@@ -19,7 +19,8 @@ function getTodayKST(): string {
 }
 
 export async function GET(req: NextRequest) {
-  const teamId = req.nextUrl.searchParams.get('teamId')
+  const teamId    = req.nextUrl.searchParams.get('teamId')
+  const meetingId = req.nextUrl.searchParams.get('meetingId')
   if (!teamId) {
     return NextResponse.json({ error: 'teamId required' }, { status: 400 })
   }
@@ -35,14 +36,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 })
   }
 
-  // 오늘 열린 회의 조회 (KST 기준)
-  const today = getTodayKST()
-  const { data: meeting } = await adminSupabase
+  // 특정 meetingId가 있으면 그 회의를, 없으면 오늘 열린 회의를 조회
+  let meetingQuery = adminSupabase
     .from('meetings')
     .select('id, title, date, status, map_file_url, map_file_name')
-    .eq('date', today)
-    .eq('status', 'open')
-    .maybeSingle()
+
+  if (meetingId) {
+    meetingQuery = meetingQuery.eq('id', meetingId)
+  } else {
+    const today = getTodayKST()
+    meetingQuery = meetingQuery.eq('date', today).eq('status', 'open')
+  }
+
+  const { data: meeting } = await meetingQuery.maybeSingle()
 
   // 지적도가 없으면 가장 최근 회의에서 자동으로 가져옴
   if (meeting && !meeting.map_file_url) {
