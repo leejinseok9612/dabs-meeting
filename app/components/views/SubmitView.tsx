@@ -443,6 +443,12 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
       errs.personnelTotal = '총 인원을 올바르게 입력해 주세요.'
     if (!workProcess.trim())
       errs.workProcess = '작업공정을 입력해 주세요.'
+    if (hasMap && myHighRiskCount > 0) {
+      const highRiskItemCount = workItems.filter(w => w.team_id === teamId && w.work_type === 'high_risk').length
+      if (myHighRiskCount > highRiskItemCount) {
+        errs.markers = `지적도 마커 ${myHighRiskCount}개에 고위험 작업항목이 ${highRiskItemCount}개만 등록되어 있습니다. 고위험 탭에서 마커 수만큼 작업항목을 추가해 주세요.`
+      }
+    }
     setErrors(errs); return Object.keys(errs).length === 0
   }
 
@@ -1195,6 +1201,7 @@ ${bodyHtml}
                     meeting={meeting} isClosed={isClosed}
                     hasMap={hasMap} myMarkerCount={myHighRiskCount}
                     myHighRiskCount={myHighRiskCount}
+                    myHighRiskWorkItemCount={workItems.filter(w => w.team_id === teamId && w.work_type === 'high_risk').length}
                     personnel={personnel} setPersonnel={setPersonnel}
                     workProcess={workProcess} setWorkProcess={setWorkProcess}
                     equipRows={equipRows} setEquipRows={setEquipRows}
@@ -1229,7 +1236,7 @@ ${bodyHtml}
 
 // ── 자료제출 탭 ───────────────────────────────────────────────
 function SubmitTab({
-  meeting, isClosed, hasMap, myMarkerCount, myHighRiskCount,
+  meeting, isClosed, hasMap, myMarkerCount, myHighRiskCount, myHighRiskWorkItemCount,
   personnel, setPersonnel, workProcess, setWorkProcess,
   equipRows, setEquipRows, file, setFile,
   dragOver, setDragOver, errors, step, progress, errorMsg, downloadUrl,
@@ -1237,7 +1244,7 @@ function SubmitTab({
   onLoadPrevious, onDrop, onFileChange, onSubmit, onGoToHighRisk,
 }: {
   meeting: Meeting | null; isClosed: boolean; hasMap: boolean; myMarkerCount: number
-  myHighRiskCount: number
+  myHighRiskCount: number; myHighRiskWorkItemCount: number
   personnel: Record<string, string>; setPersonnel: React.Dispatch<React.SetStateAction<{elderly:string;superElderly:string;foreign:string;female:string;diseased:string;total:string}>>
   workProcess: string; setWorkProcess: (v: string) => void
   equipRows: {type: string; count: string; isCustom: boolean}[]
@@ -1287,14 +1294,39 @@ function SubmitTab({
         <button type="button" onClick={onGoToHighRisk}
           className={[
             'w-full flex items-center justify-between px-4 py-2.5 rounded-lg border text-left transition-colors',
-            myHighRiskCount > 0 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200',
+            myHighRiskCount === 0
+              ? 'bg-amber-50 border-amber-200'
+              : myHighRiskCount > myHighRiskWorkItemCount
+                ? 'bg-red-50 border-red-300'
+                : 'bg-emerald-50 border-emerald-200',
           ].join(' ')}>
-          <p className={`text-sm font-medium ${myHighRiskCount > 0 ? 'text-red-800' : 'text-amber-800'}`}>
-            {myHighRiskCount > 0
-              ? `✓ 고위험 지적도 마커 ${myHighRiskCount}개`
-              : '⚠ 고위험 지적도 마커 없음'}
-          </p>
-          <span className={`text-xs ${myHighRiskCount > 0 ? 'text-red-400' : 'text-amber-500'}`}>
+          <div>
+            <p className={`text-sm font-medium ${
+              myHighRiskCount === 0
+                ? 'text-amber-800'
+                : myHighRiskCount > myHighRiskWorkItemCount
+                  ? 'text-red-800'
+                  : 'text-emerald-800'
+            }`}>
+              {myHighRiskCount === 0
+                ? '⚠ 고위험 지적도 마커 없음'
+                : myHighRiskCount > myHighRiskWorkItemCount
+                  ? `⚠ 마커 ${myHighRiskCount}개 / 작업항목 ${myHighRiskWorkItemCount}개 — 불일치`
+                  : `✓ 마커 ${myHighRiskCount}개 / 작업항목 ${myHighRiskWorkItemCount}개`}
+            </p>
+            {myHighRiskCount > myHighRiskWorkItemCount && (
+              <p className="text-xs text-red-500 mt-0.5">
+                작업항목 {myHighRiskCount - myHighRiskWorkItemCount}개를 더 추가해야 제출 가능합니다
+              </p>
+            )}
+          </div>
+          <span className={`text-xs shrink-0 ml-2 ${
+            myHighRiskCount === 0
+              ? 'text-amber-500'
+              : myHighRiskCount > myHighRiskWorkItemCount
+                ? 'text-red-400'
+                : 'text-emerald-400'
+          }`}>
             탭으로 이동 →
           </span>
         </button>

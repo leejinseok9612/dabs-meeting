@@ -332,7 +332,8 @@ export function AdminListView({ onEnterMeeting, onBack }: { onEnterMeeting: (id:
   if (pageLoading) return <PageLoader />
 
   const todayMeetings  = meetings.filter(m => m.date === TODAY)
-  const otherMeetings  = meetings.filter(m => m.date !== TODAY)
+  const futureMeetings = meetings.filter(m => m.date > TODAY)
+  const pastMeetings   = meetings.filter(m => m.date < TODAY)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -387,12 +388,30 @@ export function AdminListView({ onEnterMeeting, onBack }: { onEnterMeeting: (id:
           </section>
         )}
 
-        {/* ── 이전 회의 ───────────────────────────────────── */}
-        {otherMeetings.length > 0 && (
+        {/* ── 예정 회의 ───────────────────────────────────── */}
+        {futureMeetings.length > 0 && (
           <section>
-            <SectionLabel label="이전 회의" badge={`${otherMeetings.length}개`} />
+            <SectionLabel label="예정 회의" badge={`${futureMeetings.length}개`} />
             <div className="space-y-3">
-              {otherMeetings.map(m => (
+              {futureMeetings.map(m => (
+                <MeetingCard
+                  key={m.id}
+                  meeting={m}
+                  highlight={false}
+                  onToggle={() => toggleStatus(m)}
+                  onClick={() => onEnterMeeting(m.id)}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── 이전 회의 ───────────────────────────────────── */}
+        {pastMeetings.length > 0 && (
+          <section>
+            <SectionLabel label="이전 회의" badge={`${pastMeetings.length}개`} />
+            <div className="space-y-3">
+              {pastMeetings.map(m => (
                 <MeetingCard
                   key={m.id}
                   meeting={m}
