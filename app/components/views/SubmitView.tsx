@@ -443,9 +443,6 @@ export function SubmitView({ teamId, onBack }: { teamId: string; onBack: () => v
       errs.personnelTotal = '총 인원을 올바르게 입력해 주세요.'
     if (!workProcess.trim())
       errs.workProcess = '작업공정을 입력해 주세요.'
-    // 지적도가 있으면 고위험 마커 필수
-    if (hasMap && myHighRiskCount === 0)
-      errs.markers = '고위험 지적도에 장비/작업구역을 1개 이상 표시해 주세요.'
     setErrors(errs); return Object.keys(errs).length === 0
   }
 
@@ -1907,9 +1904,7 @@ function MaterialTab({
                         </label>
                         <input type="text" placeholder="예) 철근, 레미콘, 거푸집"
                           value={desc}
-                          onCompositionStart={() => { matComposingRef.current = true }}
-                          onCompositionEnd={e => { matComposingRef.current = false; setDesc((e.target as HTMLInputElement).value) }}
-                          onChange={e => { if (!matComposingRef.current) setDesc(e.target.value) }}
+                          onChange={e => setDesc(e.target.value)}
                           className={inputCls} />
                       </div>
 
@@ -1935,9 +1930,7 @@ function MaterialTab({
                         <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-widest">하역 장소</label>
                         <input type="text" placeholder="예) A동 앞 적치장"
                           value={unloadingLocation}
-                          onCompositionStart={() => { matComposingRef.current = true }}
-                          onCompositionEnd={e => { matComposingRef.current = false; setUnloadingLocation((e.target as HTMLInputElement).value) }}
-                          onChange={e => { if (!matComposingRef.current) setUnloadingLocation(e.target.value) }}
+                          onChange={e => setUnloadingLocation(e.target.value)}
                           className={inputCls} />
                       </div>
 
@@ -1946,9 +1939,7 @@ function MaterialTab({
                         <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-widest">담당자 (연락처)</label>
                         <input type="text" placeholder="예) 홍길동 010-1234-5678"
                           value={contactPerson}
-                          onCompositionStart={() => { matComposingRef.current = true }}
-                          onCompositionEnd={e => { matComposingRef.current = false; setContactPerson((e.target as HTMLInputElement).value) }}
-                          onChange={e => { if (!matComposingRef.current) setContactPerson(e.target.value) }}
+                          onChange={e => setContactPerson(e.target.value)}
                           className={inputCls} />
                       </div>
 
