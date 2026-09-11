@@ -197,6 +197,7 @@ function MeetingMapViewer({
   // ── 마커 편집 모드 ──────────────────────────────────────
   const [editMode,      setEditMode]      = useState(false)
   const [draggingMkId,  setDraggingMkId] = useState<string | null>(null)
+  const [mapOpacity,    setMapOpacity]    = useState(70) // 지적도 투명도 (20~100%)
   const draggingMkIdRef = useRef<string | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -386,6 +387,23 @@ function MeetingMapViewer({
         {editMode && (
           <span className={`text-[9px] ${dk ? 'text-orange-300/70' : 'text-orange-600/70'}`}>드래그: 이동 · ✕: 삭제</span>
         )}
+        {/* 지적도 투명도 조절 */}
+        <div className="flex items-center gap-1 ml-1">
+          <span className={`text-[9px] ${dk ? 'text-neutral-500' : 'text-gray-400'}`}>지도</span>
+          <button
+            onPointerDown={e => e.stopPropagation()}
+            onClick={() => setMapOpacity(o => Math.max(20, o - 10))}
+            disabled={mapOpacity <= 20}
+            className={`w-5 h-5 rounded text-sm font-bold flex items-center justify-center transition-colors disabled:opacity-30 ${dk ? 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+          >−</button>
+          <span className={`text-[10px] w-7 text-center tabular-nums ${dk ? 'text-neutral-400' : 'text-gray-500'}`}>{mapOpacity}%</span>
+          <button
+            onPointerDown={e => e.stopPropagation()}
+            onClick={() => setMapOpacity(o => Math.min(100, o + 10))}
+            disabled={mapOpacity >= 100}
+            className={`w-5 h-5 rounded text-sm font-bold flex items-center justify-center transition-colors disabled:opacity-30 ${dk ? 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+          >+</button>
+        </div>
         {teamLegend.length > 0 && (
           <div className="flex gap-1 ml-auto flex-wrap">
             <button
@@ -571,7 +589,7 @@ function MeetingMapViewer({
             <div className="relative" style={{ width: naturalSize.w, height: naturalSize.h }}>
               <img
                 src={mapUrl} alt="지적도"
-                style={{ width: naturalSize.w, height: naturalSize.h, display: 'block', pointerEvents: 'none' }}
+                style={{ width: naturalSize.w, height: naturalSize.h, display: 'block', pointerEvents: 'none', opacity: mapOpacity / 100, transition: 'opacity 0.15s ease' }}
                 draggable={false}
               />
               {visibleMarkers.map(marker => {
@@ -625,24 +643,24 @@ function MeetingMapViewer({
                     )}
                     <div className="flex flex-col items-center">
                       <div
-                        className="w-9 h-9 rounded-full flex items-center justify-center text-xl border-2 border-white"
+                        className="w-12 h-12 rounded-full flex items-center justify-center text-2xl border-[3px] border-white"
                         style={{
                           background: color,
                           boxShadow: editMode
-                            ? `0 0 0 2px rgba(251,146,60,0.7), 0 4px 12px rgba(0,0,0,0.3)`
+                            ? `0 0 0 2px rgba(251,146,60,0.7), 0 4px 12px rgba(0,0,0,0.4)`
                             : isClicked
-                              ? `0 0 16px 4px rgba(59,130,246,0.6), 0 4px 12px rgba(0,0,0,0.3)`
+                              ? `0 0 20px 6px rgba(59,130,246,0.7), 0 4px 12px rgba(0,0,0,0.4)`
                               : isHighlighted
-                                ? `0 0 16px 4px rgba(250,204,21,0.6), 0 4px 12px rgba(0,0,0,0.3)`
-                                : '0 4px 12px rgba(0,0,0,0.2)',
+                                ? `0 0 20px 6px rgba(250,204,21,0.7), 0 4px 12px rgba(0,0,0,0.4)`
+                                : '0 4px 14px rgba(0,0,0,0.35)',
                         }}
                         title={`${marker.teams?.name ?? ''}${marker.label ? ' · ' + marker.label : ''}`}
                       >
                         {MARKER_ICONS[marker.marker_type] ?? '📍'}
                       </div>
                       {marker.label && (
-                        <span className="text-[10px] font-semibold text-white px-1 py-0.5 rounded mt-0.5 max-w-[80px] truncate"
-                          style={{ background: 'rgba(0,0,0,0.6)' }}>
+                        <span className="text-xs font-bold text-white px-1.5 py-0.5 rounded mt-1 max-w-[110px] truncate"
+                          style={{ background: 'rgba(0,0,0,0.75)', fontSize: '12px', letterSpacing: '-0.2px' }}>
                           {marker.label}
                         </span>
                       )}
@@ -696,10 +714,10 @@ function HighRiskSlide({ meetingId, mapUrl, workItems, allTeamIds }: {
     : highRisk
 
   return (
-    <div className="flex gap-4 items-start">
-      {/* 지적도 — sticky로 고정, 카드 스크롤 시에도 계속 보임 */}
+    <div className="w-full">
+      {/* 지적도 — 풀 너비 */}
       {mapUrl ? (
-        <div className="flex-1 min-w-0 sticky top-4" style={{ height: 'calc(100vh - 160px)' }}>
+        <div className="w-full" style={{ height: 'calc(100vh - 200px)' }}>
           <MeetingMapViewer
             meetingId={meetingId}
             mapUrl={mapUrl}
@@ -712,71 +730,11 @@ function HighRiskSlide({ meetingId, mapUrl, workItems, allTeamIds }: {
           />
         </div>
       ) : (
-        <div className={`flex-1 sticky top-4 rounded-xl flex items-center justify-center border ${dk ? 'bg-neutral-800/50 border-white/10' : 'bg-gray-100 border-gray-200'}`}
-          style={{ height: 'calc(100vh - 160px)' }}>
+        <div className={`w-full rounded-xl flex items-center justify-center border ${dk ? 'bg-neutral-800/50 border-white/10' : 'bg-gray-100 border-gray-200'}`}
+          style={{ height: 'calc(100vh - 200px)' }}>
           <p className={dk ? 'text-white/30 text-sm' : 'text-gray-400 text-sm'}>지도 없음</p>
         </div>
       )}
-
-      {/* 고위험작업 목록 */}
-      <div className="w-[400px] shrink-0 space-y-2 pr-1">
-        {/* 필터 활성 시 안내 배지 */}
-        {filterTeamIds.size > 0 && (
-          <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${dk ? 'bg-neutral-800 text-white/60' : 'bg-slate-100 text-slate-500'}`}>
-            <span>{filterTeamIds.size}개 업체 필터 중 · {visibleHighRisk.length}건 표시</span>
-            <button onClick={handleFilterClear} className={`text-[10px] underline ${dk ? 'text-white/40 hover:text-white/70' : 'text-slate-400 hover:text-slate-600'}`}>전체 보기</button>
-          </div>
-        )}
-        {visibleHighRisk.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <p className="text-4xl mb-3">📭</p>
-            <p className={`text-sm ${dk ? 'text-white/40' : 'text-gray-400'}`}>
-              {filterTeamIds.size > 0 ? '선택한 업체의 고위험작업이 없습니다.' : '등록된 고위험작업이 없습니다.'}
-            </p>
-          </div>
-        ) : (
-          visibleHighRisk.map(item => {
-            const isHovered = hoveredTeamId === item.team_id
-            return (
-              <div
-                key={item.id}
-                className={`rounded-xl p-3.5 border cursor-default transition-all duration-150 ${dk ? 'bg-red-950/50 border-red-800/30' : 'bg-red-50 border-red-200'}`}
-                style={{
-                  opacity: hoveredTeamId != null && !isHovered ? 0.4 : 1,
-                  boxShadow: isHovered
-                    ? dk ? '0 0 0 2px rgba(250,204,21,0.6), 0 4px 16px rgba(250,204,21,0.2)' : '0 0 0 2px #fbbf24, 0 4px 16px rgba(251,191,36,0.2)'
-                    : undefined,
-                }}
-                onMouseEnter={() => setHoveredTeamId(item.team_id)}
-                onMouseLeave={() => setHoveredTeamId(null)}
-              >
-                {/* ── 한 줄 헤더: 작업명 + 업체·위치·인원 ── */}
-                <div className="flex items-baseline justify-between gap-2 mb-1 min-w-0">
-                  <h4 className={`text-sm font-semibold leading-snug min-w-0 truncate ${dk ? 'text-white' : 'text-gray-900'}`}>{item.work_name}</h4>
-                  <div className={`flex items-center gap-1 text-xs shrink-0 flex-wrap justify-end ml-1 ${dk ? 'text-white/40' : 'text-gray-400'}`}>
-                    {item.teams?.name && <span className={`font-bold text-xs ${dk ? 'text-red-300/80' : 'text-red-600'}`}>{item.teams.name}</span>}
-                    {item.location && <><span className={dk ? 'text-white/20' : 'text-gray-300'}>·</span><span>📍{item.location}</span></>}
-                    {item.worker_count > 0 && <><span className={dk ? 'text-white/20' : 'text-gray-300'}>·</span><span>👷{item.worker_count}명</span></>}
-                  </div>
-                </div>
-                {item.description && <p className={`text-xs mb-1 ${dk ? 'text-white/45' : 'text-gray-500'}`}>{item.description}</p>}
-                {item.risk_factors && (
-                  <div className={`flex gap-1.5 rounded-lg px-2.5 py-1.5 mb-1 border ${dk ? 'bg-amber-950/50 border-amber-800/30' : 'bg-amber-50 border-amber-200'}`}>
-                    <span className="text-amber-400 text-xs shrink-0">⚠</span>
-                    <p className={`text-xs ${dk ? 'text-amber-200/80' : 'text-amber-800'}`}>{item.risk_factors}</p>
-                  </div>
-                )}
-                {item.improvement_measures && (
-                  <div className={`flex gap-1.5 rounded-lg px-2.5 py-1.5 border ${dk ? 'bg-emerald-950/50 border-emerald-800/30' : 'bg-emerald-50 border-emerald-200'}`}>
-                    <span className="text-emerald-400 text-xs shrink-0">✅</span>
-                    <p className={`text-xs ${dk ? 'text-emerald-200/80' : 'text-emerald-800'}`}>{item.improvement_measures}</p>
-                  </div>
-                )}
-              </div>
-            )
-          })
-        )}
-      </div>
     </div>
   )
 }
@@ -1504,8 +1462,8 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
       // transform: 마커 원형 중앙이 (x_pct, y_pct) 좌표에 정확히 위치하도록
       // 원형(26px) 중앙 → -50% X, -50% Y → 라벨은 원형 아래에 위치
       return `<div style="position:absolute;left:${m.x_pct}%;top:${m.y_pct}%;transform:translate(-50%,-50%);z-index:10;pointer-events:none;display:flex;flex-direction:column;align-items:center;">
-        <div style="width:26px;height:26px;border-radius:50%;background:${color};border:2.5px solid white;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.45);flex-shrink:0;">${icon}</div>
-        ${m.label ? `<div style="font-size:7.5px;background:rgba(0,0,0,0.72);color:white;padding:1px 4px;border-radius:2px;margin-top:2px;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;line-height:1.4;">${esc(m.label)}</div>` : ''}
+        <div style="width:36px;height:36px;border-radius:50%;background:${color};border:3px solid white;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 2px 8px rgba(0,0,0,0.55);flex-shrink:0;">${icon}</div>
+        ${m.label ? `<div style="font-size:11px;font-weight:700;background:rgba(0,0,0,0.78);color:white;padding:2px 6px;border-radius:3px;margin-top:3px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;line-height:1.4;">${esc(m.label)}</div>` : ''}
       </div>`
     }).join('')
 
@@ -1618,47 +1576,47 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 @page{size:A4 portrait;margin:14mm 16mm}
-body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,sans-serif;font-size:11px;color:#111;background:#fff}
+body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,sans-serif;font-size:13px;color:#111;background:#fff}
 /* ── 공통 ── */
 .page-break{page-break-before:always;break-before:page;padding-top:0}
-.pg-hd{padding:0 0 10px;border-bottom:3px solid #111;margin-bottom:14px}
-.pg-title{font-size:18px;font-weight:800;letter-spacing:-.5px}
-.pg-meta{font-size:9px;color:#6b7280;margin-top:4px}
-.sec-title{font-size:13px;font-weight:700;margin-bottom:11px;padding-bottom:6px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;gap:7px}
-.badge{display:inline-block;padding:2px 7px;border-radius:9px;font-size:9px;font-weight:700}
+.pg-hd{padding:0 0 10px;border-bottom:3px solid #111;margin-bottom:16px}
+.pg-title{font-size:20px;font-weight:800;letter-spacing:-.5px}
+.pg-meta{font-size:11px;color:#6b7280;margin-top:4px}
+.sec-title{font-size:16px;font-weight:700;margin-bottom:13px;padding-bottom:7px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;gap:8px}
+.badge{display:inline-block;padding:3px 9px;border-radius:9px;font-size:11px;font-weight:700}
 .br{background:#fef2f2;color:#dc2626}.bb{background:#eff6ff;color:#2563eb}.ba{background:#fffbeb;color:#b45309}
-.empty{color:#9ca3af;padding:10px 0;font-size:11px}
+.empty{color:#9ca3af;padding:12px 0;font-size:13px}
 /* ── 지적도 ── */
 .map-wrap{position:relative;display:block;width:100%;line-height:0}
 .map-wrap img{width:100%;height:auto;display:block}
-/* ── 작업 카드 (3컬럼 그리드) ── */
-.co-grp{margin-bottom:18px}
-.co-title{font-size:12px;font-weight:800;color:#111;background:#f3f4f6;border-radius:5px;padding:5px 10px;margin-bottom:6px;display:flex;align-items:center;gap:6px;letter-spacing:-.3px;border-left:3px solid #9ca3af}
+/* ── 작업 카드 (2컬럼 그리드) ── */
+.co-grp{margin-bottom:20px}
+.co-title{font-size:14px;font-weight:800;color:#111;background:#f3f4f6;border-radius:6px;padding:7px 12px;margin-bottom:8px;display:flex;align-items:center;gap:7px;letter-spacing:-.3px;border-left:4px solid #9ca3af}
 .co-title.red-co{border-left-color:#ef4444;color:#991b1b}
 .co-title.blue-co{border-left-color:#3b82f6;color:#1e40af}
-.gcnt{font-size:10px;color:#9ca3af;font-weight:400;margin-left:4px}
-/* 3컬럼 그리드 */
-.co-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-.card{border-radius:5px;overflow:hidden;break-inside:avoid;page-break-inside:avoid;border:1px solid #e5e7eb;display:flex;flex-direction:column}
-.card-top{padding:6px 9px;flex:1}
+.gcnt{font-size:12px;color:#9ca3af;font-weight:400;margin-left:4px}
+/* 2컬럼 그리드 */
+.co-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.card{border-radius:6px;overflow:hidden;break-inside:avoid;page-break-inside:avoid;border:1px solid #e5e7eb;display:flex;flex-direction:column}
+.card-top{padding:9px 12px;flex:1}
 .card.red .card-top{background:#fef2f2;border-bottom:1px solid #fecaca}
 .card.blue .card-top{background:#eff6ff;border-bottom:1px solid #bfdbfe}
-.ctitle{font-size:10px;font-weight:700;line-height:1.35;margin-bottom:2px}
-.cmeta{font-size:8px;color:#6b7280;line-height:1.3}
-.cdesc{font-size:8px;color:#6b7280;margin-top:2px;line-height:1.3}
-/* 위험요인·개선대책: 레이블+내용 한 줄 */
-.risk{padding:3px 9px;background:#fffbeb;border-top:1px solid #fde68a;font-size:9px;color:#78350f;line-height:1.4}
-.impr{padding:3px 9px;background:#f0fdf4;border-top:1px solid #bbf7d0;font-size:9px;color:#14532d;line-height:1.4}
-.lbl{display:inline;font-size:8px;font-weight:700;margin-right:4px}
+.ctitle{font-size:13px;font-weight:700;line-height:1.4;margin-bottom:3px}
+.cmeta{font-size:11px;color:#6b7280;line-height:1.4}
+.cdesc{font-size:11px;color:#6b7280;margin-top:3px;line-height:1.4}
+/* 위험요인·개선대책 */
+.risk{padding:5px 12px;background:#fffbeb;border-top:1px solid #fde68a;font-size:12px;color:#78350f;line-height:1.5}
+.impr{padding:5px 12px;background:#f0fdf4;border-top:1px solid #bbf7d0;font-size:12px;color:#14532d;line-height:1.5}
+.lbl{display:inline;font-size:11px;font-weight:700;margin-right:5px}
 .risk .lbl{color:#b45309}.impr .lbl{color:#16a34a}
 /* ── 자재 ── */
 table{width:100%;border-collapse:collapse}
-th{font-size:9px;font-weight:700;color:#6b7280;text-align:left;padding:5px 8px;border-bottom:2px solid #e5e7eb;background:#f9fafb}
-td{font-size:10px;padding:5px 8px;border-bottom:1px solid #f3f4f6;vertical-align:top}
-.gate-hd{font-weight:700;color:#b45309;background:#fffbeb;border-top:1px solid #fde68a;border-bottom:1px solid #fde68a;font-size:9px;letter-spacing:.5px}
+th{font-size:11px;font-weight:700;color:#6b7280;text-align:left;padding:7px 10px;border-bottom:2px solid #e5e7eb;background:#f9fafb}
+td{font-size:12px;padding:7px 10px;border-bottom:1px solid #f3f4f6;vertical-align:top}
+.gate-hd{font-weight:700;color:#b45309;background:#fffbeb;border-top:1px solid #fde68a;border-bottom:1px solid #fde68a;font-size:11px;letter-spacing:.5px}
 .mono{font-variant-numeric:tabular-nums;font-weight:600}
 /* ── 메모 ── */
-.note-pre{white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:11px;line-height:1.8;color:#374151;padding:14px;background:#f9fafb;border-radius:7px;border:1px solid #e5e7eb;max-height:220mm;overflow:hidden}
+.note-pre{white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:13px;line-height:1.9;color:#374151;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;max-height:220mm;overflow:hidden}
 @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body>
 
