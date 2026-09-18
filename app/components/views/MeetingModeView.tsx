@@ -1583,48 +1583,48 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
 <title>DABs 회의자료_${esc(meeting.date)}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-@page{size:A4 portrait;margin:14mm 16mm}
-body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,sans-serif;font-size:13px;color:#111;background:#fff}
+@page{size:A4 landscape;margin:12mm 15mm}
+body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,sans-serif;font-size:14px;color:#111;background:#fff}
 /* ── 공통 ── */
 .page-break{page-break-before:always;break-before:page;padding-top:0}
-.pg-hd{padding:0 0 10px;border-bottom:3px solid #111;margin-bottom:16px}
-.pg-title{font-size:20px;font-weight:800;letter-spacing:-.5px}
-.pg-meta{font-size:11px;color:#6b7280;margin-top:4px}
-.sec-title{font-size:16px;font-weight:700;margin-bottom:13px;padding-bottom:7px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;gap:8px}
-.badge{display:inline-block;padding:3px 9px;border-radius:9px;font-size:11px;font-weight:700}
+.pg-hd{padding:0 0 10px;border-bottom:3px solid #111;margin-bottom:16px;display:flex;align-items:baseline;justify-content:space-between}
+.pg-title{font-size:22px;font-weight:800;letter-spacing:-.5px}
+.pg-meta{font-size:12px;color:#6b7280;margin-top:0}
+.sec-title{font-size:17px;font-weight:700;margin-bottom:13px;padding-bottom:8px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;gap:8px}
+.badge{display:inline-block;padding:3px 10px;border-radius:9px;font-size:12px;font-weight:700}
 .br{background:#fef2f2;color:#dc2626}.bb{background:#eff6ff;color:#2563eb}.ba{background:#fffbeb;color:#b45309}
-.empty{color:#9ca3af;padding:12px 0;font-size:13px}
+.empty{color:#9ca3af;padding:12px 0;font-size:14px}
 /* ── 지적도 ── */
 .map-wrap{position:relative;display:block;width:100%;line-height:0}
 .map-wrap img{width:100%;height:auto;display:block}
-/* ── 작업 카드 (2컬럼 그리드) ── */
+/* ── 작업 카드 (3컬럼 그리드 — 가로모드) ── */
 .co-grp{margin-bottom:20px}
-.co-title{font-size:14px;font-weight:800;color:#111;background:#f3f4f6;border-radius:6px;padding:7px 12px;margin-bottom:8px;display:flex;align-items:center;gap:7px;letter-spacing:-.3px;border-left:4px solid #9ca3af}
+.co-title{font-size:15px;font-weight:800;color:#111;background:#f3f4f6;border-radius:6px;padding:8px 14px;margin-bottom:9px;display:flex;align-items:center;gap:7px;letter-spacing:-.3px;border-left:4px solid #9ca3af}
 .co-title.red-co{border-left-color:#ef4444;color:#991b1b}
 .co-title.blue-co{border-left-color:#3b82f6;color:#1e40af}
 .gcnt{font-size:12px;color:#9ca3af;font-weight:400;margin-left:4px}
-/* 2컬럼 그리드 */
-.co-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+/* 3컬럼 그리드 */
+.co-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
 .card{border-radius:6px;overflow:hidden;break-inside:avoid;page-break-inside:avoid;border:1px solid #e5e7eb;display:flex;flex-direction:column}
-.card-top{padding:9px 12px;flex:1}
+.card-top{padding:10px 13px;flex:1}
 .card.red .card-top{background:#fef2f2;border-bottom:1px solid #fecaca}
 .card.blue .card-top{background:#eff6ff;border-bottom:1px solid #bfdbfe}
-.ctitle{font-size:13px;font-weight:700;line-height:1.4;margin-bottom:3px}
-.cmeta{font-size:11px;color:#6b7280;line-height:1.4}
-.cdesc{font-size:11px;color:#6b7280;margin-top:3px;line-height:1.4}
+.ctitle{font-size:14px;font-weight:700;line-height:1.4;margin-bottom:4px}
+.cmeta{font-size:12px;color:#6b7280;line-height:1.5}
+.cdesc{font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5}
 /* 위험요인·개선대책 */
-.risk{padding:5px 12px;background:#fffbeb;border-top:1px solid #fde68a;font-size:12px;color:#78350f;line-height:1.5}
-.impr{padding:5px 12px;background:#f0fdf4;border-top:1px solid #bbf7d0;font-size:12px;color:#14532d;line-height:1.5}
-.lbl{display:inline;font-size:11px;font-weight:700;margin-right:5px}
+.risk{padding:6px 13px;background:#fffbeb;border-top:1px solid #fde68a;font-size:13px;color:#78350f;line-height:1.6}
+.impr{padding:6px 13px;background:#f0fdf4;border-top:1px solid #bbf7d0;font-size:13px;color:#14532d;line-height:1.6}
+.lbl{display:inline;font-size:12px;font-weight:700;margin-right:5px}
 .risk .lbl{color:#b45309}.impr .lbl{color:#16a34a}
 /* ── 자재 ── */
 table{width:100%;border-collapse:collapse}
-th{font-size:11px;font-weight:700;color:#6b7280;text-align:left;padding:7px 10px;border-bottom:2px solid #e5e7eb;background:#f9fafb}
-td{font-size:12px;padding:7px 10px;border-bottom:1px solid #f3f4f6;vertical-align:top}
-.gate-hd{font-weight:700;color:#b45309;background:#fffbeb;border-top:1px solid #fde68a;border-bottom:1px solid #fde68a;font-size:11px;letter-spacing:.5px}
+th{font-size:12px;font-weight:700;color:#6b7280;text-align:left;padding:8px 11px;border-bottom:2px solid #e5e7eb;background:#f9fafb}
+td{font-size:13px;padding:8px 11px;border-bottom:1px solid #f3f4f6;vertical-align:top}
+.gate-hd{font-weight:700;color:#b45309;background:#fffbeb;border-top:1px solid #fde68a;border-bottom:1px solid #fde68a;font-size:12px;letter-spacing:.5px}
 .mono{font-variant-numeric:tabular-nums;font-weight:600}
 /* ── 메모 ── */
-.note-pre{white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:13px;line-height:1.9;color:#374151;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;max-height:220mm;overflow:hidden}
+.note-pre{white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:14px;line-height:1.9;color:#374151;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;max-height:160mm;overflow:hidden}
 @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body>
 
@@ -1654,7 +1654,7 @@ ${bodyHtml}
       html2canvas(document.body,{
         scale:2,useCORS:true,logging:false,
         backgroundColor:'#ffffff',
-        windowWidth:1100
+        windowWidth:1400
       }).then(function(canvas){
         var a=document.createElement('a');
         a.download='${fname}';
@@ -1670,7 +1670,7 @@ ${bodyHtml}
 </body></html>`
 
     // ── 새 창에 출력 ─────────────────────────────────────────
-    const pw = window.open('', '_blank', 'width=1100,height=850')
+    const pw = window.open('', '_blank', 'width=1450,height=900')
     if (!pw) {
       alert('팝업이 차단되어 있습니다.\n브라우저 주소창에서 팝업을 허용한 후 다시 시도해주세요.')
       setPdfLoading(false)
