@@ -236,9 +236,17 @@ function MeetingMapViewer({
     setOffset({ x: 0, y: 0 })
   }, [naturalSize])
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.stopPropagation()
-    zoom(e.deltaY < 0 ? 0.08 : -0.08)
+  // non-passive 휠 이벤트 → 페이지 스크롤 방지 + 지도 줌
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const handler = (e: WheelEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      zoom(e.deltaY < 0 ? 0.08 : -0.08)
+    }
+    el.addEventListener('wheel', handler, { passive: false })
+    return () => el.removeEventListener('wheel', handler)
   }, [zoom])
 
   // 포인터 위치 → 이미지 내 x_pct / y_pct 변환
@@ -553,7 +561,6 @@ function MeetingMapViewer({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
-        onWheel={handleWheel}
       >
         {/* 줌 컨트롤 */}
         <div className="absolute top-3 right-3 z-20 flex flex-col gap-1">
@@ -603,8 +610,9 @@ function MeetingMapViewer({
                     style={{
                       left: `${marker.x_pct}%`,
                       top: `${marker.y_pct}%`,
-                      transform: `translate(-50%, -50%) scale(${isHighlighted || isClicked || isBeingDragged ? 1.4 : 1})`,
-                      transition: isBeingDragged ? 'none' : 'opacity 0.15s ease, transform 0.15s ease',
+                      // 역스케일: 부모 scale(s)를 상쇄해 화면 크기 고정 + 강조 시 1.4배
+                      transform: `translate(-50%, -50%) scale(${(isHighlighted || isClicked || isBeingDragged ? 1.4 : 1) / scale})`,
+                      transition: isBeingDragged ? 'none' : 'opacity 0.15s ease',
                       opacity: isDimmed ? 0.15 : 1,
                       zIndex: isHighlighted || isClicked || isBeingDragged ? 30 : 10,
                       cursor: editMode ? 'grab' : 'pointer',
@@ -643,7 +651,7 @@ function MeetingMapViewer({
                     )}
                     <div className="flex flex-col items-center">
                       <div
-                        className="w-12 h-12 rounded-full flex items-center justify-center text-2xl border-[3px] border-white"
+                        className="w-14 h-14 rounded-full flex items-center justify-center text-3xl border-[3px] border-white"
                         style={{
                           background: color,
                           boxShadow: editMode
