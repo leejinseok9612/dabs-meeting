@@ -167,12 +167,13 @@ export function AdminListView({ onEnterMeeting, onBack }: { onEnterMeeting: (id:
     // PIN 인증이 완료된 상태이므로 이메일 로그인 없이도 데이터 로드
     // (RLS 정책이 public 읽기를 허용함)
 
-    // 팀 목록 로드
+    // 팀 목록 로드 (전체 등록 업체 수를 분모로 사용)
     const { data: tms } = await supabase
       .from('teams')
       .select('id,name')
       .order('name')
     setTeams(tms ?? [])
+    const teamsCount = tms?.length ?? 0   // ← 전체 업체 수
 
     const { data: mtgs } = await supabase
       .from('meetings')
@@ -188,9 +189,8 @@ export function AdminListView({ onEnterMeeting, onBack }: { onEnterMeeting: (id:
           .select('status')
           .eq('meeting_id', m.id)
 
-        const total     = subs?.length ?? 0
         const submitted = subs?.filter(s => s.status === 'submitted').length ?? 0
-        return { ...m, total_count: total, submitted_count: submitted }
+        return { ...m, total_count: teamsCount, submitted_count: submitted }
       })
     )
 
