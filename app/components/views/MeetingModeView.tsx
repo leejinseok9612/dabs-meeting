@@ -1594,13 +1594,12 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,
 .badge{display:inline-block;padding:3px 10px;border-radius:9px;font-size:12px;font-weight:700}
 .br{background:#fef2f2;color:#dc2626}.bb{background:#eff6ff;color:#2563eb}.ba{background:#fffbeb;color:#b45309}
 .empty{color:#9ca3af;padding:12px 0;font-size:14px}
-/* ── 지적도 — 가로 A4 가용 높이(~148mm) 초과 시 클리핑 ── */
-/* 마커가 % 좌표로 map-wrap 기준이므로 img는 항상 100% width 유지 */
-.map-wrap{position:relative;display:block;width:100%;line-height:0;max-height:148mm;overflow:hidden}
+/* ── 지적도 — zoom으로 축소하므로 overflow 제한 없음 ── */
+.map-wrap{position:relative;display:block;width:100%;line-height:0;transform-origin:top left}
 .map-wrap img{width:100%;height:auto;display:block}
 /* ── 작업 카드 (3컬럼 그리드 — 가로모드) ── */
-/* 업체별 블록 전체가 페이지 안에서 끊기지 않도록 */
-.co-grp{margin-bottom:20px;break-inside:avoid;page-break-inside:avoid}
+/* 업체 그룹은 항목 수 많아도 자연스럽게 흐르도록 break 없음 */
+.co-grp{margin-bottom:20px}
 .co-title{font-size:15px;font-weight:800;color:#111;background:#f3f4f6;border-radius:6px;padding:8px 14px;margin-bottom:9px;display:flex;align-items:center;gap:7px;letter-spacing:-.3px;border-left:4px solid #9ca3af}
 .co-title.red-co{border-left-color:#ef4444;color:#991b1b}
 .co-title.blue-co{border-left-color:#3b82f6;color:#1e40af}
@@ -1638,9 +1637,29 @@ td{font-size:13px;padding:8px 11px;border-bottom:1px solid #f3f4f6;vertical-alig
 
 ${bodyHtml}
 
+<script>
+// 지적도 map-wrap을 페이지 높이에 맞게 zoom 축소 (마커 좌표 유지)
+(function(){
+  var wrap = document.querySelector('.map-wrap');
+  if(!wrap) return;
+  var img = wrap.querySelector('img');
+  if(!img) return;
+  function fitMap(){
+    // A4 landscape 가용 높이 = 186mm, 헤더+섹션타이틀 약 32mm 제외 → 154mm
+    // 1mm ≈ 3.7795px (96dpi 기준)
+    var maxH = 154 * 3.7795;
+    var actualH = wrap.offsetHeight;
+    if(actualH > maxH && actualH > 0){
+      var scale = maxH / actualH;
+      wrap.style.zoom = scale;
+    }
+  }
+  if(img.complete){ fitMap(); } else { img.addEventListener('load', fitMap); }
+})();
+</script>
 <script>${
   filter.format === 'pdf'
-    ? `window.addEventListener('load',function(){setTimeout(function(){window.print()},500)})`
+    ? `window.addEventListener('load',function(){setTimeout(function(){window.print()},800)})`
     : (() => {
         const mime    = filter.format === 'jpg' ? 'image/jpeg' : 'image/png'
         const ext     = filter.format
