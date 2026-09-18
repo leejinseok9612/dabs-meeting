@@ -443,10 +443,16 @@ export function SubmitView({ teamId, meetingId, onBack }: { teamId: string; meet
       errs.personnelTotal = '총 인원을 올바르게 입력해 주세요.'
     if (!workProcess.trim())
       errs.workProcess = '작업공정을 입력해 주세요.'
-    if (hasMap && myHighRiskCount > 0) {
+    if (hasMap) {
       const highRiskItemCount = workItems.filter(w => w.team_id === teamId && w.work_type === 'high_risk').length
-      if (myHighRiskCount > highRiskItemCount) {
-        errs.markers = `지적도 마커 ${myHighRiskCount}개에 고위험 작업항목이 ${highRiskItemCount}개만 등록되어 있습니다. 고위험 탭에서 마커 수만큼 작업항목을 추가해 주세요.`
+      if (myHighRiskCount !== highRiskItemCount) {
+        // 마커 > 작업항목
+        if (myHighRiskCount > highRiskItemCount) {
+          errs.markers = `지적도 마커 ${myHighRiskCount}개에 고위험 작업항목이 ${highRiskItemCount}개만 등록되어 있습니다. 고위험 탭에서 마커 수만큼 작업항목을 추가해 주세요.`
+        // 작업항목 > 마커
+        } else {
+          errs.markers = `고위험 작업항목이 ${highRiskItemCount}개인데 지적도 마커가 ${myHighRiskCount}개입니다. 마커를 추가하거나 작업항목을 삭제해 수량을 맞춰 주세요.`
+        }
       }
     }
     setErrors(errs); return Object.keys(errs).length === 0
@@ -1289,46 +1295,39 @@ function SubmitTab({
     <form onSubmit={onSubmit} className="space-y-5">
 
       {/* 고위험 지적도 마커 상태 */}
-      {hasMap && (
-        <button type="button" onClick={onGoToHighRisk}
-          className={[
-            'w-full flex items-center justify-between px-4 py-2.5 rounded-lg border text-left transition-colors',
-            myHighRiskCount === 0
-              ? 'bg-amber-50 border-amber-200'
-              : myHighRiskCount > myHighRiskWorkItemCount
-                ? 'bg-red-50 border-red-300'
-                : 'bg-emerald-50 border-emerald-200',
-          ].join(' ')}>
-          <div>
-            <p className={`text-sm font-medium ${
-              myHighRiskCount === 0
-                ? 'text-amber-800'
-                : myHighRiskCount > myHighRiskWorkItemCount
-                  ? 'text-red-800'
-                  : 'text-emerald-800'
-            }`}>
-              {myHighRiskCount === 0
-                ? '⚠ 고위험 지적도 마커 없음'
-                : myHighRiskCount > myHighRiskWorkItemCount
+      {hasMap && (() => {
+        const mismatch = myHighRiskCount !== myHighRiskWorkItemCount
+        const markerMore = myHighRiskCount > myHighRiskWorkItemCount
+        const itemMore   = myHighRiskWorkItemCount > myHighRiskCount
+        return (
+          <button type="button" onClick={onGoToHighRisk}
+            className={[
+              'w-full flex items-center justify-between px-4 py-2.5 rounded-lg border text-left transition-colors',
+              mismatch ? 'bg-red-50 border-red-300' : 'bg-emerald-50 border-emerald-200',
+            ].join(' ')}>
+            <div>
+              <p className={`text-sm font-medium ${mismatch ? 'text-red-800' : 'text-emerald-800'}`}>
+                {mismatch
                   ? `⚠ 마커 ${myHighRiskCount}개 / 작업항목 ${myHighRiskWorkItemCount}개 — 불일치`
-                  : `✓ 마커 ${myHighRiskCount}개 / 작업항목 ${myHighRiskWorkItemCount}개`}
-            </p>
-            {myHighRiskCount > myHighRiskWorkItemCount && (
-              <p className="text-xs text-red-500 mt-0.5">
-                작업항목 {myHighRiskCount - myHighRiskWorkItemCount}개를 더 추가해야 제출 가능합니다
+                  : `✓ 마커 ${myHighRiskCount}개 / 작업항목 ${myHighRiskWorkItemCount}개 — 일치`}
               </p>
-            )}
-          </div>
-          <span className={`text-xs shrink-0 ml-2 ${
-            myHighRiskCount === 0
-              ? 'text-amber-500'
-              : myHighRiskCount > myHighRiskWorkItemCount
-                ? 'text-red-400'
-                : 'text-emerald-400'
-          }`}>
-            탭으로 이동 →
-          </span>
-        </button>
+              {markerMore && (
+                <p className="text-xs text-red-500 mt-0.5">
+                  고위험 작업항목 {myHighRiskCount - myHighRiskWorkItemCount}개를 더 추가해야 제출 가능합니다
+                </p>
+              )}
+              {itemMore && (
+                <p className="text-xs text-red-500 mt-0.5">
+                  지적도 마커 {myHighRiskWorkItemCount - myHighRiskCount}개를 더 추가하거나 작업항목을 삭제해야 제출 가능합니다
+                </p>
+              )}
+            </div>
+            <span className={`text-xs shrink-0 ml-2 ${mismatch ? 'text-red-400' : 'text-emerald-400'}`}>
+              탭으로 이동 →
+            </span>
+          </button>
+        )
+      })()}
       )}
       {errors.markers && (
         <p className="text-xs text-red-500">{errors.markers}</p>

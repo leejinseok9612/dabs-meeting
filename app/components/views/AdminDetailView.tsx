@@ -12,16 +12,11 @@ import MapAnnotator       from '@/app/components/MapAnnotator'
 import type { WorkItemInfo } from '@/app/components/MapAnnotator'
 import { toast }          from '@/app/components/Toast'
 
-// ── 고정 업체 순서 ─────────────────────────────────────────────
-const COMPANY_ORDER = ['천호엔지니어링', '참마루건설', '지디건설'] as const
-type CompanyName = typeof COMPANY_ORDER[number]
-
+// ── 업체 정렬 (이름 오름차순, 동적) ───────────────────────────
 function sortByCompanyOrder(submissions: SubmissionRow[]): SubmissionRow[] {
-  return [...submissions].sort((a, b) => {
-    const aIdx = COMPANY_ORDER.indexOf((a.teams?.name ?? '') as CompanyName)
-    const bIdx = COMPANY_ORDER.indexOf((b.teams?.name ?? '') as CompanyName)
-    return (aIdx === -1 ? COMPANY_ORDER.length : aIdx) - (bIdx === -1 ? COMPANY_ORDER.length : bIdx)
-  })
+  return [...submissions].sort((a, b) =>
+    (a.teams?.name ?? '').localeCompare(b.teams?.name ?? '', 'ko')
+  )
 }
 
 // ── 타입 ──────────────────────────────────────────────────────
@@ -120,7 +115,7 @@ export function AdminDetailView({
   const submitted      = submissions.filter(s => s.status === 'submitted')
   const totalPersonnel = submitted.reduce((sum, s) => sum + (s.personnel_count ?? 0), 0)
   const submittedCount = submitted.length
-  const totalCompanies = COMPANY_ORDER.length
+  const totalCompanies = submissions.length   // 실제 submission 슬롯 수 기준 (동적)
   const progressPct    = totalCompanies > 0 ? Math.round((submittedCount / totalCompanies) * 100) : 0
 
   // ── 초기 데이터 로드 ─────────────────────────────────────
