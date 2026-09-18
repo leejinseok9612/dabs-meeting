@@ -327,7 +327,7 @@ export function AdminListView({ onEnterMeeting, onBack }: { onEnterMeeting: (id:
   }
 
   // PIN 인증 화면
-  if (!pinVerified) return <PinGate onSuccess={() => setPinVerified(true)} />
+  if (!pinVerified) return <PinGate onSuccess={() => setPinVerified(true)} onBack={onBack} />
 
   if (pageLoading) return <PageLoader />
 

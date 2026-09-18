@@ -203,13 +203,18 @@ function ContractorMeetingsPanel({
     return `${d.getMonth() + 1}월 ${d.getDate()}일 (${days[d.getDay()]})`
   }
 
-  function isToday(dateStr: string) {
-    return dateStr === new Date().toISOString().split('T')[0]
+  // KST 기준 날짜 헬퍼
+  function kstLocalDateStr(offsetDays = 0): string {
+    const d = new Date(Date.now() + 9 * 60 * 60 * 1000)
+    d.setUTCDate(d.getUTCDate() + offsetDays)
+    return d.toISOString().split('T')[0]
   }
 
-  function isTomorrow(dateStr: string) {
-    const t = new Date(); t.setDate(t.getDate() + 1)
-    return dateStr === t.toISOString().split('T')[0]
+  function isYesterday(dateStr: string) { return dateStr === kstLocalDateStr(-1) }
+  function isToday(dateStr: string)     { return dateStr === kstLocalDateStr(0) }
+  function isNextMonday(dateStr: string) {
+    const dayOfWeek = new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCDay()
+    return dayOfWeek === 5 && dateStr === kstLocalDateStr(3)
   }
 
   return (
@@ -239,11 +244,14 @@ function ContractorMeetingsPanel({
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-gray-900">{formatDate(m.date)}</span>
+                    {isYesterday(m.date) && (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">전일</span>
+                    )}
                     {isToday(m.date) && (
                       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">오늘</span>
                     )}
-                    {isTomorrow(m.date) && (
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">내일</span>
+                    {isNextMonday(m.date) && (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">다음주 월</span>
                     )}
                   </div>
                   <p className="text-xs text-gray-400 mt-0.5">
