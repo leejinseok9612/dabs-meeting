@@ -115,7 +115,7 @@ export function AdminDetailView({
   const submitted      = submissions.filter(s => s.status === 'submitted')
   const totalPersonnel = submitted.reduce((sum, s) => sum + (s.personnel_count ?? 0), 0)
   const submittedCount = submitted.length
-  const totalCompanies = submissions.length   // 실제 submission 슬롯 수 기준 (동적)
+  const totalCompanies = allTeams.length       // 전체 등록 업체 수 기준 (동적)
   const progressPct    = totalCompanies > 0 ? Math.round((submittedCount / totalCompanies) * 100) : 0
 
   // ── 초기 데이터 로드 ─────────────────────────────────────
