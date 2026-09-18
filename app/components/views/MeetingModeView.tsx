@@ -1539,6 +1539,7 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
 
     // ── 페이지 섹션 배열 구성 (조건에 따라 섹션 추가) ────────
     const pageSections: string[] = []
+    const sectionNames:  string[] = []
 
     // 지적도
     if (pdfMapUrl) {
@@ -1546,35 +1547,43 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
         `<div class="sec-title">🗺️ 고위험작업 지적도 <span class="badge br">${pdfMarkers.length}개소</span></div>` +
         `<div class="map-wrap"><img src="${pdfMapUrl}" alt="지적도">${mapMarkersHtml}</div>`
       )
+      sectionNames.push('지적도')
     }
     // 고위험 현황
     if (filter.sections.high_risk) {
       pageSections.push(
         `<div class="sec-title">⚠️ 고위험 현황 <span class="badge br">${highRisk.length}건</span></div>${hrHtml}`
       )
+      sectionNames.push('고위험현황')
     }
     // 일반작업
     if (filter.sections.general) {
       pageSections.push(
         `<div class="sec-title">📋 일반작업 내용 <span class="badge bb">${general.length}건</span></div>${genHtml}`
       )
+      sectionNames.push('일반작업')
     }
     // 자재 하역/운반
     if (filter.sections.material) {
       pageSections.push(
         `<div class="sec-title">🚛 자재 하역/운반 <span class="badge ba">${allRes.length}건</span></div>${matHtml}`
       )
+      sectionNames.push('자재하역운반')
     }
     // 메모
     if (noteText.trim()) {
       pageSections.push(
         `<div class="sec-title">📝 회의 메모</div><pre class="note-pre">${esc(noteText)}</pre>`
       )
+      sectionNames.push('메모')
     }
 
-    // 섹션을 page-break 구분자로 연결
+    // 각 섹션을 .sc 래퍼로 감싸고, 2번째부터 .page-break 로 페이지 분리
     const bodyHtml = pageSections
-      .map((sec, i) => i === 0 ? sec : `<div class="page-break">${sec}</div>`)
+      .map((sec, i) => {
+        const br = i > 0 ? '<div class="page-break"></div>' : ''
+        return `${br}<div class="sc" data-n="${sectionNames[i]}">${sec}</div>`
+      })
       .join('\n')
 
     // ── 전체 HTML ────────────────────────────────────────────
@@ -1640,50 +1649,58 @@ ${bodyHtml}
 <script>${
   filter.format === 'pdf'
     ? `window.addEventListener('load',function(){
-  // ── 지적도 zoom 축소 (프린트 기준으로 계산) ──
-  // A4 landscape: 297-2*15=267mm 콘텐츠 폭 → 267*3.7795≈1009px(96dpi)
-  // 가용 높이: 210-2*12=186mm, 헤더+섹션타이틀 약 32mm 제외 → 154mm=582px
+  // ── 지적도: CSS zoom 대신 명시적 px 치수로 고정 (Chrome 프린트 layout 확실히 반영) ──
+  // A4 landscape 콘텐츠 폭 267mm = 1009px(96dpi), 헤더+타이틀 제외 가용 높이 158mm = 597px
   var wrap=document.querySelector('.map-wrap');
   if(wrap){
     var img=wrap.querySelector('img');
     if(img&&img.naturalWidth>0){
-      var ratio=img.naturalHeight/img.naturalWidth;
-      var printImgH=1009*ratio;  // 프린트 시 이미지 실제 높이(px)
-      var maxH=582;              // 154mm in print px
-      if(printImgH>maxH){
-        var scale=maxH/printImgH;
-        wrap.style.zoom=scale;
-        // 마커는 역배율로 원래 크기 유지
-        var inv=1/scale;
-        wrap.querySelectorAll('.mk').forEach(function(mk){mk.style.zoom=inv;});
-      }
+      var pW=1009, mH=597;
+      var r=img.naturalHeight/img.naturalWidth;
+      var pH=pW*r;
+      var dW,dH;
+      if(pH>mH){ dH=mH; dW=Math.round(mH/r); }
+      else      { dW=pW; dH=Math.round(pH);   }
+      // 이미지와 컨테이너를 동일 치수로 고정 → 마커 % 위치 정확 + 페이지 넘침 방지
+      img.style.cssText='width:'+dW+'px;height:'+dH+'px;display:block;';
+      wrap.style.width=dW+'px';
+      wrap.style.height=dH+'px';
     }
   }
   setTimeout(function(){window.print();},600);
 });`
     : (() => {
-        const mime    = filter.format === 'jpg' ? 'image/jpeg' : 'image/png'
-        const ext     = filter.format
-        const quality = filter.format === 'jpg' ? ',0.92' : ''
-        const fname   = `DABs_${esc(meeting.date)}.${ext}`
+        const mime     = filter.format === 'jpg' ? 'image/jpeg' : 'image/png'
+        const ext      = filter.format
+        const quality  = filter.format === 'jpg' ? ',0.92' : ''
+        const prefix   = `DABs_${esc(meeting.date)}`
         return `window.addEventListener('load',function(){
   setTimeout(function(){
     var s=document.createElement('script');
     s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
     document.head.appendChild(s);
     s.onload=function(){
-      document.body.style.background='#fff';
-      html2canvas(document.body,{
-        scale:2,useCORS:true,logging:false,
-        backgroundColor:'#ffffff',
-        windowWidth:1400
-      }).then(function(canvas){
-        var a=document.createElement('a');
-        a.download='${fname}';
-        a.href=canvas.toDataURL('${mime}'${quality});
-        a.click();
-        setTimeout(function(){window.close()},800);
-      });
+      // 섹션별로 개별 이미지 저장
+      var secs=Array.from(document.querySelectorAll('.sc'));
+      var idx=0;
+      function next(){
+        if(idx>=secs.length){setTimeout(function(){window.close();},500);return;}
+        var sec=secs[idx];
+        var name=sec.dataset.n||('part'+(idx+1));
+        html2canvas(sec,{
+          scale:2,useCORS:true,logging:false,
+          backgroundColor:'#ffffff',
+          windowWidth:1400
+        }).then(function(c){
+          var a=document.createElement('a');
+          a.download='${prefix}_'+name+'.${ext}';
+          a.href=c.toDataURL('${mime}'${quality});
+          a.click();
+          idx++;
+          setTimeout(next,700);
+        });
+      }
+      next();
     };
   },600);
 });`
