@@ -18,14 +18,33 @@ export async function POST(req: NextRequest) {
   const { name, department } = await req.json()
   if (!name?.trim()) return NextResponse.json({ error: 'name required' }, { status: 400 })
 
-  const { data, error } = await adminSupabase
+  // 1) 업체 추가
+  const { data: team, error } = await adminSupabase
     .from('teams')
     .insert({ name: name.trim(), department: department?.trim() || null })
     .select('id, name, department')
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+  if (error || !team) return NextResponse.json({ error: error?.message ?? '추가 실패' }, { status: 500 })
+
+  // 2) 현재 열린 회의에 submission 슬롯 자동 생성
+  const { data: openMeetings } = await adminSupabase
+    .from('meetings')
+    .select('id')
+    .eq('status', 'open')
+
+  if (openMeetings && openMeetings.length > 0) {
+    await adminSupabase.from('submissions').insert(
+      openMeetings.map(m => ({
+        meeting_id:  m.id,
+        team_id:     team.id,
+        order_index: 9999,   // 기존 슬롯 뒤에 추가
+        status:      'pending',
+      }))
+    )
+  }
+
+  return NextResponse.json(team)
 }
 
 // DELETE /api/teams?id=xxx — 업체 삭제 (관리자 PIN 인증 후 사용, RLS 우회)

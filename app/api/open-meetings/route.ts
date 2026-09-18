@@ -15,22 +15,22 @@ function kstDateStr(offsetDays = 0): string {
 export async function GET(req: NextRequest) {
   const teamId = req.nextUrl.searchParams.get('teamId')
 
-  // 표시할 날짜 계산: 전일 + 당일, 금요일이면 다음주 월요일도 포함
-  const todayKST   = new Date(Date.now() + 9 * 60 * 60 * 1000)
-  const dayOfWeek  = todayKST.getUTCDay()   // 0=일, 1=월 … 5=금, 6=토
+  // 이번 주 범위 계산 (KST 기준)
+  // 시작: 이번 주 월요일 / 끝: 오늘 (금요일이면 토요일까지 포함)
+  const todayKST  = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  const dayOfWeek = todayKST.getUTCDay()  // 0=일, 1=월 … 5=금, 6=토
 
-  const allowedDates = new Set([
-    kstDateStr(-1),   // 전일
-    kstDateStr(0),    // 당일
-  ])
-  if (dayOfWeek === 5) allowedDates.add(kstDateStr(3))  // 금→다음주 월
+  const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1   // 일요일이면 6일 전이 월요일
+  const weekStart = kstDateStr(-daysFromMonday)                  // 이번 주 월요일
+  const weekEnd   = dayOfWeek === 5 ? kstDateStr(1) : kstDateStr(0)  // 금요일이면 토요일까지
 
-  // 열린 회의 전체 조회 (날짜 오름차순)
+  // 이번 주 범위의 열린 회의 조회 (날짜 오름차순)
   const { data: meetings } = await adminSupabase
     .from('meetings')
     .select('id, title, date, status')
     .eq('status', 'open')
-    .in('date', [...allowedDates])
+    .gte('date', weekStart)
+    .lte('date', weekEnd)
     .order('date', { ascending: true })
 
   if (!meetings || meetings.length === 0) {
