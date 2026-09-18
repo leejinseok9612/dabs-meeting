@@ -1469,7 +1469,7 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
       const icon  = MARKER_ICONS[m.marker_type] ?? '📍'
       // transform: 마커 원형 중앙이 (x_pct, y_pct) 좌표에 정확히 위치하도록
       // 원형(26px) 중앙 → -50% X, -50% Y → 라벨은 원형 아래에 위치
-      return `<div style="position:absolute;left:${m.x_pct}%;top:${m.y_pct}%;transform:translate(-50%,-50%);z-index:10;pointer-events:none;display:flex;flex-direction:column;align-items:center;">
+      return `<div class="mk" style="position:absolute;left:${m.x_pct}%;top:${m.y_pct}%;transform:translate(-50%,-50%);z-index:10;pointer-events:none;display:flex;flex-direction:column;align-items:center;">
         <div style="width:36px;height:36px;border-radius:50%;background:${color};border:3px solid white;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 2px 8px rgba(0,0,0,0.55);flex-shrink:0;">${icon}</div>
         ${m.label ? `<div style="font-size:11px;font-weight:700;background:rgba(0,0,0,0.78);color:white;padding:2px 6px;border-radius:3px;margin-top:3px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;line-height:1.4;">${esc(m.label)}</div>` : ''}
       </div>`
@@ -1637,29 +1637,30 @@ td{font-size:13px;padding:8px 11px;border-bottom:1px solid #f3f4f6;vertical-alig
 
 ${bodyHtml}
 
-<script>
-// 지적도 map-wrap을 페이지 높이에 맞게 zoom 축소 (마커 좌표 유지)
-(function(){
-  var wrap = document.querySelector('.map-wrap');
-  if(!wrap) return;
-  var img = wrap.querySelector('img');
-  if(!img) return;
-  function fitMap(){
-    // A4 landscape 가용 높이 = 186mm, 헤더+섹션타이틀 약 32mm 제외 → 154mm
-    // 1mm ≈ 3.7795px (96dpi 기준)
-    var maxH = 154 * 3.7795;
-    var actualH = wrap.offsetHeight;
-    if(actualH > maxH && actualH > 0){
-      var scale = maxH / actualH;
-      wrap.style.zoom = scale;
-    }
-  }
-  if(img.complete){ fitMap(); } else { img.addEventListener('load', fitMap); }
-})();
-</script>
 <script>${
   filter.format === 'pdf'
-    ? `window.addEventListener('load',function(){setTimeout(function(){window.print()},800)})`
+    ? `window.addEventListener('load',function(){
+  // ── 지적도 zoom 축소 (프린트 기준으로 계산) ──
+  // A4 landscape: 297-2*15=267mm 콘텐츠 폭 → 267*3.7795≈1009px(96dpi)
+  // 가용 높이: 210-2*12=186mm, 헤더+섹션타이틀 약 32mm 제외 → 154mm=582px
+  var wrap=document.querySelector('.map-wrap');
+  if(wrap){
+    var img=wrap.querySelector('img');
+    if(img&&img.naturalWidth>0){
+      var ratio=img.naturalHeight/img.naturalWidth;
+      var printImgH=1009*ratio;  // 프린트 시 이미지 실제 높이(px)
+      var maxH=582;              // 154mm in print px
+      if(printImgH>maxH){
+        var scale=maxH/printImgH;
+        wrap.style.zoom=scale;
+        // 마커는 역배율로 원래 크기 유지
+        var inv=1/scale;
+        wrap.querySelectorAll('.mk').forEach(function(mk){mk.style.zoom=inv;});
+      }
+    }
+  }
+  setTimeout(function(){window.print();},600);
+});`
     : (() => {
         const mime    = filter.format === 'jpg' ? 'image/jpeg' : 'image/png'
         const ext     = filter.format
