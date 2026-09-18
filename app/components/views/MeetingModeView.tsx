@@ -1471,7 +1471,7 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
       // 원형(26px) 중앙 → -50% X, -50% Y → 라벨은 원형 아래에 위치
       return `<div class="mk" style="position:absolute;left:${m.x_pct}%;top:${m.y_pct}%;transform:translate(-50%,-50%);z-index:10;pointer-events:none;display:flex;flex-direction:column;align-items:center;">
         <div style="width:36px;height:36px;border-radius:50%;background:${color};border:3px solid white;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 2px 8px rgba(0,0,0,0.55);flex-shrink:0;">${icon}</div>
-        ${m.label ? `<div style="font-size:11px;font-weight:700;background:rgba(0,0,0,0.78);color:white;padding:2px 6px;border-radius:3px;margin-top:3px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;line-height:1.4;">${esc(m.label)}</div>` : ''}
+        ${m.label ? `<div style="font-size:11px;font-weight:800;color:${color};text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff,0 0 4px #fff;margin-top:3px;text-align:center;white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis;">${esc(m.label)}</div>` : ''}
       </div>`
     }).join('')
 
@@ -1649,14 +1649,19 @@ ${bodyHtml}
 <script>${
   filter.format === 'pdf'
     ? `window.addEventListener('load',function(){
-  // ── 지적도: CSS zoom 대신 명시적 px 치수로 고정 (Chrome 프린트 layout 확실히 반영) ──
-  // A4 landscape 콘텐츠 폭 267mm = 1009px(96dpi), 헤더+타이틀 제외 가용 높이 158mm = 597px
+  // ── 지적도: 명시적 px 치수로 고정 (Chrome 프린트 layout 확실히 반영) ──
+  // A4 landscape 콘텐츠 폭 267mm=1009px, 헤더(~15mm)+섹션타이틀(~12mm) 제외
+  // 안전 여유 추가 → 최대 높이 120mm = 454px 로 제한
   var wrap=document.querySelector('.map-wrap');
   if(wrap){
     var img=wrap.querySelector('img');
-    if(img&&img.naturalWidth>0){
-      var pW=1009, mH=597;
-      var r=img.naturalHeight/img.naturalWidth;
+    if(img){
+      var pW=1009, mH=454;
+      // naturalWidth 우선, 실패 시 화면 비율로 폴백
+      var r=(img.naturalWidth>0)
+          ? img.naturalHeight/img.naturalWidth
+          : wrap.offsetHeight/Math.max(wrap.offsetWidth,1);
+      if(r<=0) r=1;
       var pH=pW*r;
       var dW,dH;
       if(pH>mH){ dH=mH; dW=Math.round(mH/r); }
