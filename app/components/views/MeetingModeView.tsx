@@ -198,7 +198,8 @@ function MeetingMapViewer({
   // ── 마커 편집 모드 ──────────────────────────────────────
   const [editMode,      setEditMode]      = useState(false)
   const [draggingMkId,  setDraggingMkId] = useState<string | null>(null)
-  const [mapOpacity,    setMapOpacity]    = useState(70) // 지적도 투명도 (20~100%)
+  const [mapOpacity,    setMapOpacity]    = useState(70)  // 지적도 투명도 (20~100%)
+  const [markerSize,    setMarkerSize]    = useState(10)  // 마커 크기 (5~20, ×0.1 = 0.5~2.0배)
   const draggingMkIdRef = useRef<string | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -413,6 +414,23 @@ function MeetingMapViewer({
             className={`w-5 h-5 rounded text-sm font-bold flex items-center justify-center transition-colors disabled:opacity-30 ${dk ? 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'}`}
           >+</button>
         </div>
+        {/* 마커 크기 조절 */}
+        <div className="flex items-center gap-1">
+          <span className={`text-[9px] ${dk ? 'text-neutral-500' : 'text-gray-400'}`}>마커</span>
+          <button
+            onPointerDown={e => e.stopPropagation()}
+            onClick={() => setMarkerSize(s => Math.max(5, s - 1))}
+            disabled={markerSize <= 5}
+            className={`w-5 h-5 rounded text-sm font-bold flex items-center justify-center transition-colors disabled:opacity-30 ${dk ? 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+          >−</button>
+          <span className={`text-[10px] w-7 text-center tabular-nums ${dk ? 'text-neutral-400' : 'text-gray-500'}`}>{markerSize * 10}%</span>
+          <button
+            onPointerDown={e => e.stopPropagation()}
+            onClick={() => setMarkerSize(s => Math.min(20, s + 1))}
+            disabled={markerSize >= 20}
+            className={`w-5 h-5 rounded text-sm font-bold flex items-center justify-center transition-colors disabled:opacity-30 ${dk ? 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+          >+</button>
+        </div>
         {teamLegend.length > 0 && (
           <div className="flex gap-1 ml-auto flex-wrap">
             <button
@@ -615,7 +633,7 @@ function MeetingMapViewer({
                       left: `${dispX}%`,
                       top: `${dispY}%`,
                       // 역스케일: 부모 scale(s)를 상쇄해 화면 크기 고정 + 강조 시 1.4배
-                      transform: `translate(-50%, -50%) scale(${(isHighlighted || isClicked || isBeingDragged ? 1.4 : 1) / scale})`,
+                      transform: `translate(-50%, -50%) scale(${(isHighlighted || isClicked || isBeingDragged ? 1.4 : 1) * (markerSize / 10) / scale})`,
                       transition: isBeingDragged ? 'none' : 'opacity 0.15s ease',
                       opacity: isDimmed ? 0.15 : 1,
                       zIndex: isHighlighted || isClicked || isBeingDragged ? 30 : 10,
