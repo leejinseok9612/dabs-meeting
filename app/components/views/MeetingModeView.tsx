@@ -1592,24 +1592,27 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
 <title>DABs 회의자료_${esc(meeting.date)}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-@page{size:A4 landscape;margin:12mm 15mm}
+/* ① 용지 규격 A4 가로, 여백 8mm (콘텐츠 폭 281mm = 1062px) */
+@page{size:A4 landscape;margin:8mm}
 body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,sans-serif;font-size:14px;color:#111;background:#fff}
 /* ── 공통 ── */
 .page-break{page-break-before:always;break-before:page;padding-top:0}
 .pg-hd{padding:0 0 10px;border-bottom:3px solid #111;margin-bottom:16px;display:flex;align-items:baseline;justify-content:space-between}
 .pg-title{font-size:22px;font-weight:800;letter-spacing:-.5px}
 .pg-meta{font-size:12px;color:#6b7280;margin-top:0}
-.sec-title{font-size:17px;font-weight:700;margin-bottom:13px;padding-bottom:8px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;gap:8px}
+.sec-title{font-size:17px;font-weight:700;margin-bottom:13px;padding-bottom:8px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;gap:8px;
+  break-inside:avoid;page-break-inside:avoid}
 .badge{display:inline-block;padding:3px 10px;border-radius:9px;font-size:12px;font-weight:700}
 .br{background:#fef2f2;color:#dc2626}.bb{background:#eff6ff;color:#2563eb}.ba{background:#fffbeb;color:#b45309}
 .empty{color:#9ca3af;padding:12px 0;font-size:14px}
-/* ── 지적도 — zoom으로 축소하므로 overflow 제한 없음 ── */
+/* ── 지적도 ── */
 .map-wrap{position:relative;display:block;width:100%;line-height:0;transform-origin:top left}
 .map-wrap img{width:100%;height:auto;display:block}
 /* ── 작업 카드 (3컬럼 그리드 — 가로모드) ── */
-/* 업체 그룹은 항목 수 많아도 자연스럽게 흐르도록 break 없음 */
-.co-grp{margin-bottom:20px}
-.co-title{font-size:15px;font-weight:800;color:#111;background:#f3f4f6;border-radius:6px;padding:8px 14px;margin-bottom:9px;display:flex;align-items:center;gap:7px;letter-spacing:-.3px;border-left:4px solid #9ca3af}
+/* ② 업체 그룹 단위로 페이지 경계에서 잘리지 않도록 */
+.co-grp{margin-bottom:20px;break-inside:avoid;page-break-inside:avoid}
+.co-title{font-size:15px;font-weight:800;color:#111;background:#f3f4f6;border-radius:6px;padding:8px 14px;margin-bottom:9px;display:flex;align-items:center;gap:7px;letter-spacing:-.3px;border-left:4px solid #9ca3af;
+  break-after:avoid;page-break-after:avoid}
 .co-title.red-co{border-left-color:#ef4444;color:#991b1b}
 .co-title.blue-co{border-left-color:#3b82f6;color:#1e40af}
 .gcnt{font-size:12px;color:#9ca3af;font-weight:400;margin-left:4px}
@@ -1631,11 +1634,22 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,
 table{width:100%;border-collapse:collapse}
 th{font-size:12px;font-weight:700;color:#6b7280;text-align:left;padding:8px 11px;border-bottom:2px solid #e5e7eb;background:#f9fafb}
 td{font-size:13px;padding:8px 11px;border-bottom:1px solid #f3f4f6;vertical-align:top}
+tr{break-inside:avoid;page-break-inside:avoid}
 .gate-hd{font-weight:700;color:#b45309;background:#fffbeb;border-top:1px solid #fde68a;border-bottom:1px solid #fde68a;font-size:12px;letter-spacing:.5px}
 .mono{font-variant-numeric:tabular-nums;font-weight:600}
 /* ── 메모 ── */
 .note-pre{white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:14px;line-height:1.9;color:#374151;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;max-height:160mm;overflow:hidden}
-@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+/* ③ 인쇄 전용: 색상 보정 + 배경 강제 + 색상 보존 */
+@media print{
+  body{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#fff!important;color:#000!important}
+  .pg-meta,.cmeta,.cdesc,.gcnt,.empty{color:#333!important}
+  .pg-hd{border-bottom-color:#000!important}
+  /* 위험요인/개선대책 등 색상 강조는 유지 */
+  .risk{color:#78350f!important;background:#fffbeb!important}
+  .impr{color:#14532d!important;background:#f0fdf4!important}
+  .card.red .card-top{background:#fef2f2!important}
+  .card.blue .card-top{background:#eff6ff!important}
+}
 </style></head><body>
 
 <!-- ▌공통 헤더 -->
@@ -1656,7 +1670,7 @@ ${bodyHtml}
   if(wrap){
     var img=wrap.querySelector('img');
     if(img){
-      var pW=1009, mH=454;
+      var pW=1062, mH=454; /* margin:8mm → 콘텐츠 폭 281mm=1062px */
       // naturalWidth 우선, 실패 시 화면 비율로 폴백
       var r=(img.naturalWidth>0)
           ? img.naturalHeight/img.naturalWidth
@@ -1695,7 +1709,7 @@ ${bodyHtml}
         var sec=secs[idx];
         var name=sec.dataset.n||('part'+(idx+1));
         html2canvas(sec,{
-          scale:2,useCORS:true,logging:false,
+          scale:3,useCORS:true,logging:false,  /* ④ High-DPI: 3배 해상도 */
           backgroundColor:'#ffffff',
           windowWidth:1400
         }).then(function(c){
