@@ -602,9 +602,18 @@ export function SubmitView({ teamId, meetingId, onBack }: { teamId: string; meet
     const mapMarkersHtml = spreadMarkers(pdfMarkers).map(m => {
       const color = pdfColorMap[m.team_id ?? ''] ?? '#6B7280'
       const icon  = MARKER_ICONS[m.marker_type] ?? '📍'
+      const badgeHtml = m.groupSize > 1
+        ? `<div style="position:absolute;top:-4px;right:-4px;width:13px;height:13px;border-radius:50%;background:${color};border:1.5px solid white;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:white;box-shadow:0 1px 3px rgba(0,0,0,0.4);">${m.groupIndex}</div>`
+        : ''
+      const labelHtml = m.label && m.groupSize === 1
+        ? `<div style="font-size:7.5px;font-weight:700;color:#111;background:rgba(255,255,255,0.92);border:1px solid ${color};padding:1px 4px;border-radius:8px;margin-top:2px;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;line-height:1.4;">${esc(m.label)}</div>`
+        : ''
       return `<div style="position:absolute;left:${m.displayX}%;top:${m.displayY}%;transform:translate(-50%,-50%);z-index:10;pointer-events:none;display:flex;flex-direction:column;align-items:center;">
-        <div style="width:26px;height:26px;border-radius:50%;background:${color};border:2.5px solid white;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.45);flex-shrink:0;">${icon}</div>
-        ${m.label ? `<div style="font-size:7.5px;background:rgba(0,0,0,0.72);color:white;padding:1px 4px;border-radius:2px;margin-top:2px;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;line-height:1.4;">${esc(m.label)}</div>` : ''}
+        <div style="position:relative;display:inline-flex;">
+          <div style="width:26px;height:26px;border-radius:50%;background:${color};border:2.5px solid white;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.45);flex-shrink:0;">${icon}</div>
+          ${badgeHtml}
+        </div>
+        ${labelHtml}
       </div>`
     }).join('')
 

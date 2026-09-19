@@ -654,23 +654,33 @@ function MeetingMapViewer({
                         style={{ inset: '-8px', background: 'rgba(251,146,60,0.35)', borderRadius: '50%' }} />
                     )}
                     <div className="flex flex-col items-center">
-                      <div
-                        className="w-14 h-14 rounded-full flex items-center justify-center text-3xl border-[3px] border-white"
-                        style={{
-                          background: color,
-                          boxShadow: editMode
-                            ? `0 0 0 2px rgba(251,146,60,0.7), 0 4px 12px rgba(0,0,0,0.4)`
-                            : isClicked
-                              ? `0 0 20px 6px rgba(59,130,246,0.7), 0 4px 12px rgba(0,0,0,0.4)`
-                              : isHighlighted
-                                ? `0 0 20px 6px rgba(250,204,21,0.7), 0 4px 12px rgba(0,0,0,0.4)`
-                                : '0 4px 14px rgba(0,0,0,0.35)',
-                        }}
-                        title={`${marker.teams?.name ?? ''}${marker.label ? ' · ' + marker.label : ''}`}
-                      >
-                        {MARKER_ICONS[marker.marker_type] ?? '📍'}
+                      <div className="relative">
+                        <div
+                          className="w-14 h-14 rounded-full flex items-center justify-center text-3xl border-[3px] border-white"
+                          style={{
+                            background: color,
+                            boxShadow: editMode
+                              ? `0 0 0 2px rgba(251,146,60,0.7), 0 4px 12px rgba(0,0,0,0.4)`
+                              : isClicked
+                                ? `0 0 20px 6px rgba(59,130,246,0.7), 0 4px 12px rgba(0,0,0,0.4)`
+                                : isHighlighted
+                                  ? `0 0 20px 6px rgba(250,204,21,0.7), 0 4px 12px rgba(0,0,0,0.4)`
+                                  : '0 4px 14px rgba(0,0,0,0.35)',
+                          }}
+                          title={`${marker.teams?.name ?? ''}${marker.label ? ' · ' + marker.label : ''}`}
+                        >
+                          {MARKER_ICONS[marker.marker_type] ?? '📍'}
+                        </div>
+                        {/* 겹침 그룹: 원 우상단에 순번 뱃지 */}
+                        {marker.groupSize > 1 && (
+                          <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-white font-bold border-2 border-white"
+                            style={{ fontSize: '10px', background: color, boxShadow: '0 1px 4px rgba(0,0,0,0.4)' }}>
+                            {marker.groupIndex}
+                          </span>
+                        )}
                       </div>
-                      {marker.label && (
+                      {/* 단독 마커만 라벨 표시, 겹침 그룹은 라벨 숨김 */}
+                      {marker.label && marker.groupSize === 1 && (
                         <span className="text-xs font-bold text-white px-1.5 py-0.5 rounded mt-1 max-w-[110px] truncate"
                           style={{ background: 'rgba(0,0,0,0.75)', fontSize: '12px', letterSpacing: '-0.2px' }}>
                           {marker.label}
@@ -1472,9 +1482,19 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
       const color = pdfColorMap[m.team_id ?? ''] ?? '#6B7280'
       const icon  = MARKER_ICONS[m.marker_type] ?? '📍'
       // displayX/displayY: 겹치는 마커를 원형으로 분산한 렌더링 위치
+      // 겹침 그룹: 라벨 숨기고 번호 뱃지 / 단독: 라벨 표시
+      const badgeHtml = m.groupSize > 1
+        ? `<div style="position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:${color};border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:white;box-shadow:0 1px 3px rgba(0,0,0,0.4);">${m.groupIndex}</div>`
+        : ''
+      const labelHtml = m.label && m.groupSize === 1
+        ? `<div style="font-size:10px;font-weight:700;color:#111;background:rgba(255,255,255,0.92);border:1.5px solid ${color};padding:2px 7px;border-radius:10px;margin-top:4px;text-align:center;white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 4px rgba(0,0,0,0.25);line-height:1.4;">${esc(m.label)}</div>`
+        : ''
       return `<div class="mk" style="position:absolute;left:${m.displayX}%;top:${m.displayY}%;transform:translate(-50%,-50%);z-index:10;pointer-events:none;display:flex;flex-direction:column;align-items:center;">
-        <div style="width:36px;height:36px;border-radius:50%;background:${color};border:3px solid white;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 2px 8px rgba(0,0,0,0.55);flex-shrink:0;">${icon}</div>
-        ${m.label ? `<div style="font-size:10px;font-weight:700;color:#111;background:rgba(255,255,255,0.92);border:1.5px solid ${color};padding:2px 7px;border-radius:10px;margin-top:4px;text-align:center;white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 4px rgba(0,0,0,0.25);line-height:1.4;">${esc(m.label)}</div>` : ''}
+        <div style="position:relative;display:inline-flex;">
+          <div style="width:36px;height:36px;border-radius:50%;background:${color};border:3px solid white;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 2px 8px rgba(0,0,0,0.55);flex-shrink:0;">${icon}</div>
+          ${badgeHtml}
+        </div>
+        ${labelHtml}
       </div>`
     }).join('')
 
