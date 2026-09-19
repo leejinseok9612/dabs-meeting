@@ -618,20 +618,17 @@ function MeetingMapViewer({
                 style={{ width: naturalSize.w, height: naturalSize.h, display: 'block', pointerEvents: 'none', opacity: mapOpacity / 100, transition: 'opacity 0.15s ease' }}
                 draggable={false}
               />
-              {spreadMarkers(visibleMarkers).map(marker => {
+              {visibleMarkers.map(marker => {
                 const color = marker.team_id ? (teamColorMap[marker.team_id] ?? '#6B7280') : '#6B7280'
                 const isHighlighted = !editMode && hoveredTeamId != null && marker.team_id === hoveredTeamId
                 const isDimmed      = !editMode && hoveredTeamId != null && marker.team_id !== hoveredTeamId
                 const isClicked     = clickedMarker?.id === marker.id
                 const isBeingDragged = draggingMkId === marker.id
-                // 드래그 중에는 원본 좌표(x_pct/y_pct)로, 정지 시에는 분산 좌표(displayX/displayY) 사용
-                const dispX = isBeingDragged ? marker.x_pct : marker.displayX
-                const dispY = isBeingDragged ? marker.y_pct : marker.displayY
                 return (
                   <div key={marker.id} className="absolute"
                     style={{
-                      left: `${dispX}%`,
-                      top: `${dispY}%`,
+                      left: `${marker.x_pct}%`,
+                      top: `${marker.y_pct}%`,
                       // 역스케일: 부모 scale(s)를 상쇄해 화면 크기 고정 + 강조 시 1.4배
                       transform: `translate(-50%, -50%) scale(${(isHighlighted || isClicked || isBeingDragged ? 1.4 : 1) * (markerSize / 10) / scale})`,
                       transition: isBeingDragged ? 'none' : 'opacity 0.15s ease',
@@ -671,75 +668,38 @@ function MeetingMapViewer({
                       <div className="absolute rounded-full pointer-events-none"
                         style={{ inset: '-8px', background: 'rgba(251,146,60,0.35)', borderRadius: '50%' }} />
                     )}
-                    {marker.groupSize > 1 ? (
-                      /* 겹침 그룹: 원 + 작업명을 가로 배치 */
-                      <div className="flex items-center gap-1.5">
-                        <div
-                          className="w-14 h-14 rounded-full flex items-center justify-center text-3xl border-[3px] border-white flex-shrink-0"
-                          style={{
-                            background: color,
-                            boxShadow: isClicked
-                              ? `0 0 20px 6px rgba(59,130,246,0.7), 0 4px 12px rgba(0,0,0,0.4)`
-                              : isHighlighted
-                                ? `0 0 20px 6px rgba(250,204,21,0.7), 0 4px 12px rgba(0,0,0,0.4)`
-                                : editMode
-                                  ? `0 0 0 2px rgba(251,146,60,0.7), 0 4px 12px rgba(0,0,0,0.4)`
-                                  : '0 4px 14px rgba(0,0,0,0.35)',
-                          }}
-                          title={`${marker.teams?.name ?? ''}${marker.label ? ' · ' + marker.label : ''}`}
-                        >
-                          {MARKER_ICONS[marker.marker_type] ?? '📍'}
-                        </div>
-                        {marker.label && (
-                          <span className="font-bold whitespace-nowrap max-w-[110px] truncate"
-                            style={{
-                              fontSize: '11px', color: '#111',
-                              background: 'rgba(255,255,255,0.95)',
-                              border: `1.5px solid ${color}`,
-                              borderRadius: '8px',
-                              padding: '3px 8px',
-                              boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
-                              lineHeight: 1.4,
-                            }}>
-                            {marker.label}
-                          </span>
-                        )}
+                    <div className="flex flex-col items-center">
+                      <div
+                        className="w-14 h-14 rounded-full flex items-center justify-center text-3xl border-[3px] border-white"
+                        style={{
+                          background: color,
+                          boxShadow: isClicked
+                            ? `0 0 20px 6px rgba(59,130,246,0.7), 0 4px 12px rgba(0,0,0,0.4)`
+                            : isHighlighted
+                              ? `0 0 20px 6px rgba(250,204,21,0.7), 0 4px 12px rgba(0,0,0,0.4)`
+                              : editMode
+                                ? `0 0 0 2px rgba(251,146,60,0.7), 0 4px 12px rgba(0,0,0,0.4)`
+                                : '0 4px 14px rgba(0,0,0,0.35)',
+                        }}
+                        title={`${marker.teams?.name ?? ''}${marker.label ? ' · ' + marker.label : ''}`}
+                      >
+                        {MARKER_ICONS[marker.marker_type] ?? '📍'}
                       </div>
-                    ) : (
-                      /* 단독 마커: 원 아래에 라벨 세로 배치 */
-                      <div className="flex flex-col items-center">
-                        <div
-                          className="w-14 h-14 rounded-full flex items-center justify-center text-3xl border-[3px] border-white"
+                      {marker.label && (
+                        <span className="mt-1 font-bold whitespace-nowrap max-w-[110px] truncate"
                           style={{
-                            background: color,
-                            boxShadow: isClicked
-                              ? `0 0 20px 6px rgba(59,130,246,0.7), 0 4px 12px rgba(0,0,0,0.4)`
-                              : isHighlighted
-                                ? `0 0 20px 6px rgba(250,204,21,0.7), 0 4px 12px rgba(0,0,0,0.4)`
-                                : editMode
-                                  ? `0 0 0 2px rgba(251,146,60,0.7), 0 4px 12px rgba(0,0,0,0.4)`
-                                  : '0 4px 14px rgba(0,0,0,0.35)',
-                          }}
-                          title={`${marker.teams?.name ?? ''}${marker.label ? ' · ' + marker.label : ''}`}
-                        >
-                          {MARKER_ICONS[marker.marker_type] ?? '📍'}
-                        </div>
-                        {marker.label && (
-                          <span className="mt-1 font-bold whitespace-nowrap max-w-[110px] truncate"
-                            style={{
-                              fontSize: '12px', color: '#111',
-                              background: 'rgba(255,255,255,0.95)',
-                              border: `1.5px solid ${color}`,
-                              borderRadius: '8px',
-                              padding: '2px 7px',
-                              boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
-                              lineHeight: 1.4,
-                            }}>
-                            {marker.label}
-                          </span>
-                        )}
-                      </div>
-                    )}
+                            fontSize: '12px', color: '#111',
+                            background: 'rgba(255,255,255,0.95)',
+                            border: `1.5px solid ${color}`,
+                            borderRadius: '8px',
+                            padding: '2px 7px',
+                            boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
+                            lineHeight: 1.4,
+                          }}>
+                          {marker.label}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )
               })}
@@ -1531,23 +1491,12 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
     const pdfMapUrl = meeting.map_file_url ?? null
 
     // ── 지적도 위 마커 HTML ──────────────────────────────────
-    const mapMarkersHtml = spreadMarkers(pdfMarkers).map(m => {
+    const mapMarkersHtml = pdfMarkers.map(m => {
       const color = pdfColorMap[m.team_id ?? ''] ?? '#6B7280'
       const icon  = MARKER_ICONS[m.marker_type] ?? '📍'
-      // 겹침 그룹: 원 오른쪽에 작업명 말풍선 / 단독: 원 아래에 라벨
-      const circleHtml = `<div style="width:36px;height:36px;border-radius:50%;background:${color};border:3px solid white;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 2px 8px rgba(0,0,0,0.55);flex-shrink:0;">${icon}</div>`
-      const labelStyle = `font-size:10px;font-weight:700;color:#111;background:rgba(255,255,255,0.92);border:1.5px solid ${color};padding:2px 7px;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,0.25);line-height:1.4;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis;`
-      if (m.groupSize > 1 && m.label) {
-        // 가로 배치: 원 + 오른쪽 말풍선
-        return `<div class="mk" style="position:absolute;left:${m.displayX}%;top:${m.displayY}%;transform:translate(-50%,-50%);z-index:10;pointer-events:none;display:flex;align-items:center;gap:5px;">
-          ${circleHtml}
-          <div style="${labelStyle}">${esc(m.label)}</div>
-        </div>`
-      }
-      // 세로 배치: 원 + 아래 라벨 (단독 or 라벨 없는 그룹)
-      return `<div class="mk" style="position:absolute;left:${m.displayX}%;top:${m.displayY}%;transform:translate(-50%,-50%);z-index:10;pointer-events:none;display:flex;flex-direction:column;align-items:center;">
-        ${circleHtml}
-        ${m.label && m.groupSize === 1 ? `<div style="${labelStyle};margin-top:4px;text-align:center;">${esc(m.label)}</div>` : ''}
+      return `<div class="mk" style="position:absolute;left:${m.x_pct}%;top:${m.y_pct}%;transform:translate(-50%,-50%);z-index:10;pointer-events:none;display:flex;flex-direction:column;align-items:center;">
+        <div style="width:36px;height:36px;border-radius:50%;background:${color};border:3px solid white;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 2px 8px rgba(0,0,0,0.55);flex-shrink:0;">${icon}</div>
+        ${m.label ? `<div style="font-size:10px;font-weight:700;color:#111;background:rgba(255,255,255,0.92);border:1.5px solid ${color};padding:2px 7px;border-radius:10px;margin-top:4px;text-align:center;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 4px rgba(0,0,0,0.25);line-height:1.4;">${esc(m.label)}</div>` : ''}
       </div>`
     }).join('')
 
