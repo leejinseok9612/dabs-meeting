@@ -1664,13 +1664,13 @@ ${bodyHtml}
   filter.format === 'pdf'
     ? `window.addEventListener('load',function(){
   // ── 지적도: 명시적 px 치수로 고정 (Chrome 프린트 layout 확실히 반영) ──
-  // A4 landscape 콘텐츠 폭 267mm=1009px, 헤더(~15mm)+섹션타이틀(~12mm) 제외
-  // 안전 여유 추가 → 최대 높이 120mm = 454px 로 제한
+  // margin:8mm → 콘텐츠 폭 281mm=1062px, 높이 194mm=733px
+  // 헤더(~15mm)+섹션타이틀(~11mm)+여유(~8mm) 제외 → 가용 160mm = 605px
   var wrap=document.querySelector('.map-wrap');
   if(wrap){
     var img=wrap.querySelector('img');
     if(img){
-      var pW=1062, mH=454; /* margin:8mm → 콘텐츠 폭 281mm=1062px */
+      var pW=1062, mH=605;
       // naturalWidth 우선, 실패 시 화면 비율로 폴백
       var r=(img.naturalWidth>0)
           ? img.naturalHeight/img.naturalWidth
