@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 
 import { createClient } from '@/lib/supabase/client'
+import { spreadMarkers } from '@/app/lib/spreadMarkers'
 import MapAnnotator, { MARKER_TYPES, MapMarker } from '@/app/components/MapAnnotator'
 import { toast } from '@/app/components/Toast'
 
@@ -597,11 +598,11 @@ export function SubmitView({ teamId, meetingId, onBack }: { teamId: string; meet
     const allRes   = slots.flatMap(s => (s.material_reservations ?? []).map(r => ({ ...r, slot_time: s.slot_time, gate: s.gate })))
     const pdfMapUrl = meeting.map_file_url ?? null
 
-    // 마커 HTML
-    const mapMarkersHtml = pdfMarkers.map(m => {
+    // 마커 HTML (겹치는 마커 자동 분산 배치)
+    const mapMarkersHtml = spreadMarkers(pdfMarkers).map(m => {
       const color = pdfColorMap[m.team_id ?? ''] ?? '#6B7280'
       const icon  = MARKER_ICONS[m.marker_type] ?? '📍'
-      return `<div style="position:absolute;left:${m.x_pct}%;top:${m.y_pct}%;transform:translate(-50%,-50%);z-index:10;pointer-events:none;display:flex;flex-direction:column;align-items:center;">
+      return `<div style="position:absolute;left:${m.displayX}%;top:${m.displayY}%;transform:translate(-50%,-50%);z-index:10;pointer-events:none;display:flex;flex-direction:column;align-items:center;">
         <div style="width:26px;height:26px;border-radius:50%;background:${color};border:2.5px solid white;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.45);flex-shrink:0;">${icon}</div>
         ${m.label ? `<div style="font-size:7.5px;background:rgba(0,0,0,0.72);color:white;padding:1px 4px;border-radius:2px;margin-top:2px;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;line-height:1.4;">${esc(m.label)}</div>` : ''}
       </div>`

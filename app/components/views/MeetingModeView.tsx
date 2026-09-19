@@ -5,6 +5,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback, useMemo, createContext, useContext } from 'react'
+import { spreadMarkers } from '@/app/lib/spreadMarkers'
 
 // ── 테마 컨텍스트 ─────────────────────────────────────────
 type Theme = 'dark' | 'light'
@@ -599,17 +600,20 @@ function MeetingMapViewer({
                 style={{ width: naturalSize.w, height: naturalSize.h, display: 'block', pointerEvents: 'none', opacity: mapOpacity / 100, transition: 'opacity 0.15s ease' }}
                 draggable={false}
               />
-              {visibleMarkers.map(marker => {
+              {spreadMarkers(visibleMarkers).map(marker => {
                 const color = marker.team_id ? (teamColorMap[marker.team_id] ?? '#6B7280') : '#6B7280'
                 const isHighlighted = !editMode && hoveredTeamId != null && marker.team_id === hoveredTeamId
                 const isDimmed      = !editMode && hoveredTeamId != null && marker.team_id !== hoveredTeamId
                 const isClicked     = clickedMarker?.id === marker.id
                 const isBeingDragged = draggingMkId === marker.id
+                // 드래그 중에는 원본 좌표(x_pct/y_pct)로, 정지 시에는 분산 좌표(displayX/displayY) 사용
+                const dispX = isBeingDragged ? marker.x_pct : marker.displayX
+                const dispY = isBeingDragged ? marker.y_pct : marker.displayY
                 return (
                   <div key={marker.id} className="absolute"
                     style={{
-                      left: `${marker.x_pct}%`,
-                      top: `${marker.y_pct}%`,
+                      left: `${dispX}%`,
+                      top: `${dispY}%`,
                       // 역스케일: 부모 scale(s)를 상쇄해 화면 크기 고정 + 강조 시 1.4배
                       transform: `translate(-50%, -50%) scale(${(isHighlighted || isClicked || isBeingDragged ? 1.4 : 1) / scale})`,
                       transition: isBeingDragged ? 'none' : 'opacity 0.15s ease',
@@ -1464,12 +1468,11 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
     const pdfMapUrl = meeting.map_file_url ?? null
 
     // ── 지적도 위 마커 HTML ──────────────────────────────────
-    const mapMarkersHtml = pdfMarkers.map(m => {
+    const mapMarkersHtml = spreadMarkers(pdfMarkers).map(m => {
       const color = pdfColorMap[m.team_id ?? ''] ?? '#6B7280'
       const icon  = MARKER_ICONS[m.marker_type] ?? '📍'
-      // transform: 마커 원형 중앙이 (x_pct, y_pct) 좌표에 정확히 위치하도록
-      // 원형(26px) 중앙 → -50% X, -50% Y → 라벨은 원형 아래에 위치
-      return `<div class="mk" style="position:absolute;left:${m.x_pct}%;top:${m.y_pct}%;transform:translate(-50%,-50%);z-index:10;pointer-events:none;display:flex;flex-direction:column;align-items:center;">
+      // displayX/displayY: 겹치는 마커를 원형으로 분산한 렌더링 위치
+      return `<div class="mk" style="position:absolute;left:${m.displayX}%;top:${m.displayY}%;transform:translate(-50%,-50%);z-index:10;pointer-events:none;display:flex;flex-direction:column;align-items:center;">
         <div style="width:36px;height:36px;border-radius:50%;background:${color};border:3px solid white;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 2px 8px rgba(0,0,0,0.55);flex-shrink:0;">${icon}</div>
         ${m.label ? `<div style="font-size:10px;font-weight:700;color:#111;background:rgba(255,255,255,0.92);border:1.5px solid ${color};padding:2px 7px;border-radius:10px;margin-top:4px;text-align:center;white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 4px rgba(0,0,0,0.25);line-height:1.4;">${esc(m.label)}</div>` : ''}
       </div>`
