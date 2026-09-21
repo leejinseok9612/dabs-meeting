@@ -1699,11 +1699,17 @@ function WorkItemTab({
                   )}
                 </div>
                 {item.team_id === myTeamId && !isClosed && (
-                  <button onClick={() => onDelete(item.id)}
-                    className="text-neutral-300 hover:text-red-400 transition-colors duration-150 p-1 opacity-0 group-hover:opacity-100">
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`"${item.work_name}" 항목을 삭제할까요?`)) onDelete(item.id)
+                    }}
+                    className="shrink-0 flex items-center gap-1 text-[11px] font-medium text-neutral-400 hover:text-red-500 hover:bg-red-50 transition-colors duration-150 px-2 py-1 rounded-md border border-transparent hover:border-red-200"
+                    title="삭제"
+                  >
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
                     </svg>
+                    삭제
                   </button>
                 )}
               </div>
@@ -1880,7 +1886,8 @@ function MaterialTab({
                     {isFull ? (
                       <span className="badge bg-neutral-100 text-neutral-500">마감</span>
                     ) : myRes ? (
-                      <button onClick={() => onCancel(myRes.id)}
+                      <button
+                        onClick={() => { if (window.confirm('자재하역 신청을 취소할까요?')) onCancel(myRes.id) }}
                         className="text-[11px] font-medium text-red-500 hover:text-red-600 transition-colors duration-150">신청취소</button>
                     ) : !isClosed ? (
                       <button onClick={() => { setOpenSlotId(isOpen ? null : slot.id); if (isOpen) resetForm() }}
