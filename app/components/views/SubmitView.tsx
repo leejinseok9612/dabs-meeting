@@ -523,9 +523,21 @@ export function SubmitView({ teamId, meetingId, onBack }: { teamId: string; meet
   }
 
   async function deleteWorkItem(id: string) {
+    // 삭제 전에 연결된 마커 정보를 미리 저장
+    const item = workItems.find(i => i.id === id)
+
     const res = await fetch(`/api/work-items?id=${id}`, { method: 'DELETE' })
     if (res.ok) {
       setWorkItems(prev => prev.filter(i => i.id !== id))
+
+      // 연결된 마커도 함께 삭제 (label=work_name 매칭)
+      if (item?.work_name && meeting) {
+        await fetch(
+          `/api/map-markers?meetingId=${meeting.id}&teamId=${teamId}&label=${encodeURIComponent(item.work_name)}&workType=${item.work_type}`,
+          { method: 'DELETE' },
+        ).catch(() => {})
+      }
+
       toast.success('작업항목이 삭제되었습니다.')
     } else {
       toast.error('작업항목 삭제에 실패했습니다.')
