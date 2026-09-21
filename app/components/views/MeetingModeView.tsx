@@ -206,7 +206,8 @@ function MeetingMapViewer({
   const lastPointer  = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
-    fetch(`/api/map-markers?meetingId=${meetingId}`)
+    // submittedOnly=true: 실제 자료제출(submitted_at)한 팀의 마커만 표시
+    fetch(`/api/map-markers?meetingId=${meetingId}&submittedOnly=true`)
       .then(r => r.json())
       .then((data: unknown) => {
         if (Array.isArray(data)) {
@@ -1470,7 +1471,7 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
     // ── 마커 데이터 fetch ────────────────────────────────────
     let pdfMarkers: MapMarkerData[] = []
     try {
-      const res = await fetch(`/api/map-markers?meetingId=${meetingId}`)
+      const res = await fetch(`/api/map-markers?meetingId=${meetingId}&submittedOnly=true`)
       const data = await res.json()
       if (Array.isArray(data)) pdfMarkers = (data as MapMarkerData[]).filter(m => m.work_type === 'high_risk')
     } catch { /* 마커 없이 진행 */ }
