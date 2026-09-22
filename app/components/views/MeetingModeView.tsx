@@ -1394,7 +1394,7 @@ export function MeetingModeView({ meetingId, onClose }: { meetingId: string; onC
   useEffect(() => {
     Promise.all([
       fetch(`/api/meeting-info?meetingId=${meetingId}`).then(r => r.json()).catch(() => null),
-      fetch(`/api/work-items?meetingId=${meetingId}`).then(r => r.json()).catch(() => []),
+      fetch(`/api/work-items?meetingId=${meetingId}&submittedOnly=true`).then(r => r.json()).catch(() => []),
       fetch(`/api/material-slots?meetingId=${meetingId}`).then(r => r.json()).catch(() => []),
       fetch('/api/teams').then(r => r.json()).catch(() => []),
       fetch(`/api/inspection-photos?meetingId=${meetingId}`).then(r => r.json()).catch(() => []),
