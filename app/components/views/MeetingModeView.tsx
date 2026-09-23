@@ -50,11 +50,19 @@ interface Meeting {
   id: string; title: string; date: string; status: 'open' | 'closed'
   map_file_url?: string | null
 }
+interface TomorrowWeather {
+  tmpMax:    number | null
+  tmpMin:    number | null
+  precipProb: number | null
+  pty:       number | null
+  skyLabel:  string
+}
 interface WeatherData {
   sky: number | null; pty: number | null; wsd: number | null; tmp: number | null
   skyLabel: string; ptyLabel: string
   windWarning: boolean; windCaution: boolean
   isMock: boolean; error?: string
+  tomorrow?: TomorrowWeather | null
 }
 
 // ── 섹션 정의 ─────────────────────────────────────────────
@@ -200,6 +208,7 @@ function MeetingMapViewer({
   const [draggingMkId,  setDraggingMkId] = useState<string | null>(null)
   const [mapOpacity,    setMapOpacity]    = useState(70)  // 지적도 투명도 (20~100%)
   const [markerSize,    setMarkerSize]    = useState(10)  // 마커 크기 (5~20, ×0.1 = 0.5~2.0배)
+  const [tomorrow,      setTomorrow]      = useState<TomorrowWeather | null>(null)
   const draggingMkIdRef = useRef<string | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -216,6 +225,14 @@ function MeetingMapViewer({
       })
       .catch(() => {})
   }, [meetingId])
+
+  useEffect(() => {
+    // 명일 날씨 취득 (오버레이 표시용)
+    fetch('/api/weather')
+      .then(r => r.json())
+      .then((d: WeatherData) => { if (d.tomorrow) setTomorrow(d.tomorrow) })
+      .catch(() => {})
+  }, [])
 
   const handleImgLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget
@@ -582,8 +599,99 @@ function MeetingMapViewer({
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
       >
-        {/* 줌 컨트롤 */}
-        <div className="absolute top-3 right-3 z-20 flex flex-col gap-1">
+        {/* 우측 상단 — 작업현황 + 명일날씨 오버레이 */}
+        {(() => {
+          const highRiskItems = workItems.filter(w => w.work_type === 'high_risk')
+          // 업체별 그룹
+          const grouped: Record<string, { name: string; items: WorkItem[]; color: string }> = {}
+          highRiskItems.forEach((item, _idx) => {
+            const tid  = item.team_id
+            const name = item.teams?.name ?? '미지정'
+            if (!grouped[tid]) {
+              const colorIdx = allTeamIds.indexOf(tid)
+              grouped[tid] = { name, items: [], color: TEAM_COLORS[(colorIdx >= 0 ? colorIdx : Object.keys(grouped).length) % TEAM_COLORS.length] }
+            }
+            grouped[tid].items.push(item)
+          })
+          const groups = Object.values(grouped)
+
+          const tmRow = tomorrow
+          const precipIcon = tmRow?.pty && tmRow.pty > 0
+            ? (tmRow.pty === 3 ? '❄️' : '🌧')
+            : tmRow?.skyLabel === '맑음' ? '☀️'
+            : tmRow?.skyLabel === '구름많음' ? '🌤'
+            : '☁️'
+
+          const panelBg   = dk ? 'bg-neutral-900/85 border-white/10' : 'bg-white/90 border-slate-200'
+          const panelHead = dk ? 'text-red-300' : 'text-red-600'
+          const panelSub  = dk ? 'text-neutral-400' : 'text-slate-500'
+          const panelText = dk ? 'text-neutral-200' : 'text-slate-800'
+          const divider   = dk ? 'border-white/10' : 'border-slate-200'
+
+          return (
+            <div
+              className={`absolute top-3 right-3 z-20 w-[220px] rounded-xl border backdrop-blur-md shadow-xl overflow-hidden pointer-events-none ${panelBg}`}
+              onPointerDown={e => e.stopPropagation()}
+            >
+              {/* 고위험 작업현황 */}
+              <div className="px-3 pt-2.5 pb-1">
+                <p className={`text-[10px] font-bold mb-1.5 tracking-wide ${panelHead}`}>⚠️ 고위험 작업현황</p>
+                {groups.length === 0 ? (
+                  <p className={`text-[10px] ${panelSub}`}>등록된 고위험 작업 없음</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-0.5">
+                    {groups.map(g => (
+                      <div key={g.name}>
+                        <div className="flex items-center gap-1 mb-0.5">
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: g.color }} />
+                          <span className={`text-[10px] font-semibold truncate ${panelText}`}>{g.name}</span>
+                        </div>
+                        <div className="pl-3 space-y-0.5">
+                          {g.items.map(item => (
+                            <div key={item.id} className="flex items-baseline justify-between gap-1">
+                              <span className={`text-[9px] truncate max-w-[130px] ${panelSub}`}>· {item.work_name}</span>
+                              {item.worker_count > 0 && (
+                                <span className={`text-[9px] shrink-0 ${panelSub}`}>{item.worker_count}명</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 명일 날씨 */}
+              <div className={`border-t px-3 py-2 ${divider}`}>
+                <p className={`text-[10px] font-bold mb-1 tracking-wide ${panelHead}`}>🌅 명일 날씨</p>
+                {tmRow ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl leading-none">{precipIcon}</span>
+                    <div>
+                      <div className={`text-[10px] font-semibold ${panelText}`}>
+                        {tmRow.skyLabel || '—'}
+                        {tmRow.precipProb !== null && (
+                          <span className={`ml-1.5 ${panelSub}`}>강수 {tmRow.precipProb}%</span>
+                        )}
+                      </div>
+                      <div className={`text-[11px] font-bold tabular-nums ${panelText}`}>
+                        {tmRow.tmpMax !== null ? `${Math.round(tmRow.tmpMax)}°` : '—'}
+                        <span className={`text-[10px] font-normal mx-0.5 ${panelSub}`}>/</span>
+                        {tmRow.tmpMin !== null ? `${Math.round(tmRow.tmpMin)}°C` : '—'}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className={`text-[10px] ${panelSub}`}>날씨 정보 불러오는 중…</p>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* 줌 컨트롤 (하단 우측으로 이동) */}
+        <div className="absolute bottom-8 right-3 z-20 flex flex-col gap-1">
           {[
             { label: '+', action: () => zoom(0.2),  title: '확대' },
             { label: '⟲', action: resetView,        title: '화면 맞춤' },

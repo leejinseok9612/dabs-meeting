@@ -3,6 +3,7 @@
 // 날씨 데이터 프록시
 //   1순위: 기상청 apihub — 초단기실황 (KMA_API_KEY 설정 시)
 //   2순위: Open-Meteo (무료, API키 불필요, 폴백)
+//   ※ 명일 날씨는 항상 Open-Meteo daily에서 별도 취득
 // ============================================================
 import { NextResponse } from 'next/server'
 
@@ -62,7 +63,68 @@ function wmoCodToPty(code: number): number {
   return 0
 }
 
+// ── WMO → 하늘 상태 레이블 ───────────────────────────────
+function wmoToSkyLabel(code: number): string {
+  if (code === 0)                             return '맑음'
+  if (code <= 3)                              return '구름많음'
+  if (code >= 45 && code <= 48)               return '안개'
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return '비'
+  if (code >= 71 && code <= 77)               return '눈'
+  if (code >= 95 && code <= 99)               return '뇌우'
+  return '흐림'
+}
+
+// ── 명일 날씨 (Open-Meteo daily) ─────────────────────────
+export interface TomorrowWeather {
+  tmpMax:    number | null
+  tmpMin:    number | null
+  precipProb: number | null
+  pty:       number | null
+  skyLabel:  string
+}
+
+async function fetchTomorrowWeather(): Promise<TomorrowWeather | null> {
+  try {
+    const url = new URL('https://api.open-meteo.com/v1/forecast')
+    url.searchParams.set('latitude',       String(LAT))
+    url.searchParams.set('longitude',      String(LNG))
+    url.searchParams.set('daily',          'temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code')
+    url.searchParams.set('timezone',       'Asia/Seoul')
+    url.searchParams.set('forecast_days',  '2')
+
+    const res  = await fetch(url.toString(), {
+      next: { revalidate: 3600 },
+      signal: AbortSignal.timeout(5000),
+    })
+    const data = await res.json() as {
+      daily?: {
+        temperature_2m_max?:              number[]
+        temperature_2m_min?:              number[]
+        precipitation_probability_max?:   number[]
+        weather_code?:                    number[]
+      }
+    }
+
+    const daily = data.daily
+    if (!daily) return null
+
+    // index 0 = 오늘, index 1 = 내일
+    const tmpMax     = daily.temperature_2m_max?.[1]              ?? null
+    const tmpMin     = daily.temperature_2m_min?.[1]              ?? null
+    const precipProb = daily.precipitation_probability_max?.[1]   ?? null
+    const wmo        = daily.weather_code?.[1]                     ?? 0
+    const pty        = wmoCodToPty(wmo)
+
+    return { tmpMax, tmpMin, precipProb, pty, skyLabel: wmoToSkyLabel(wmo) }
+  } catch {
+    return null
+  }
+}
+
 export async function GET() {
+  // 명일 날씨는 항상 Open-Meteo daily 에서 비동기 병렬 취득
+  const tomorrowPromise = fetchTomorrowWeather()
+
   // ──────────────────────────────────────────────────────
   // 1순위: 기상청 apihub 초단기실황
   // ──────────────────────────────────────────────────────
@@ -107,6 +169,8 @@ export async function GET() {
         const wsd = get('WSD')                       // 풍속 (m/s)
         const pty = Math.round(get('PTY') ?? 0)      // 강수형태
 
+        const tomorrow = await tomorrowPromise
+
         return NextResponse.json({
           sky: null, pty, wsd, tmp,
           skyLabel: '', ptyLabel: ptyLabel(pty),
@@ -114,6 +178,7 @@ export async function GET() {
           windCaution: wsd !== null && wsd >= WIND_CAUTION_MS && wsd < WIND_WARNING_MS,
           isMock: false,
           source: 'kma',
+          tomorrow,
         })
       }
 
@@ -156,6 +221,8 @@ export async function GET() {
     const wmo = cur.weather_code   ?? 0
     const pty = wmoCodToPty(wmo)
 
+    const tomorrow = await tomorrowPromise
+
     return NextResponse.json({
       sky: null, pty, wsd, tmp,
       skyLabel: skyLabel(null), ptyLabel: ptyLabel(pty),
@@ -163,6 +230,7 @@ export async function GET() {
       windCaution: wsd !== null && wsd >= WIND_CAUTION_MS && wsd < WIND_WARNING_MS,
       isMock: false,
       source: 'open-meteo',
+      tomorrow,
     })
   } catch (err) {
     console.error('[weather] Open-Meteo 실패, mock 폴백:', err)
@@ -171,9 +239,11 @@ export async function GET() {
   // ──────────────────────────────────────────────────────
   // 최후 폴백: mock
   // ──────────────────────────────────────────────────────
+  const tomorrow = await tomorrowPromise
   return NextResponse.json({
     sky: 1, pty: 0, wsd: 3.5, tmp: 24,
     skyLabel: '맑음', ptyLabel: '', windWarning: false, windCaution: false,
     isMock: true, source: 'mock',
+    tomorrow,
   })
 }
